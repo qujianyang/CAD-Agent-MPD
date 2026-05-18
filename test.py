@@ -55,7 +55,7 @@ try:
     model_raw = com_get(sw, "IActiveDoc2") or com_get(sw, "ActiveDoc")
     
     if model_raw is None:
-        PART_PATH = r"c:\Users\user\Downloads\17715A73_Galvanized Steel Corner Bracket.SLDPRT"
+        PART_PATH = r"C:\JY\Generator\BASE FRAME.SLDPRT"
         debug_step(f"No active doc, opening '{PART_PATH}'")
         try:
             errs = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
@@ -181,27 +181,70 @@ try:
     debug_step("Reading Custom Properties")
     props = {}
     try:
-        # Access Extension directly from casted model
         ext = model.Extension
-        cpm = None
         if ext:
             cpm = ext.CustomPropertyManager(cfg_name or "")
             if cpm is None:
                 cpm = ext.CustomPropertyManager("")
-
-        if cpm:
-            names = cpm.GetNames()
-            if names:
-                for n in names:
-                    res = cpm.Get4(n, False, "", "")
-                    if isinstance(res, (tuple, list)):
-                        props[n] = res[2] if len(res) > 2 else res[1]
-                    else:
-                        props[n] = res
+            
+            if cpm:
+                try:
+                    names = cpm.GetNames()
+                    if names and callable(names) and hasattr(names, '__iter__'):
+                        for n in names:
+                            try:
+                                res = cpm.Get4(n, False, "", "")
+                                if isinstance(res, (tuple, list)):
+                                    props[n] = res[2] if len(res) > 2 else res[1]
+                                else:
+                                    props[n] = res
+                            except: pass
+                except: pass
+        
+        if props:
             print(f"OK ({len(props)} found)")
-            print(f"Properties: {props}")
+            for k, v in props.items():
+                print(f"  {k}: {v}")
         else:
-            print("FAILED (CustomPropertyManager unavailable)")
+            print("OK (0 found)")
+    except Exception as e:
+        print(f"FAILED ({e})")
+
+    # --- Volume and Surface Area ---
+    debug_step("Calculating Volume & Surface Area")
+    try:
+        mp = safe_call(model.Extension, "CreateMassProperty2") or safe_call(model.Extension, "CreateMassProperty")
+        if mp:
+            volume = safe_call(mp, "Volume")
+            surface = safe_call(mp, "SurfaceArea")
+            if volume is not None and surface is not None:
+                print(f"OK (Vol: {volume:.6f}mm³, Area: {surface:.3f}mm²)")
+            else:
+                print("FAILED (Could not extract values)")
+        else:
+            print("FAILED (MassProperty unavailable)")
+    except Exception as e:
+        print(f"FAILED ({e})")
+
+    # --- Feature Count ---
+    debug_step("Counting Features")
+    try:
+        feat_count = 0
+        feat = safe_call(model, "FirstFeature")
+        while feat:
+            feat_count += 1
+            feat = safe_call(feat, "GetNextFeature")
+        print(f"OK ({feat_count} features)")
+    except Exception as e:
+        print(f"FAILED ({e})")
+
+    # --- File Information ---
+    debug_step("Reading File Info")
+    try:
+        file_path = safe_call(model, "GetPathName")
+        title = safe_call(model, "GetTitle")
+        saved = safe_call(model, "IsSaved")
+        print(f"OK (Path: {file_path}, Saved: {saved})")
     except Exception as e:
         print(f"FAILED ({e})")
 
