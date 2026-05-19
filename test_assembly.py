@@ -55,12 +55,13 @@ try:
     model_raw = com_get(sw, "IActiveDoc2") or com_get(sw, "ActiveDoc")
     
     if model_raw is None:
-        PART_PATH = r"C:\JY\NWC_Media Converter Tray (V1.0).SLDPRT"
-        debug_step(f"No active doc, opening '{PART_PATH}'")
+        PART_PATH = r"C:\JY\Generator\SDG25S-3A8_REV1 (1).SLDASM"
+        doc_type = 2 if PART_PATH.lower().endswith(".sldasm") else 1
+        debug_step(f"No active doc, opening '{PART_PATH}' as doc type {doc_type}")
         try:
             errs = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
             warns = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
-            model_raw = sw.OpenDoc6(PART_PATH, 1, 1, "", errs, warns)
+            model_raw = sw.OpenDoc6(PART_PATH, doc_type, 1, "", errs, warns)
             print("OK")
         except Exception as e:
             print(f"FAILED ({e})")
@@ -85,6 +86,7 @@ try:
     debug_step("Checking document type")
     doc_type = safe_call(model, "GetType")
     print(f"OK (Type: {doc_type})")
+    is_assembly = (doc_type == 2)
 
     debug_step("Getting Active Configuration")
     cfg_name = ""
@@ -106,20 +108,23 @@ try:
     debug_step("Reading Material")
     material = "N/A"
     try:
-        res = None
-        try:
-            # Try with ByRef database name (common requirement for some bindings)
-            db = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BSTR, "")
-            res = part.GetMaterialPropertyName2(cfg_name or "", db)
-        except Exception:
-            # Fallback to simple call
-            res = part.GetMaterialPropertyName2(cfg_name or "", "")
-
-        if isinstance(res, (tuple, list)):
-            material = res[0]
+        if is_assembly:
+            print("OK (SKIPPED for assembly)")
         else:
-            material = res or ""
-        print(f"OK ({material})")
+            res = None
+            try:
+                # Try with ByRef database name (common requirement for some bindings)
+                db = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BSTR, "")
+                res = part.GetMaterialPropertyName2(cfg_name or "", db)
+            except Exception:
+                # Fallback to simple call
+                res = part.GetMaterialPropertyName2(cfg_name or "", "")
+
+            if isinstance(res, (tuple, list)):
+                material = res[0]
+            else:
+                material = res or ""
+            print(f"OK ({material})")
     except Exception as e:
         print(f"FAILED ({e})")
 
@@ -142,11 +147,14 @@ try:
     # --- Bounding Box ---
     debug_step("Calculating Bounding Box")
     try:
-        box = part.GetPartBox(True)
-        if box:
-            x1, y1, z1, x2, y2, z2 = box
-            dx, dy, dz = abs(x2 - x1), abs(y2 - y1), abs(z2 - z1)
-            print(f"OK ({dx:.3f}x{dy:.3f}x{dz:.3f})")
+        if is_assembly:
+            print("OK (SKIPPED for assembly)")
+        else:
+            box = part.GetPartBox(True)
+            if box:
+                x1, y1, z1, x2, y2, z2 = box
+                dx, dy, dz = abs(x2 - x1), abs(y2 - y1), abs(z2 - z1)
+                print(f"OK ({dx:.3f}x{dy:.3f}x{dz:.3f})")
     except Exception as e:
         print(f"FAILED ({e})")
 

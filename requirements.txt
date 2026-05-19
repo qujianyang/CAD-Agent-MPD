@@ -1,0 +1,6 @@
+requests
+pymupdf4llm
+PyMuPDF
+pywin32
+sentence-transformers
+numpy
