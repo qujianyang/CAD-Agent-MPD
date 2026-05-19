@@ -55,7 +55,7 @@ try:
     model_raw = com_get(sw, "IActiveDoc2") or com_get(sw, "ActiveDoc")
     
     if model_raw is None:
-        PART_PATH = r"C:\JY\Generator\BASE FRAME.SLDPRT"
+        PART_PATH = r"C:\JY\NWC_Media Converter Tray (V1.0).SLDPRT"
         debug_step(f"No active doc, opening '{PART_PATH}'")
         try:
             errs = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
@@ -150,30 +150,30 @@ try:
     except Exception as e:
         print(f"FAILED ({e})")
 
-    # --- Mass ---
-    debug_step("Calculating Mass")
+    # --- Mass & Volume (Unified) ---
+    debug_step("Extracting Mass Properties Array")
     try:
-        mass_kg = None
-        ext = safe_call(model, "Extension")
-        if ext:
-            mp = safe_call(ext, "CreateMassProperty2") or safe_call(ext, "CreateMassProperty")
-            if mp:
-                try:
-                    mp.UseSystemUnits = True
-                except: pass
-                mass_val = safe_call(mp, "Mass")
-                if mass_val is not None:
-                    mass_kg = float(mass_val)
+        mass_props = safe_call(model, "GetMassProperties")
+        if mass_props:
+            print("OK")
+            print(f"\n[RAW ARRAY DATA] {list(mass_props)}\n")
 
-        if mass_kg is None:
-            mass_props = safe_call(model, "GetMassProperties")
-            if mass_props:
-                mass_kg = float(mass_props[5])
+            # mass_props indices (typical SW API):
+            # 0..2 -> center of mass (m), 3 -> volume (m^3), 4 -> surface area (m^2), 5 -> mass (kg)
+            cg_x = float(mass_props[0]) * 1000
+            cg_y = float(mass_props[1]) * 1000
+            cg_z = float(mass_props[2]) * 1000
 
-        if mass_kg is not None:
-            print(f"OK ({mass_kg:.4f} kg)")
+            volume_mm3 = float(mass_props[3]) * 1e9
+            surface_mm2 = float(mass_props[4]) * 1e6
+            mass_kg = float(mass_props[5])
+
+            print(f"  -> Mass:         {mass_kg:.4f} kg ({mass_kg*1000:.2f} grams)")
+            print(f"  -> Volume:       {volume_mm3:.2f} mm³")
+            print(f"  -> Surface Area: {surface_mm2:.2f} mm²")
+            print(f"  -> Center of Mass (CG): X={cg_x:.2f}mm, Y={cg_y:.2f}mm, Z={cg_z:.2f}mm")
         else:
-            print("FAILED (API unavailable)")
+            print("FAILED (Array is empty)")
     except Exception as e:
         print(f"FAILED ({e})")
 
@@ -210,21 +210,7 @@ try:
     except Exception as e:
         print(f"FAILED ({e})")
 
-    # --- Volume and Surface Area ---
-    debug_step("Calculating Volume & Surface Area")
-    try:
-        mp = safe_call(model.Extension, "CreateMassProperty2") or safe_call(model.Extension, "CreateMassProperty")
-        if mp:
-            volume = safe_call(mp, "Volume")
-            surface = safe_call(mp, "SurfaceArea")
-            if volume is not None and surface is not None:
-                print(f"OK (Vol: {volume:.6f}mm³, Area: {surface:.3f}mm²)")
-            else:
-                print("FAILED (Could not extract values)")
-        else:
-            print("FAILED (MassProperty unavailable)")
-    except Exception as e:
-        print(f"FAILED ({e})")
+    # (Volume & Surface Area handled in unified mass-properties block above)
 
     # --- Feature Count ---
     debug_step("Counting Features")
