@@ -179,58 +179,58 @@ try:
     except Exception as e:
         print(f"FAILED ({e})")
 
-    # --- Mass Properties (try Mounting_Base coord system, fall back to origin) ---
+
+    # --- Mass Properties (try Mounting_Base transform, fall back to origin) ---
     debug_step("Extracting Mass Properties")
     coord_ref = "DEFAULT_ORIGIN"
     mass_kg = volume_mm3 = surface_mm2 = cg_x = cg_y = cg_z = None
     try:
-        ext = safe_call(model, "Extension")
+        # Step 1: Get raw mass properties (always in MODEL/WORLD frame)
+        mass_props = safe_call(model, "GetMassProperties")
+        if mass_props and len(mass_props) >= 6:
+            cg_world_m = (float(mass_props[0]), float(mass_props[1]), float(mass_props[2]))
+            volume_mm3 = float(mass_props[3]) * 1e9
+            surface_mm2 = float(mass_props[4]) * 1e6
+            mass_kg = float(mass_props[5])
+
+            # Default: CG in world/model frame (mm)
+            cg_x = cg_world_m[0] * 1000
+            cg_y = cg_world_m[1] * 1000
+            cg_z = cg_world_m[2] * 1000
+
+            # Step 2: Try to transform CG into Mounting_Base coord system
+            try:
+                ext = model.Extension
+                xform = ext.GetCoordinateSystemTransformByName("Mounting_Base")
+                if xform is not None:
+                    math_util = sw.GetMathUtility()
+                    point_world = math_util.CreatePoint(list(cg_world_m))
+                    inv = xform.Inverse
+                    point_local = point_world.MultiplyTransform(inv)
+                    arr = point_local.ArrayData
+                    if arr and len(arr) >= 3:
+                        cg_x = float(arr[0]) * 1000
+                        cg_y = float(arr[1]) * 1000
+                        cg_z = float(arr[2]) * 1000
+                        coord_ref = "MOUNTING_BASE"
+            except Exception as e:
+                print(f"  [info] Mounting_Base transform unavailable ({str(e)[:80]}), using model origin")
+
+        mp = True  # signal success
+    except Exception as e:
+        print(f"  [debug] mass prop extraction error: {e}")
         mp = None
 
-        # Approach 1: CreateMassProperty + SetCoordinateSystem("Mounting_Base")
-        if ext:
-            try:
-                mp_obj = ext.CreateMassProperty
-                if mp_obj is not None:
-                    coord_feat = safe_call(model, "FeatureByName", "Mounting_Base")
-                    if coord_feat:
-                        if safe_call(mp_obj, "SetCoordinateSystem", coord_feat):
-                            coord_ref = "MOUNTING_BASE"
-                        cg_arr = safe_call(mp_obj, "CenterOfMass")
-                        if cg_arr and len(cg_arr) >= 3:
-                            cg_x = float(cg_arr[0]) * 1000
-                            cg_y = float(cg_arr[1]) * 1000
-                            cg_z = float(cg_arr[2]) * 1000
-                            mass_kg = float(safe_call(mp_obj, "Mass") or 0)
-                            volume_mm3 = float(safe_call(mp_obj, "Volume") or 0) * 1e9
-                            surface_mm2 = float(safe_call(mp_obj, "SurfaceArea") or 0) * 1e6
-                            mp = mp_obj
-            except Exception:
-                mp = None
-
-        # Approach 2: Fallback to legacy GetMassProperties (default origin)
-        if mp is None:
-            mass_props = safe_call(model, "GetMassProperties")
-            if mass_props:
-                cg_x = float(mass_props[0]) * 1000
-                cg_y = float(mass_props[1]) * 1000
-                cg_z = float(mass_props[2]) * 1000
-                volume_mm3 = float(mass_props[3]) * 1e9
-                surface_mm2 = float(mass_props[4]) * 1e6
-                mass_kg = float(mass_props[5])
-
-        if mass_kg is not None:
-            print(f"OK (coord_sys={coord_ref})")
-            print(f"  -> Mass:         {mass_kg:.4f} kg ({mass_kg*1000:.2f} grams)")
-            print(f"  -> Volume:       {volume_mm3:.2f} mm³")
-            print(f"  -> Surface Area: {surface_mm2:.2f} mm²")
-            print(f"  -> Center of Mass (CG): X={cg_x:.2f}mm, Y={cg_y:.2f}mm, Z={cg_z:.2f}mm")
-            if coord_ref == "DEFAULT_ORIGIN":
-                print("  ⚠ Note: CG is relative to model origin. Create 'Mounting_Base' coord system for true floor-relative CG.")
-        else:
-            print("FAILED (no mass data)")
-    except Exception as e:
-        print(f"FAILED ({e})")
+    if mass_kg is not None:
+        print(f"OK (coord_sys={coord_ref})")
+        print(f"  -> Mass:         {mass_kg:.4f} kg ({mass_kg*1000:.2f} grams)")
+        print(f"  -> Volume:       {volume_mm3:.2f} mm³")
+        print(f"  -> Surface Area: {surface_mm2:.2f} mm²")
+        print(f"  -> Center of Mass (CG): X={cg_x:.2f}mm, Y={cg_y:.2f}mm, Z={cg_z:.2f}mm")
+        if coord_ref == "DEFAULT_ORIGIN":
+            print("  ⚠ Note: CG is relative to model origin. Create 'Mounting_Base' coord system for true floor-relative CG.")
+    else:
+        print("FAILED (no mass data)")
 
     # --- Custom Properties (config-specific first, then global) ---
     debug_step(f"Reading Custom Properties (config: '{cfg_name or 'default'}')")

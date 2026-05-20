@@ -18,7 +18,7 @@ class MILStandardRAG:
             api_key=api_key,
             temperature=0.2,
             top_p=0.7,
-            max_tokens=1024,
+            max_tokens=502,
         )
 
     def retrieve_relevant_sections(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
