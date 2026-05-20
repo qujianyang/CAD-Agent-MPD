@@ -6,6 +6,7 @@ CAD-to-RAG Compliance Query Interface.
 4. Returns RAG + LLM response
 """
 import os
+import sys
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
@@ -17,7 +18,7 @@ def extract_cad_data(assembly_script: str = "test_assembly.py") -> dict:
     print("[1/3] Connecting to SolidWorks and extracting CAD data...")
     try:
         result = subprocess.run(
-            ["python", assembly_script],
+            [sys.executable, assembly_script],
             capture_output=True,
             text=True,
         )
@@ -35,23 +36,55 @@ def extract_cad_data(assembly_script: str = "test_assembly.py") -> dict:
 def _parse_cad_output(output: str) -> dict:
     """Parse the printed output of test_assembly.py into a dict."""
     props = {}
+    components = []
+    in_bom = False
+
     for line in output.split("\n"):
-        line = line.strip()
+        line_stripped = line.strip()
         try:
-            if "-> Mass:" in line:
-                props["mass_kg"] = float(line.split()[2])
-            elif "-> Volume:" in line:
-                props["volume_mm3"] = float(line.split()[2])
-            elif "-> Surface Area:" in line:
-                props["surface_mm2"] = float(line.split()[3])
-            elif "Center of Mass (CG):" in line:
-                props["cg_x"] = float(line.split("X=")[1].split("mm")[0])
-                props["cg_y"] = float(line.split("Y=")[1].split("mm")[0])
-                props["cg_z"] = float(line.split("Z=")[1].split("mm")[0])
-            elif "Path:" in line and "Saved:" in line:
-                props["file_path"] = line.split("Path: ")[1].split(",")[0].strip()
+            # Mass properties
+            if "-> Mass:" in line_stripped:
+                props["mass_kg"] = float(line_stripped.split()[2])
+            elif "-> Volume:" in line_stripped:
+                props["volume_mm3"] = float(line_stripped.split()[2])
+            elif "-> Surface Area:" in line_stripped:
+                props["surface_mm2"] = float(line_stripped.split()[3])
+            elif "Center of Mass (CG):" in line_stripped:
+                props["cg_x"] = float(line_stripped.split("X=")[1].split("mm")[0])
+                props["cg_y"] = float(line_stripped.split("Y=")[1].split("mm")[0])
+                props["cg_z"] = float(line_stripped.split("Z=")[1].split("mm")[0])
+
+            # Bounding envelope: OK (W:560.0mm x D:2000.0mm x H:1000.0mm)
+            elif "W:" in line_stripped and "D:" in line_stripped and "H:" in line_stripped:
+                props["width_mm"]  = float(line_stripped.split("W:")[1].split("mm")[0])
+                props["depth_mm"]  = float(line_stripped.split("D:")[1].split("mm")[0])
+                props["height_mm"] = float(line_stripped.split("H:")[1].split("mm")[0])
+
+            # File path
+            elif "Path:" in line_stripped and "Saved:" in line_stripped:
+                props["file_path"] = line_stripped.split("Path: ")[1].split(",")[0].strip()
+
+            # BOM section marker
+            elif "Iterating Assembly Components" in line_stripped:
+                in_bom = True
+
+            # Component entries: "  -> Name" (no colon after name)
+            elif in_bom and line_stripped.startswith("->") and ":" not in line_stripped:
+                name = line_stripped.lstrip("-> ").strip()
+                if name and "..." not in name:
+                    components.append(name)
+
+            # Stop BOM collection when next DEBUG section starts
+            elif in_bom and "[DEBUG]" in line_stripped and "Iterating" not in line_stripped:
+                in_bom = False
+
         except (IndexError, ValueError):
             pass
+
+    if components:
+        props["components"] = components
+        props["component_count"] = len(components)
+
     return props
 
 
@@ -61,7 +94,10 @@ def print_cad_summary(props: dict):
     print(f"    Mass:          {props.get('mass_kg', 'N/A')} kg")
     print(f"    Volume:        {props.get('volume_mm3', 'N/A')} mm³")
     print(f"    Surface Area:  {props.get('surface_mm2', 'N/A')} mm²")
+    print(f"    Envelope:      W={props.get('width_mm','N/A')}mm  D={props.get('depth_mm','N/A')}mm  H={props.get('height_mm','N/A')}mm")
     print(f"    CG:            X={props.get('cg_x','N/A')}mm  Y={props.get('cg_y','N/A')}mm  Z={props.get('cg_z','N/A')}mm")
+    if props.get("components"):
+        print(f"    Components ({props['component_count']}): {', '.join(props['components'])}")
     print(f"    File:          {props.get('file_path', 'Unknown')}")
 
 

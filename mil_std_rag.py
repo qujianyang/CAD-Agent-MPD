@@ -32,14 +32,26 @@ class MILStandardRAG:
         return self._query_llm(context, question)
 
     def _build_context(self, cad_props: Dict[str, Any], mil_sections: List[Dict[str, Any]]) -> str:
-        context = f"""## CAD DESIGN DATA
-- Mass: {cad_props.get('mass_kg', 'N/A')} kg
-- Volume: {cad_props.get('volume_mm3', 'N/A')} mm³
-- Surface Area: {cad_props.get('surface_mm2', 'N/A')} mm²
-- Center of Mass: X={cad_props.get('cg_x', 'N/A')}mm, Y={cad_props.get('cg_y', 'N/A')}mm, Z={cad_props.get('cg_z', 'N/A')}mm
-- File: {cad_props.get('file_path', 'Unknown')}
+        mass_kg = cad_props.get("mass_kg") or 0
+        weight_N   = mass_kg * 9.81
+        weight_lbf = weight_N / 4.448
+        n_mounts   = sum(1 for c in (cad_props.get("components") or []) if "shock" in c.lower() or "mount" in c.lower() or "isolat" in c.lower())
+        load_per_mount_lbf = weight_lbf / n_mounts if n_mounts else weight_lbf / 4
 
-## RETRIEVED STANDARD SECTIONS
+        context = f"""## CAD DESIGN DATA
+- File: {cad_props.get('file_path', 'Unknown')}
+- Total Mass: {mass_kg} kg  ({weight_lbf:.1f} lbf total weight)
+- Bounding Envelope: W={cad_props.get('width_mm','N/A')}mm x D={cad_props.get('depth_mm','N/A')}mm x H={cad_props.get('height_mm','N/A')}mm
+- Center of Mass (CG): X={cad_props.get('cg_x','N/A')}mm, Y={cad_props.get('cg_y','N/A')}mm, Z={cad_props.get('cg_z','N/A')}mm
+- Volume: {cad_props.get('volume_mm3','N/A')} mm³
+- Assembly Components ({cad_props.get('component_count', 'N/A')}): {', '.join(cad_props.get('components') or ['N/A'])}
+
+## PRE-COMPUTED LOAD VALUES (use these directly)
+- Total weight: {weight_N:.1f} N  /  {weight_lbf:.1f} lbf
+- Detected mount points: {n_mounts if n_mounts else '4 (assumed)'}
+- Load per mount point: {load_per_mount_lbf:.1f} lbf
+
+## RETRIEVED CATALOG SECTIONS
 """
         for i, section in enumerate(mil_sections, 1):
             context += f"\n### Section {i} (Similarity: {section['similarity']:.2%})\n"

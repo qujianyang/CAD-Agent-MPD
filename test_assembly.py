@@ -55,7 +55,7 @@ try:
     model_raw = com_get(sw, "IActiveDoc2") or com_get(sw, "ActiveDoc")
     
     if model_raw is None:
-        PART_PATH = r"C:\mpd\models\SOLIDWORKS DATABASE\Equipment Rack\40U Rack"
+        PART_PATH = r"C:\mpd\models\SOLIDWORKS DATABASE\Equipment Rack\40U Rack.SLDASM"
         doc_type = 2 if PART_PATH.lower().endswith(".sldasm") else 1
         debug_step(f"No active doc, opening '{PART_PATH}' as doc type {doc_type}")
         try:
@@ -146,71 +146,125 @@ try:
     except Exception as e:
         print(f"FAILED ({e})")
 
-    # --- Bounding Box ---
-    debug_step("Calculating Bounding Box")
+    # --- Bounding Box (Assembly Envelope OR Part Box) ---
+    debug_step("Calculating Bounding Envelope")
+    width_mm = depth_mm = height_mm = None
     try:
+        box = None
         if is_assembly:
-            print("OK (SKIPPED for assembly)")
+            # Union all top-level component bounding boxes for full envelope
+            top_comps = safe_call(assembly, "GetComponents", True)  # True = top-level only
+            if top_comps:
+                xs_min, ys_min, zs_min = [], [], []
+                xs_max, ys_max, zs_max = [], [], []
+                for c in top_comps:
+                    cbox = safe_call(c, "GetBox", False, False)
+                    if cbox and len(cbox) >= 6:
+                        xs_min.append(cbox[0]); ys_min.append(cbox[1]); zs_min.append(cbox[2])
+                        xs_max.append(cbox[3]); ys_max.append(cbox[4]); zs_max.append(cbox[5])
+                if xs_min:
+                    box = [min(xs_min), min(ys_min), min(zs_min),
+                           max(xs_max), max(ys_max), max(zs_max)]
         else:
             box = part.GetPartBox(True)
-            if box:
-                x1, y1, z1, x2, y2, z2 = box
-                dx, dy, dz = abs(x2 - x1), abs(y2 - y1), abs(z2 - z1)
-                print(f"OK ({dx:.3f}x{dy:.3f}x{dz:.3f})")
+
+        if box and len(box) >= 6:
+            x1, y1, z1, x2, y2, z2 = box[:6]
+            width_mm = abs(x2 - x1) * 1000   # X
+            depth_mm = abs(y2 - y1) * 1000   # Y
+            height_mm = abs(z2 - z1) * 1000  # Z
+            print(f"OK (W:{width_mm:.1f}mm x D:{depth_mm:.1f}mm x H:{height_mm:.1f}mm)")
+        else:
+            print("FAILED (no box data)")
     except Exception as e:
         print(f"FAILED ({e})")
 
-    # --- Mass & Volume (Unified) ---
-    debug_step("Extracting Mass Properties Array")
+    # --- Mass Properties (try Mounting_Base coord system, fall back to origin) ---
+    debug_step("Extracting Mass Properties")
+    coord_ref = "DEFAULT_ORIGIN"
+    mass_kg = volume_mm3 = surface_mm2 = cg_x = cg_y = cg_z = None
     try:
-        mass_props = safe_call(model, "GetMassProperties")
-        if mass_props:
-            print("OK")
-            print(f"\n[RAW ARRAY DATA] {list(mass_props)}\n")
+        ext = safe_call(model, "Extension")
+        mp = None
 
-            # mass_props indices (typical SW API):
-            # 0..2 -> center of mass (m), 3 -> volume (m^3), 4 -> surface area (m^2), 5 -> mass (kg)
-            cg_x = float(mass_props[0]) * 1000
-            cg_y = float(mass_props[1]) * 1000
-            cg_z = float(mass_props[2]) * 1000
+        # Approach 1: CreateMassProperty + SetCoordinateSystem("Mounting_Base")
+        if ext:
+            try:
+                mp_obj = ext.CreateMassProperty
+                if mp_obj is not None:
+                    coord_feat = safe_call(model, "FeatureByName", "Mounting_Base")
+                    if coord_feat:
+                        if safe_call(mp_obj, "SetCoordinateSystem", coord_feat):
+                            coord_ref = "MOUNTING_BASE"
+                        cg_arr = safe_call(mp_obj, "CenterOfMass")
+                        if cg_arr and len(cg_arr) >= 3:
+                            cg_x = float(cg_arr[0]) * 1000
+                            cg_y = float(cg_arr[1]) * 1000
+                            cg_z = float(cg_arr[2]) * 1000
+                            mass_kg = float(safe_call(mp_obj, "Mass") or 0)
+                            volume_mm3 = float(safe_call(mp_obj, "Volume") or 0) * 1e9
+                            surface_mm2 = float(safe_call(mp_obj, "SurfaceArea") or 0) * 1e6
+                            mp = mp_obj
+            except Exception:
+                mp = None
 
-            volume_mm3 = float(mass_props[3]) * 1e9
-            surface_mm2 = float(mass_props[4]) * 1e6
-            mass_kg = float(mass_props[5])
+        # Approach 2: Fallback to legacy GetMassProperties (default origin)
+        if mp is None:
+            mass_props = safe_call(model, "GetMassProperties")
+            if mass_props:
+                cg_x = float(mass_props[0]) * 1000
+                cg_y = float(mass_props[1]) * 1000
+                cg_z = float(mass_props[2]) * 1000
+                volume_mm3 = float(mass_props[3]) * 1e9
+                surface_mm2 = float(mass_props[4]) * 1e6
+                mass_kg = float(mass_props[5])
 
+        if mass_kg is not None:
+            print(f"OK (coord_sys={coord_ref})")
             print(f"  -> Mass:         {mass_kg:.4f} kg ({mass_kg*1000:.2f} grams)")
             print(f"  -> Volume:       {volume_mm3:.2f} mm³")
             print(f"  -> Surface Area: {surface_mm2:.2f} mm²")
             print(f"  -> Center of Mass (CG): X={cg_x:.2f}mm, Y={cg_y:.2f}mm, Z={cg_z:.2f}mm")
+            if coord_ref == "DEFAULT_ORIGIN":
+                print("  ⚠ Note: CG is relative to model origin. Create 'Mounting_Base' coord system for true floor-relative CG.")
         else:
-            print("FAILED (Array is empty)")
+            print("FAILED (no mass data)")
     except Exception as e:
         print(f"FAILED ({e})")
 
-    # --- Custom Properties ---
-    debug_step("Reading Custom Properties")
+    # --- Custom Properties (config-specific first, then global) ---
+    debug_step(f"Reading Custom Properties (config: '{cfg_name or 'default'}')")
     props = {}
+
+    def _read_cpm_props(cpm):
+        out = {}
+        if cpm is None:
+            return out
+        try:
+            names = cpm.GetNames()
+            if names and hasattr(names, "__iter__"):
+                for n in names:
+                    try:
+                        res = cpm.Get4(n, False, "", "")
+                        if isinstance(res, (tuple, list)):
+                            out[n] = res[2] if len(res) > 2 else res[1]
+                        else:
+                            out[n] = res
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return out
+
     try:
-        ext = model.Extension
+        ext = safe_call(model, "Extension")
         if ext:
-            cpm = ext.CustomPropertyManager(cfg_name or "")
-            if cpm is None:
-                cpm = ext.CustomPropertyManager("")
-            
-            if cpm:
-                try:
-                    names = cpm.GetNames()
-                    if names and callable(names) and hasattr(names, '__iter__'):
-                        for n in names:
-                            try:
-                                res = cpm.Get4(n, False, "", "")
-                                if isinstance(res, (tuple, list)):
-                                    props[n] = res[2] if len(res) > 2 else res[1]
-                                else:
-                                    props[n] = res
-                            except: pass
-                except: pass
-        
+            # Config-specific properties first
+            if cfg_name:
+                props.update(_read_cpm_props(ext.CustomPropertyManager(cfg_name)))
+            # Always also read global (config-independent) properties
+            props.update(_read_cpm_props(ext.CustomPropertyManager("")))
+
         if props:
             print(f"OK ({len(props)} found)")
             for k, v in props.items():
@@ -222,17 +276,38 @@ try:
 
     # (Volume & Surface Area handled in unified mass-properties block above)
 
-    # --- Feature Count ---
-    debug_step("Counting Features")
-    try:
-        feat_count = 0
-        feat = safe_call(model, "FirstFeature")
-        while feat:
-            feat_count += 1
-            feat = safe_call(feat, "GetNextFeature")
-        print(f"OK ({feat_count} features)")
-    except Exception as e:
-        print(f"FAILED ({e})")
+    # --- Components (Assembly BOM) OR Features (Part) ---
+    components_list = []
+    if is_assembly:
+        debug_step("Iterating Assembly Components (BOM)")
+        try:
+            # GetComponents(False) returns all components including sub-assemblies (deep)
+            comps = safe_call(assembly, "GetComponents", False)
+            if comps:
+                for c in comps:
+                    name = safe_call(c, "Name2") or ""
+                    if name:
+                        components_list.append(name)
+                print(f"OK ({len(components_list)} components)")
+                for n in components_list[:10]:
+                    print(f"  -> {n}")
+                if len(components_list) > 10:
+                    print(f"  ... and {len(components_list) - 10} more")
+            else:
+                print("OK (0 components)")
+        except Exception as e:
+            print(f"FAILED ({e})")
+    else:
+        debug_step("Counting Features")
+        try:
+            feat_count = 0
+            feat = safe_call(model, "FirstFeature")
+            while feat:
+                feat_count += 1
+                feat = safe_call(feat, "GetNextFeature")
+            print(f"OK ({feat_count} features)")
+        except Exception as e:
+            print(f"FAILED ({e})")
 
     # --- File Information ---
     debug_step("Reading File Info")
