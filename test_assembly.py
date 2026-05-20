@@ -55,7 +55,7 @@ try:
     model_raw = com_get(sw, "IActiveDoc2") or com_get(sw, "ActiveDoc")
     
     if model_raw is None:
-        PART_PATH = r"C:\JY\Generator\SDG25S-3A8_REV1 (1).SLDASM"
+        PART_PATH = r"C:\mpd\models\SOLIDWORKS DATABASE\Equipment Rack\40U Rack"
         doc_type = 2 if PART_PATH.lower().endswith(".sldasm") else 1
         debug_step(f"No active doc, opening '{PART_PATH}' as doc type {doc_type}")
         try:
@@ -71,22 +71,24 @@ try:
     print("OK")
 
     # Cast to specific interfaces for reliable property/method access
-    debug_step("Casting to ModelDoc2/PartDoc")
+    debug_step("Casting to ModelDoc2/AssemblyDoc")
     try:
         model = win32com.client.CastTo(model_raw, "IModelDoc2")
     except:
         model = model_raw
-    
-    try:
-        part = win32com.client.CastTo(model_raw, "IPartDoc")
-    except:
-        part = model_raw
-    print("OK")
 
     debug_step("Checking document type")
     doc_type = safe_call(model, "GetType")
-    print(f"OK (Type: {doc_type})")
     is_assembly = (doc_type == 2)
+    print(f"OK (Type: {'Assembly' if is_assembly else 'Part'} [{doc_type}])")
+
+    try:
+        assembly = win32com.client.CastTo(model_raw, "IAssemblyDoc") if is_assembly else None
+        part = win32com.client.CastTo(model_raw, "IPartDoc") if not is_assembly else None
+    except:
+        assembly = model_raw if is_assembly else None
+        part = model_raw if not is_assembly else None
+    print("OK")
 
     debug_step("Getting Active Configuration")
     cfg_name = ""

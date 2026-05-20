@@ -1,154 +1,104 @@
 """
-CAD-to-MIL-STD Compliance Query Interface.
-Combines CAD properties with RAG to check design compliance.
+CAD-to-RAG Compliance Query Interface.
+1. Extracts live CAD data from SolidWorks via test_assembly.py
+2. Shows extracted properties to the user
+3. Prompts user for an engineering question
+4. Returns RAG + LLM response
 """
+import os
 import subprocess
-import json
 from pathlib import Path
-from mil_std_rag import MILStandardRAG, extract_cad_properties_from_assembly
+from dotenv import load_dotenv
+from mil_std_rag import MILStandardRAG
 
 
-class CADComplianceChecker:
-    def __init__(self, api_key: str, assembly_script: str = "test_assembly.py"):
-        """
-        Initialize compliance checker.
-        
-        Args:
-            api_key: NVIDIA API key
-            assembly_script: Path to test_assembly.py
-        """
-        self.api_key = api_key
-        self.assembly_script = assembly_script
-        self.rag = MILStandardRAG(api_key)
+def extract_cad_data(assembly_script: str = "test_assembly.py") -> dict:
+    """Run test_assembly.py and parse CAD properties from its stdout."""
+    print("[1/3] Connecting to SolidWorks and extracting CAD data...")
+    try:
+        result = subprocess.run(
+            ["python", assembly_script],
+            capture_output=True,
+            text=True,
+        )
+        output = result.stdout
+        if result.returncode != 0:
+            print(f"  Warning: script exited with code {result.returncode}")
+            if result.stderr:
+                print(f"  Stderr: {result.stderr[:200]}")
+        return _parse_cad_output(output)
+    except Exception as e:
+        print(f"  ERROR running {assembly_script}: {e}")
+        return {}
 
-    def extract_cad_data(self) -> dict:
-        """
-        Run test_assembly.py and extract properties from output.
-        
-        Returns:
-            CAD properties dict
-        """
-        print("Extracting CAD data from assembly...")
-        
+
+def _parse_cad_output(output: str) -> dict:
+    """Parse the printed output of test_assembly.py into a dict."""
+    props = {}
+    for line in output.split("\n"):
+        line = line.strip()
         try:
-            result = subprocess.run(
-                ["python", self.assembly_script],
-                capture_output=True,
-                text=True,
-                cwd=Path(self.assembly_script).parent
-            )
-            
-            output = result.stdout
-            print("CAD extraction output:")
-            print(output[:500] + "..." if len(output) > 500 else output)
-            
-            # Parse the raw array data from output
-            cad_props = self._parse_cad_output(output)
-            return cad_props
-            
-        except Exception as e:
-            print(f"Error running assembly script: {e}")
-            return {}
-
-    def _parse_cad_output(self, output: str) -> dict:
-        """Extract CAD properties from test_assembly.py output."""
-        props = {}
-        
-        # Extract mass
-        if "Mass:" in output:
-            for line in output.split("\n"):
-                if "Mass:" in line:
-                    parts = line.split()
-                    if len(parts) > 1:
-                        props["mass_kg"] = float(parts[2])
-                elif "Volume:" in line:
-                    parts = line.split()
-                    if len(parts) > 1:
-                        props["volume_mm3"] = float(parts[2])
-                elif "Surface Area:" in line:
-                    parts = line.split()
-                    if len(parts) > 1:
-                        props["surface_mm2"] = float(parts[3])
-                elif "Center of Mass" in line:
-                    # Parse CG values
-                    if "X=" in line:
-                        try:
-                            x_str = line.split("X=")[1].split("mm")[0]
-                            y_str = line.split("Y=")[1].split("mm")[0]
-                            z_str = line.split("Z=")[1].split("mm")[0]
-                            props["cg_x"] = float(x_str)
-                            props["cg_y"] = float(y_str)
-                            props["cg_z"] = float(z_str)
-                        except:
-                            pass
-        
-        # Extract file path
-        if "Path:" in output:
-            for line in output.split("\n"):
-                if "Path:" in line:
-                    parts = line.split("Path: ")
-                    if len(parts) > 1:
-                        props["file_path"] = parts[1].split(",")[0]
-        
-        return props
-
-    def check_compliance(self, question: str = "Does this design fit MIL-STD-1472?") -> str:
-        """
-        Check CAD design compliance against MIL-STD.
-        
-        Args:
-            question: Specific compliance question
-            
-        Returns:
-            LLM-generated compliance analysis
-        """
-        # Get CAD data
-        cad_props = self.extract_cad_data()
-        
-        if not cad_props:
-            return "ERROR: Could not extract CAD properties"
-        
-        print(f"\nCAD Properties extracted:")
-        for key, value in cad_props.items():
-            print(f"  {key}: {value}")
-        
-        # Query RAG with CAD context
-        print(f"\nQuerying compliance: {question}")
-        response = self.rag.query_compliance(cad_props, question)
-        
-        return response
+            if "-> Mass:" in line:
+                props["mass_kg"] = float(line.split()[2])
+            elif "-> Volume:" in line:
+                props["volume_mm3"] = float(line.split()[2])
+            elif "-> Surface Area:" in line:
+                props["surface_mm2"] = float(line.split()[3])
+            elif "Center of Mass (CG):" in line:
+                props["cg_x"] = float(line.split("X=")[1].split("mm")[0])
+                props["cg_y"] = float(line.split("Y=")[1].split("mm")[0])
+                props["cg_z"] = float(line.split("Z=")[1].split("mm")[0])
+            elif "Path:" in line and "Saved:" in line:
+                props["file_path"] = line.split("Path: ")[1].split(",")[0].strip()
+        except (IndexError, ValueError):
+            pass
+    return props
 
 
-def format_compliance_report(response: str) -> str:
-    """Format LLM response as a compliance report."""
-    return f"""
-{'=' * 70}
-MIL-STD-1472 COMPLIANCE ANALYSIS
-{'=' * 70}
-{response}
-{'=' * 70}
-"""
+def print_cad_summary(props: dict):
+    """Print extracted CAD properties in a readable format."""
+    print("\n  Extracted CAD Properties:")
+    print(f"    Mass:          {props.get('mass_kg', 'N/A')} kg")
+    print(f"    Volume:        {props.get('volume_mm3', 'N/A')} mm³")
+    print(f"    Surface Area:  {props.get('surface_mm2', 'N/A')} mm²")
+    print(f"    CG:            X={props.get('cg_x','N/A')}mm  Y={props.get('cg_y','N/A')}mm  Z={props.get('cg_z','N/A')}mm")
+    print(f"    File:          {props.get('file_path', 'Unknown')}")
 
 
 if __name__ == "__main__":
-    import sys
-    
-    # Configuration
-    API_KEY = "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"
-    
-    # Check that vector store exists
-    if not Path("mil_std_embeddings.json").exists():
-        print("ERROR: Vector store not found!")
-        print("Run: python setup_rag.py")
-        sys.exit(1)
-    
-    # Initialize checker
-    checker = CADComplianceChecker(API_KEY)
-    
-    # Run compliance check
-    response = checker.check_compliance(
-        question="Does this design fit MIL-STD-1472 requirements for weight, center of mass, and dimensions?"
+    load_dotenv()
+    API_KEY = os.environ.get(
+        "NVIDIA_API_KEY",
+        "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"
     )
-    
-    # Print formatted report
-    print(format_compliance_report(response))
+
+    if not Path("mil_std_embeddings.json").exists():
+        print("ERROR: Vector store not found. Run: python setup_rag.py")
+        raise SystemExit(1)
+
+    # Step 1: Get CAD data
+    cad_props = extract_cad_data()
+    if not cad_props:
+        print("ERROR: Could not extract CAD properties. Is SolidWorks open with a model loaded?")
+        raise SystemExit(1)
+
+    print_cad_summary(cad_props)
+
+    # Step 2: Ask user for question
+    print("\n[2/3] Enter your engineering question (or press Enter for default):")
+    question = input("  > ").strip()
+    if not question:
+        question = (
+            "Based on the mass and CG height, what shock mount or isolator is recommended "
+            "for off-road vehicular vibration?"
+        )
+        print(f"  Using default: {question}")
+
+    # Step 3: RAG query
+    print("\n[3/3] Querying RAG engine...")
+    rag = MILStandardRAG(API_KEY)
+    response = rag.query_compliance(cad_props, question)
+
+    print("\n" + "=" * 60)
+    print(response)
+    print("=" * 60)

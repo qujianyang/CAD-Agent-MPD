@@ -47,20 +47,32 @@ class MILStandardRAG:
         return context
 
     def _query_llm(self, context: str, question: str) -> str:
-        prompt = f"""{context}
+        from langchain_core.messages import SystemMessage
 
-## COMPLIANCE QUESTION
+        system_msg = SystemMessage(content=(
+            "You are an expert mechanical engineer. "
+            "Use the provided product catalog and engineering reference guide to recommend "
+            "an appropriate shock mount or isolator for the given design parameters. "
+            "Do not treat the provided document as a strict regulatory standard; it is a commercial catalog. "
+            "Extract relevant equations, matrices, and product series that match the "
+            "user's mass, CG, and environmental constraints."
+        ))
+
+        user_msg = HumanMessage(content=f"""{context}
+
+## ENGINEER QUESTION
 {question}
 
-## ANALYSIS
-Based on the CAD design data and retrieved standard sections above, provide a compliance assessment:
-1. Whether the design meets the standard
-2. Which requirements apply
-3. Any risks or concerns
-4. Recommendations for improvement
-"""
-        print("Querying LLM for compliance analysis...")
-        response = self.llm.invoke([HumanMessage(content=prompt)])
+## RESPONSE
+Based on the CAD design data and catalog sections above:
+1. Recommended shock mount / isolator product series and why
+2. Key equations or load matrix values that apply
+3. Any sizing concerns based on mass and CG
+4. Next steps for the drafter
+""")
+
+        print("Querying LLM for engineering recommendation...")
+        response = self.llm.invoke([system_msg, user_msg])
         return response.content
 
 
