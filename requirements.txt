@@ -1,6 +1,9 @@
 requests
+python-dotenv
 pymupdf4llm
 PyMuPDF
 pywin32
 sentence-transformers
 numpy
+langchain-nvidia-ai-endpoints
+# .\mpd\Scripts\Activate.ps1

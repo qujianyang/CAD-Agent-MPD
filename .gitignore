@@ -1,0 +1,55 @@
+# ==========================================
+# Language & Runtime Caches
+# ==========================================
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Node/JavaScript cache (if applicable)
+node_modules/
+.npm/
+.eslintcache
+
+# ==========================================
+# Virtual Environments & Tooling
+# ==========================================
+.venv/
+venv/
+env/
+.env
+*.bak
+*.log
+
+# ==========================================
+# IDE and Editor Specs
+# ==========================================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ==========================================
+# System / OS Cache Files
+# ==========================================
+# macOS clutter
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows clutter
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+# ==========================================
+# Language & Runtime Caches / Local Envs
+# ==========================================
+mpd/
+__pycache__/
+*.pyc

@@ -41,13 +41,14 @@ def setup_rag_pipeline(pdf_path: str, api_key: str, output_store: str = "mil_std
     
     # Step 2: Create embeddings via NVIDIA API or local
     print(f"\n[2/3] Generating embeddings ({'local' if use_local else 'NVIDIA API'})...")
-    embedder = NVIDIAEmbedder(api_key, model="nvidia/NV-Embed-QA", use_local=use_local)
-    
+    embedder = NVIDIAEmbedder(api_key, use_local=use_local)
+
     # Test API if not using local
     if not use_local:
         if not embedder.test_api_key():
             print("\n⚠ API test failed. Falling back to local embeddings...")
             use_local = True
+            embedder.use_local = True  # sync state so embed_text uses local path
     
     if use_local:
         print("Initializing local embedding model...")
@@ -86,7 +87,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Configuration
-    PDF_PATH = r"C:\JY Git\MIL-STD-1472H 1.pdf"
+    PDF_PATH = r"C:\Users\qujia\QuantumKeyDistribution\CAD-Agent-MPD\iso_select[1].pdf"
     API_KEY = "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"
     
     if not Path(PDF_PATH).exists():
