@@ -18,7 +18,7 @@ from mil_std_rag import MILStandardRAG
 
 # ---------- Page config ----------
 st.set_page_config(
-    page_title="CAD-Aware Engineering Assistant",
+    page_title="Design Assistant",
     page_icon="🔧",
     layout="wide",
 )
@@ -51,7 +51,7 @@ if "last_response" not in st.session_state:
 
 
 # ---------- Header ----------
-st.title("🔧 CAD-Aware Engineering Design Assistant")
+st.title("🔧 Design Assistant")
 st.caption("Bridge live SolidWorks CAD data with shock-mount catalogs via RAG + LLM")
 
 if not Path("mil_std_embeddings.json").exists():

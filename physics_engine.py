@@ -1,0 +1,319 @@
+"""
+Shock isolation physics engine.
+Formulas transcribed from: Shock Isolator_850kg_4 Bayed 35U.xls
+Pulse type: Saw-Tooth acceleration profile.
+"""
+import math
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Data classes
+# ---------------------------------------------------------------------------
+
+@dataclass
+class IsolatorSpec:
+    name: str
+    k_comp_Nm: float      # Compression stiffness [N/m]
+    k_shear_Nm: float     # Shear/roll stiffness [N/m]
+    d_max_comp_mm: float  # Max deflection, compression [mm]
+    d_max_shear_mm: float # Max deflection, shear [mm]
+
+
+@dataclass
+class ShockEnv:
+    Ao_G: float = 20.0    # Shock magnitude [G]
+    to_s: float = 0.011   # Shock pulse duration [s]  (saw-tooth)
+    GT_limit_G: float = 10.0  # Max allowable transmitted G
+
+
+@dataclass
+class DirectionResult:
+    label: str            # e.g. "Compression — Z (vertical)"
+    k_Nm: float
+    m_kg: float           # Load per isolator
+    V_ms: float           # Velocity change [m/s]
+    fn_Hz: float          # Natural frequency [Hz]
+    GT_G: float           # Transmitted G
+    delta_mm: float       # Dynamic deflection [mm]
+    GT_limit: float
+    delta_limit_mm: float
+
+    @property
+    def GT_ok(self) -> bool:
+        return self.GT_G < self.GT_limit
+
+    @property
+    def delta_ok(self) -> bool:
+        return self.delta_mm < self.delta_limit_mm
+
+    @property
+    def passed(self) -> bool:
+        return self.GT_ok and self.delta_ok
+
+
+@dataclass
+class PhysicsReport:
+    mass_kg: float
+    n_bottom: int
+    n_wall: int
+    isolator: IsolatorSpec
+    shock_env: ShockEnv
+    directions: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+
+    @property
+    def all_passed(self) -> bool:
+        return all(d.passed for d in self.directions)
+
+
+# ---------------------------------------------------------------------------
+# Catalog — add more isolators here as you source new parts
+# ---------------------------------------------------------------------------
+
+CB1400_15 = IsolatorSpec(
+    name="CB1400-15",
+    k_comp_Nm=464_086.126,  # 2650 lb/in
+    k_shear_Nm=189_136.987, # 1080 lb/in
+    d_max_comp_mm=35.56,    # 1.4 in
+    d_max_shear_mm=40.64,   # 1.6 in
+)
+
+DEFAULT_ISOLATOR = CB1400_15
+
+
+# ---------------------------------------------------------------------------
+# Core calculations
+# ---------------------------------------------------------------------------
+
+def _velocity_change(g: float, Ao_G: float, to_s: float) -> float:
+    """Saw-tooth pulse: V = 0.5 * g * Ao * to"""
+    return 0.5 * g * Ao_G * to_s
+
+
+def _natural_freq(k_Nm: float, m_kg: float) -> float:
+    """fn = (1 / 2π) * sqrt(k / m)"""
+    return (1.0 / (2.0 * math.pi)) * math.sqrt(k_Nm / m_kg)
+
+
+def _transmitted_g(fn_Hz: float, V_ms: float, g: float) -> float:
+    """GT = (2π * fn * V) / g"""
+    return (2.0 * math.pi * fn_Hz * V_ms) / g
+
+
+def _dynamic_deflection_mm(V_ms: float, fn_Hz: float) -> float:
+    """ΔD = V / (2π * fn)  →  converted to mm"""
+    return (V_ms / (2.0 * math.pi * fn_Hz)) * 1000.0
+
+
+def _calc_direction(
+    label: str,
+    k_Nm: float,
+    m_kg: float,
+    d_max_mm: float,
+    env: ShockEnv,
+    g: float = 9.81,
+) -> DirectionResult:
+    V  = _velocity_change(g, env.Ao_G, env.to_s)
+    fn = _natural_freq(k_Nm, m_kg)
+    GT = _transmitted_g(fn, V, g)
+    dD = _dynamic_deflection_mm(V, fn)
+    return DirectionResult(
+        label=label, k_Nm=k_Nm, m_kg=m_kg,
+        V_ms=V, fn_Hz=fn, GT_G=GT, delta_mm=dD,
+        GT_limit=env.GT_limit_G, delta_limit_mm=d_max_mm,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Load distribution
+# ---------------------------------------------------------------------------
+
+def _loads_per_isolator(
+    mass_kg: float,
+    n_bottom: int,
+    n_wall: int,
+    cg_x_mm: float = 0.0,
+    cg_y_mm: float = 0.0,
+    footprint_x_mm: float = 0.0,  # half-width between bottom mount pairs
+    footprint_y_mm: float = 0.0,  # half-depth between bottom mount pairs
+) -> dict:
+    """
+    Returns effective mass per isolator for each direction.
+
+    Uniform distribution (CG at centre):
+      - Vertical Z   → bottom mounts only
+      - Horizontal Y → wall mounts (comp) + contributing bottom (matching Excel: n_wall + n_bottom for total)
+      - Horizontal X → same as Y
+
+    CG-offset correction (Sum of Moments):
+      If footprint dimensions are supplied and CG is off-centre, front/rear
+      bottom mounts carry unequal vertical loads.
+    """
+    n_total = n_bottom + n_wall
+
+    m_vertical   = mass_kg / n_bottom  # Z: bottom mounts carry full weight
+    m_horizontal = mass_kg / n_total   # X/Y: all mounts share lateral load
+
+    # CG moment correction for vertical load (front vs rear bottom pairs)
+    # Only applied when footprint is known (non-zero) and CG is offset.
+    m_bottom_front = m_bottom_rear = m_vertical  # default: equal
+    if footprint_y_mm > 0 and cg_y_mm != 0:
+        # Simple two-pair beam: R_front = W*(L/2 + cg_y) / L
+        # where L = 2*footprint_y_mm (centre-to-centre of front/rear pairs)
+        L = 2.0 * footprint_y_mm
+        n_front = n_rear = n_bottom // 2
+        if n_front > 0:
+            R_front = mass_kg * 9.81 * (footprint_y_mm + cg_y_mm) / L
+            R_rear  = mass_kg * 9.81 - R_front
+            m_bottom_front = (R_front / 9.81) / n_front
+            m_bottom_rear  = (R_rear  / 9.81) / n_rear
+
+    return {
+        "m_comp_vertical_kg":   m_vertical,
+        "m_horizontal_kg":      m_horizontal,
+        "m_bottom_front_kg":    m_bottom_front,
+        "m_bottom_rear_kg":     m_bottom_rear,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def run_analysis(
+    mass_kg: float,
+    n_bottom: int = 6,
+    n_wall: int = 4,
+    cad_props: Optional[dict] = None,
+    shock_env: Optional[ShockEnv] = None,
+    isolator: Optional[IsolatorSpec] = None,
+    g: float = 9.81,
+) -> PhysicsReport:
+    """
+    Full shock isolation analysis.
+
+    Args:
+        mass_kg:    Total system mass from CAD.
+        n_bottom:   Number of bottom-mounted isolators.
+        n_wall:     Number of wall-mounted isolators.
+        cad_props:  Full CAD dict (used for CG, dimensions, warnings).
+        shock_env:  Shock environment (defaults to 20G, 11ms saw-tooth).
+        isolator:   Isolator specification (defaults to CB1400-15).
+    """
+    env  = shock_env or ShockEnv()
+    spec = isolator  or DEFAULT_ISOLATOR
+
+    # Extract optional geometry from CAD
+    cg_x = cg_y = cg_z = 0.0
+    width_mm = depth_mm = height_mm = 0.0
+    if cad_props:
+        cg_x       = cad_props.get("cg_x", 0.0) or 0.0
+        cg_y       = cad_props.get("cg_y", 0.0) or 0.0
+        cg_z       = cad_props.get("cg_z", 0.0) or 0.0
+        width_mm   = cad_props.get("width_mm", 0.0)  or 0.0
+        depth_mm   = cad_props.get("depth_mm", 0.0)  or 0.0
+        height_mm  = cad_props.get("height_mm", 0.0) or 0.0
+
+    loads = _loads_per_isolator(
+        mass_kg, n_bottom, n_wall,
+        cg_x_mm=cg_x, cg_y_mm=cg_y,
+        footprint_x_mm=width_mm / 2.0,
+        footprint_y_mm=depth_mm / 2.0,
+    )
+
+    directions = [
+        _calc_direction(
+            "Compression — Z (vertical, bottom mounts)",
+            spec.k_comp_Nm, loads["m_comp_vertical_kg"],
+            spec.d_max_comp_mm, env, g,
+        ),
+        _calc_direction(
+            "Compression — Y (lateral, wall mounts)",
+            spec.k_comp_Nm, loads["m_horizontal_kg"],
+            spec.d_max_comp_mm, env, g,
+        ),
+        _calc_direction(
+            "Shear/Roll — X & Z (all mounts)",
+            spec.k_shear_Nm, loads["m_horizontal_kg"],
+            spec.d_max_shear_mm, env, g,
+        ),
+    ]
+
+    # --- Warnings ---
+    warnings = []
+
+    # CG height: overturning risk if CG > 60 % of height
+    if height_mm > 0 and cg_z > 0:
+        ratio = cg_z / height_mm
+        if ratio > 0.6:
+            warnings.append(
+                f"High CG: CG is at {cg_z:.0f} mm ({ratio*100:.0f}% of height {height_mm:.0f} mm). "
+                "Consider vertical stabiliser bars or reduced top-heavy loading."
+            )
+
+    # GT failure
+    for d in directions:
+        if not d.GT_ok:
+            warnings.append(
+                f"FAIL [{d.label}]: GT = {d.GT_G:.2f} G exceeds limit {d.GT_limit} G."
+            )
+        if not d.delta_ok:
+            warnings.append(
+                f"FAIL [{d.label}]: ΔD = {d.delta_mm:.1f} mm exceeds limit {d.delta_limit_mm} mm."
+            )
+
+    return PhysicsReport(
+        mass_kg=mass_kg,
+        n_bottom=n_bottom,
+        n_wall=n_wall,
+        isolator=spec,
+        shock_env=env,
+        directions=directions,
+        warnings=warnings,
+    )
+
+
+def format_report(report: PhysicsReport) -> str:
+    """Human-readable report string for CLI or LLM context injection."""
+    lines = [
+        "=" * 60,
+        "SHOCK ISOLATION PHYSICS ANALYSIS",
+        f"  Isolator    : {report.isolator.name}",
+        f"  System Mass : {report.mass_kg:.1f} kg",
+        f"  Mounts      : {report.n_bottom} bottom + {report.n_wall} wall",
+        f"  Shock Env   : {report.shock_env.Ao_G} G, {report.shock_env.to_s*1000:.0f} ms (saw-tooth)",
+        "=" * 60,
+    ]
+    for d in report.directions:
+        status = "PASS" if d.passed else "FAIL"
+        lines += [
+            f"\n[{status}] {d.label}",
+            f"  Load/isolator : {d.m_kg:.2f} kg",
+            f"  k             : {d.k_Nm:,.0f} N/m",
+            f"  V             : {d.V_ms:.4f} m/s",
+            f"  fn            : {d.fn_Hz:.3f} Hz",
+            f"  GT            : {d.GT_G:.3f} G  (limit: {d.GT_limit} G)  {'OK' if d.GT_ok else 'FAIL'}",
+            f"  dD            : {d.delta_mm:.2f} mm  (limit: {d.delta_limit_mm} mm)  {'OK' if d.delta_ok else 'FAIL'}",
+        ]
+    if report.warnings:
+        lines += ["", "WARNINGS:"]
+        for w in report.warnings:
+            lines.append(f"  ⚠  {w}")
+    lines += ["", "Overall: " + ("ALL PASS" if report.all_passed else "ONE OR MORE FAILURES")]
+    lines.append("=" * 60)
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Quick smoke-test (matches Excel values)
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    report = run_analysis(
+        mass_kg=850.0,
+        n_bottom=6,
+        n_wall=4,
+        shock_env=ShockEnv(Ao_G=20.0, to_s=0.011, GT_limit_G=10.0),
+    )
+    print(format_report(report))
