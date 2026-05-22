@@ -128,3 +128,201 @@ print(response)
 How does this look for your repository's front page?
 
 ```
+AD Agent — Next Development Plan
+  
+     Context
+
+     Current state: working Streamlit app with fixed
+     pipeline (CAD extract → physics → catalog → LLM Q&A). 
+     Goal: evolve into an agentic tool-use system with a   
+     combined CG calculator, better RAG, and
+     server-deployable web app.
+     Immediate trigger: boss requested combined CG of      
+     multi-part assemblies.
+
+     ---
+     Build Order (each phase is a usable deliverable)      
+
+     Phase 1 — Combined CG Calculator (boss request, do    
+     first)
+
+     New file: cg_calculator.py
+     - Component dataclass: name, mass_kg, x_mm, y_mm, z_mm
+     - combined_cg(components) -> dict — weighted average  
+     formula
+     - equipment_db.json — pre-loaded catalog of common    
+     items (server racks, UPS, generators, switches) with  
+     typical mass + CG offset
+     - Streamlit tab in app.py: pick items from DB + set   
+     mount position → live CG updates
+
+     Value: engineer builds a rack loadout before
+     SolidWorks model exists, sees CG shift in real time.  
+
+     ---
+     Phase 2 — Agent Core (tool-use architecture)
+
+     New file: agent.py
+
+     Wrap existing functions as LangChain tools (use @tool 
+     decorator, docstring = tool description the LLM       
+     reads):
+
+     Tool name: extract_cad_data
+     Wraps: cad_compliance_checker.extract_cad_data()      
+     Input: file path or "active"
+     ────────────────────────────────────────
+     Tool name: run_shock_analysis
+     Wraps: physics_engine.run_analysis()
+     Input: mass_kg, n_bottom, n_wall, env params
+     ────────────────────────────────────────
+     Tool name: select_isolator
+     Wraps: catalog.select_and_analyze()
+     Input: mass_kg, mount counts
+     ────────────────────────────────────────
+     Tool name: calculate_combined_cg
+     Wraps: cg_calculator.combined_cg()
+     Input: list of components
+     ────────────────────────────────────────
+     Tool name: lookup_knowledge
+     Wraps: mil_std_rag retrieval
+     Input: topic string
+     ────────────────────────────────────────
+     Tool name: list_cad_files
+     Wraps: glob scan of a directory
+     Input: directory path
+
+     LLM upgrade: change from
+     nvidia/llama-3.1-nemotron-nano-8b-v1 to
+     meta/llama-3.1-70b-instruct on NVIDIA API — same      
+     endpoint, same key, proper tool-calling support.      
+
+     Agent loop: use
+     langchain.agents.create_tool_calling_agent +
+     AgentExecutor. Replace current rag.query_compliance() 
+     call in app.py with agent.invoke({"input": question,  
+     "cad_props": props}).
+
+     ---
+     Phase 3 — Hierarchical Knowledge Base
+
+     New folder: knowledge/
+
+     knowledge/
+       shock_mount/
+         summary.md      ← what it is, when to use
+         formulas.md     ← V, fn, GT, dD with units        
+         selection.md    ← CB1400 table + selection rules  
+       generator/
+         summary.md
+         sizing.md       ← derating, load calcs
+       thermal/
+         summary.md
+         heat_calc.md
+
+     Update nvidia_embedder.py + JSONVectorStore:
+     - Add parent_topic field to each chunk at embed time  
+     - lookup_knowledge(topic) tool first matches parent   
+     folder, then retrieves child chunks
+     - Replace setup_rag.py pipeline to walk knowledge/    
+     folder instead of one big PDF
+     - Each .md file = one chunk (they're intentionally    
+     small — no sentence splitting needed)
+
+     Why this beats current approach: no hallucination from
+      1000-page PDF context. LLM gets exactly 1-2 pages of 
+     authoritative formulas.
+
+     ---
+     Phase 4 — Web App Refresh (server-deployable)
+
+     Modify app.py:
+     - Remove hard dependency on SolidWorks being running —
+      make CAD extraction optional
+     - Add 3 tabs:
+       - Tab 1: CG Calculator (Phase 1 output) — no        
+     SolidWorks needed
+       - Tab 2: CAD + Shock Analysis (existing) — needs    
+     SolidWorks
+       - Tab 3: Agent Chat (Phase 2 output) — ask anything,
+      agent picks tools
+     - Remove hardcoded API key — .env only, error if      
+     missing
+     - Add requirements.txt with pinned versions
+
+     Deployment: streamlit run app.py --server.port 8501   
+     --server.address 0.0.0.0 — works on any server IT     
+     provisions.
+
+     ---
+     Files modified / created
+
+     ┌────────────────────┬────────────────────────────────
+     ┐
+     │        File        │             Action
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ cg_calculator.py   │ Create
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ equipment_db.json  │ Create
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ agent.py           │ Create
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ knowledge/ folder  │ Create (with .md files per     
+     │
+     │                    │ topic)
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │                    │ Modify — tabs, agent
+     │
+     │ app.py             │ integration, remove hardcoded  
+     │
+     │                    │ key
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ mil_std_rag.py     │ Modify — lookup_knowledge tool 
+     │
+     │                    │  wrapper
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ nvidia_embedder.py │ Modify — add parent_topic      
+     │
+     │                    │ field
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ setup_rag.py       │ Modify — walk knowledge/       
+     │
+     │                    │ folder
+     │
+     ├────────────────────┼────────────────────────────────
+     ┤
+     │ requirements.txt   │ Create
+     │
+     └────────────────────┴────────────────────────────────
+     ┘
+
+     ---
+     Verification
+
+     - Phase 1: Open app, build a rack with 3 items, verify
+      CG shifts correctly when you move one item
+     - Phase 2: Ask agent "what isolator for 850kg, 6      
+     bottom + 4 wall mounts?" — verify it calls
+     run_shock_analysis then select_isolator without being 
+     told to
+     - Phase 3: Ask about shock mount formulas — verify LLM
+      cites knowledge/shock_mount/formulas.md values, not  
+     hallucinated numbers
+     - Phase 4: Run on port 8501 with --server.address     
+     0.0.0.0, connect from another device on same network 

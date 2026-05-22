@@ -1,12 +1,18 @@
 """
-CB1400 Wire Rope Isolator catalog + automated part selection.
-Catalog data: datasheet 137R-103480 REV:5 (1/2" Wire Rope, CB1400 Series).
+Wire Rope Isolator catalog + automated part selection.
+Covers CB1400 (1/2"), CB1500 (5/8"), and CB1800 (1") series.
+
+Data sources:
+  CB1400 — datasheet 137R-103480 REV:5
+  CB1500 — datasheet REV:6 / VMC catalog 706-C
+  CB1800 — datasheet REV:7 / VMC catalog 706-C
 
 Selection logic:
   - GT must be below GT_limit for ALL directions (compression + shear)
   - Dynamic deflection must be below isolator's max travel for ALL directions
   - Among all valid candidates, prefer the SOFTEST (lowest K) that still passes.
     Softer = lower transmitted G = better isolation.
+  - By default all three series are scanned; pass catalog=CB1400_CATALOG etc. to restrict.
 """
 import math
 from dataclasses import dataclass, field
@@ -22,7 +28,7 @@ _IN_TO_MM     = 25.4        # 1 inch  = 25.4 mm
 
 
 # ---------------------------------------------------------------------------
-# Catalog data
+# Catalog entry dataclass
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -34,6 +40,11 @@ class CatalogEntry:
     k_shear_lbin: float     # Shock Average K — Shear/Roll [lb/in]
     d_max_comp_in: float    # Max Rated Dynamic Travel — Compression [in]
     d_max_shear_in: float   # Max Rated Dynamic Travel — Shear/Roll [in]
+
+    @property
+    def series(self) -> str:
+        """Derive series name from part number, e.g. 'CB1400-15' → 'CB1400'."""
+        return self.part_no.rsplit("-", 1)[0]
 
     # ---- unit-converted properties ----
     @property
@@ -55,7 +66,9 @@ class CatalogEntry:
         )
 
 
-# All 10 variants — data read from 137R-103480 REV:5
+# ---------------------------------------------------------------------------
+# CB1400 — 1/2" wire rope  (10 variants, datasheet REV:5)
+# ---------------------------------------------------------------------------
 CB1400_CATALOG: list[CatalogEntry] = [
     #                          part_no        H      W     Kcomp  Kshear  dComp  dShear
     CatalogEntry("CB1400-10", 3.00, 3.31,  3515,  1801,  1.10,  1.10),
@@ -70,6 +83,34 @@ CB1400_CATALOG: list[CatalogEntry] = [
     CatalogEntry("CB1400-60", 6.10, 7.10,   265,   145,  4.00,  3.60),
 ]
 
+# ---------------------------------------------------------------------------
+# CB1500 — 5/8" wire rope  (6 variants, datasheet REV:6 / VMC catalog 706-C)
+# ---------------------------------------------------------------------------
+CB1500_CATALOG: list[CatalogEntry] = [
+    #                          part_no        H      W     Kcomp  Kshear  dComp  dShear
+    CatalogEntry("CB1500-12", 3.50, 4.00,  5375,  2735,  1.20,  1.20),
+    CatalogEntry("CB1500-15", 3.90, 4.40,  3655,  1870,  1.40,  1.40),
+    CatalogEntry("CB1500-20", 4.30, 5.30,  2585,  1250,  1.80,  1.80),
+    CatalogEntry("CB1500-30", 4.70, 6.00,  1610,   800,  2.20,  2.20),
+    CatalogEntry("CB1500-40", 5.00, 6.50,  1155,   560,  2.40,  2.40),
+    CatalogEntry("CB1500-50", 5.30, 7.00,   795,   410,  3.20,  3.20),
+]
+
+# ---------------------------------------------------------------------------
+# CB1800 — 1" wire rope  (5 variants, datasheet REV:7 / VMC catalog 706-C)
+# ---------------------------------------------------------------------------
+CB1800_CATALOG: list[CatalogEntry] = [
+    #                          part_no        H      W      Kcomp   Kshear  dComp  dShear
+    CatalogEntry("CB1800-15", 5.25, 5.50,  12100,  6220,  2.00,  2.00),
+    CatalogEntry("CB1800-17", 6.00, 6.50,   9300,  4470,  2.40,  2.40),
+    CatalogEntry("CB1800-20", 6.25, 7.00,   5910,  2840,  2.80,  2.80),
+    CatalogEntry("CB1800-30", 7.50, 8.25,   3080,  1440,  3.60,  3.60),
+    CatalogEntry("CB1800-40", 8.50, 9.25,   2050,   870,  4.00,  4.00),
+]
+
+# Combined — all series, used by default
+ALL_CATALOGS: list[CatalogEntry] = CB1400_CATALOG + CB1500_CATALOG + CB1800_CATALOG
+
 
 # ---------------------------------------------------------------------------
 # Selection result
@@ -78,9 +119,9 @@ CB1400_CATALOG: list[CatalogEntry] = [
 @dataclass
 class CatalogCandidate:
     entry: CatalogEntry
-    comp_vertical:   DirectionResult   # Compression, Z (bottom mounts)
-    comp_horizontal: DirectionResult   # Compression, Y (wall mounts)
-    shear_horizontal: DirectionResult  # Shear/Roll, X & Z
+    comp_vertical:    DirectionResult   # Compression, Z (bottom mounts)
+    comp_horizontal:  DirectionResult   # Compression, Y (wall mounts)
+    shear_horizontal: DirectionResult   # Shear/Roll, X & Z
 
     @property
     def valid(self) -> bool:
@@ -114,10 +155,19 @@ def select_isolator(
     m_comp_vertical_kg: float,
     m_horizontal_kg: float,
     env: ShockEnv,
+    catalog: Optional[list[CatalogEntry]] = None,
     g: float = 9.81,
 ) -> list[CatalogCandidate]:
     """
-    Evaluate every CB1400 catalog entry against the load and shock environment.
+    Evaluate every catalog entry against the load and shock environment.
+
+    Args:
+        m_comp_vertical_kg: Mass per bottom-mount isolator [kg]
+        m_horizontal_kg:    Mass per wall/all-mount isolator [kg]
+        env:                Shock environment (G, duration, limit)
+        catalog:            List of entries to scan. Defaults to ALL_CATALOGS
+                            (CB1400 + CB1500 + CB1800). Pass CB1400_CATALOG etc.
+                            to restrict to a single series.
 
     Returns all candidates sorted: valid first, then by ascending K_comp (softest first).
     The first entry in the returned list is the RECOMMENDED part.
@@ -126,8 +176,11 @@ def select_isolator(
       Lower K → lower fn → lower GT (less shock transmitted).
       We want the best isolation that still keeps dD within the isolator's travel limit.
     """
+    if catalog is None:
+        catalog = ALL_CATALOGS
+
     candidates = []
-    for entry in CB1400_CATALOG:
+    for entry in catalog:
         spec = entry.to_isolator_spec()
         comp_v  = _calc_direction("Compression - Z (vertical)",   spec.k_comp_Nm,  m_comp_vertical_kg, spec.d_max_comp_mm,  env, g)
         comp_h  = _calc_direction("Compression - Y (lateral)",    spec.k_comp_Nm,  m_horizontal_kg,    spec.d_max_comp_mm,  env, g)
@@ -145,6 +198,7 @@ def select_and_analyze(
     n_wall: int = 4,
     cad_props: Optional[dict] = None,
     shock_env: Optional[ShockEnv] = None,
+    catalog: Optional[list[CatalogEntry]] = None,
     g: float = 9.81,
 ) -> tuple[PhysicsReport, list[CatalogCandidate]]:
     """
@@ -160,7 +214,9 @@ def select_and_analyze(
     candidates = select_isolator(
         loads["m_comp_vertical_kg"],
         loads["m_horizontal_kg"],
-        env, g=g,
+        env,
+        catalog=catalog,
+        g=g,
     )
 
     best = next((c for c in candidates if c.valid), None)
@@ -183,20 +239,27 @@ def select_and_analyze(
 def format_selection_table(candidates: list[CatalogCandidate]) -> str:
     """
     ASCII table: all catalog entries with computed GT, dD, and PASS/FAIL.
-    Shows the engineer every option at a glance.
+    Shows the engineer every option at a glance, grouped by series.
     """
     header = (
-        f"{'Part':<14} {'Kcomp':>8} {'Kshear':>8} | "
+        f"{'Part':<14} {'Series':<8} {'Kcomp':>8} {'Kshear':>8} | "
         f"{'Vt-Z GT':>8} {'Vt-Z dD':>8} | "
         f"{'La-Y GT':>8} | "
         f"{'Sr GT':>8} {'Sr dD':>8} | "
         f"{'STATUS':>6}"
     )
     sep = "-" * len(header)
+
+    # Determine shock env from first candidate
+    env_str = ""
+    if candidates:
+        d0 = candidates[0].comp_vertical
+        env_str = f"20G / 11ms"  # default label; callers can customise
+
     lines = [
         "=" * len(header),
-        "CB1400 SERIES — SELECTION MATRIX (Shock Average K, Saw-Tooth 20G / 11ms)",
-        f"{'':14} {'lb/in':>8} {'lb/in':>8} | "
+        f"MULTI-SERIES SELECTION MATRIX (Shock Average K, Saw-Tooth {env_str})",
+        f"{'':14} {'':8} {'lb/in':>8} {'lb/in':>8} | "
         f"{'[G]':>8} {'[mm]':>8} | "
         f"{'[G]':>8} | "
         f"{'[G]':>8} {'[mm]':>8} | "
@@ -204,11 +267,13 @@ def format_selection_table(candidates: list[CatalogCandidate]) -> str:
         header,
         sep,
     ]
+
     for c in candidates:
         cv, ch, sh = c.comp_vertical, c.comp_horizontal, c.shear_horizontal
         status = "PASS" if c.valid else "FAIL"
         lines.append(
             f"{c.entry.part_no:<14} "
+            f"{c.entry.series:<8} "
             f"{c.entry.k_comp_lbin:>8.0f} "
             f"{c.entry.k_shear_lbin:>8.0f} | "
             f"{cv.GT_G:>8.3f} "
@@ -224,8 +289,8 @@ def format_selection_table(candidates: list[CatalogCandidate]) -> str:
     if valid_list:
         rec = valid_list[0]
         lines.append(
-            f"\nRECOMMENDED: {rec.entry.part_no}  "
-            f"(H={rec.entry.H_in}\" x W={rec.entry.W_in}\" | "
+            f"\nRECOMMENDED: {rec.entry.part_no}  ({rec.entry.series}, "
+            f"H={rec.entry.H_in}\" x W={rec.entry.W_in}\" | "
             f"worst GT ratio: {rec.worst_GT_ratio:.2%} of limit)"
         )
         lines.append(_math_proof(rec))
@@ -236,13 +301,9 @@ def format_selection_table(candidates: list[CatalogCandidate]) -> str:
 
 
 def _math_proof(c: CatalogCandidate) -> str:
-    """
-    Step-by-step proof block for the recommended part — satisfies Feature 4
-    (transparent engineering validation: shows formulas + values + limits).
-    """
     e = c.entry
     lines = [
-        f"\nMATHEMATICAL PROOF — {e.part_no}",
+        f"\nMATHEMATICAL PROOF — {e.part_no}  [{e.series}]",
         f"  K_comp  = {e.k_comp_lbin} lb/in  ->  {e.k_comp_Nm:,.0f} N/m",
         f"  K_shear = {e.k_shear_lbin} lb/in  ->  {e.k_shear_Nm:,.0f} N/m",
         f"  dMax_comp  = {e.d_max_comp_in} in  ->  {e.d_max_comp_mm:.2f} mm",
@@ -263,39 +324,76 @@ def _math_proof(c: CatalogCandidate) -> str:
 
 def selection_context_for_llm(candidates: list[CatalogCandidate]) -> str:
     """
-    Compact summary injected into LLM system prompt so the AI explains
+    Compact summary injected into LLM context so the AI explains
     the recommendation rather than inventing its own numbers.
     """
     valid = [c for c in candidates if c.valid]
     fail  = [c for c in candidates if not c.valid]
     rec   = valid[0] if valid else None
 
-    parts = []
-    parts.append("=== CATALOG SELECTION RESULTS ===")
+    parts = ["=== CATALOG SELECTION RESULTS ==="]
     if rec:
         d = rec.limiting_direction
         parts.append(
-            f"RECOMMENDED PART: {rec.entry.part_no}\n"
+            f"RECOMMENDED PART: {rec.entry.part_no}  (Series: {rec.entry.series})\n"
             f"  K_comp = {rec.entry.k_comp_lbin} lb/in | K_shear = {rec.entry.k_shear_lbin} lb/in\n"
+            f"  Physical size: H={rec.entry.H_in}\" x W={rec.entry.W_in}\"\n"
             f"  Limiting direction: {d.label}\n"
             f"    fn={d.fn_Hz:.2f} Hz | GT={d.GT_G:.2f} G (limit {d.GT_limit} G) | "
             f"dD={d.delta_mm:.1f} mm (limit {d.delta_limit_mm:.1f} mm)"
         )
-        parts.append(f"  Also valid (softer alternatives): " +
-                     ", ".join(c.entry.part_no for c in valid[1:]) if len(valid) > 1 else "  No softer alternative passes.")
+        if len(valid) > 1:
+            parts.append("  Also valid (softer alternatives): " +
+                         ", ".join(c.entry.part_no for c in valid[1:]))
+        else:
+            parts.append("  No softer alternative passes.")
     else:
-        parts.append("NO VALID PART FOUND in CB1400 catalog for this load/shock combination.")
-    parts.append(f"Parts that FAIL: " + ", ".join(c.entry.part_no for c in fail))
+        parts.append("NO VALID PART FOUND in any catalog series for this load/shock combination.")
+    parts.append("Parts that FAIL: " + ", ".join(c.entry.part_no for c in fail))
     return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
-# CLI smoke-test
+# CLI entry point — extracts mass from live SolidWorks CAD, then selects
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    env = ShockEnv(Ao_G=20.0, to_s=0.011, GT_limit_G=10.0)
+    import sys
+    from cad_compliance_checker import extract_cad_data
+
+    # --- Mount configuration (edit to match your assembly) ---
+    N_BOTTOM = 6
+    N_WALL   = 4
+    ENV      = ShockEnv(Ao_G=20.0, to_s=0.011, GT_limit_G=10.0)
+
+    # --- Pull mass (and CG/envelope) from SolidWorks ---
+    print("Extracting CAD data from SolidWorks...")
+    cad_props = extract_cad_data()
+
+    if not cad_props or not cad_props.get("mass_kg"):
+        print("WARNING: Could not extract CAD data. Using fallback mass = 850 kg.")
+        mass_kg   = 850.0
+        cad_props = {"mass_kg": mass_kg}
+    else:
+        mass_kg = cad_props["mass_kg"]
+        print(f"  Mass from CAD : {mass_kg:.2f} kg")
+        print(f"  CG (X,Y,Z)   : {cad_props.get('cg_x','?')}, "
+              f"{cad_props.get('cg_y','?')}, {cad_props.get('cg_z','?')} mm")
+        print(f"  Envelope     : W={cad_props.get('width_mm','?')} "
+              f"D={cad_props.get('depth_mm','?')} "
+              f"H={cad_props.get('height_mm','?')} mm")
+
+    # --- Run selection across all series ---
+    # CG/envelope from SolidWorks coordinates are not yet calibrated —
+    # pass only mass to the physics engine until coordinate origin is resolved.
+    print(f"\nRunning selection for {mass_kg:.1f} kg, "
+          f"{N_BOTTOM} bottom + {N_WALL} wall mounts ...\n")
+
     report, candidates = select_and_analyze(
-        mass_kg=850.0, n_bottom=6, n_wall=4, shock_env=env
+        mass_kg=mass_kg,
+        n_bottom=N_BOTTOM,
+        n_wall=N_WALL,
+        cad_props=None,
+        shock_env=ENV,
     )
     print(format_selection_table(candidates))
     print()
