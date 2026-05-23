@@ -149,11 +149,42 @@ class JSONVectorStore:
             return 0.0
         return dot / (n1 * n2)
 
-    def search(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query_embedding: List[float],
+        top_k: int = 5,
+        parent_topic: str | None = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Cosine-similarity search over the stored chunks.
+
+        Args:
+            query_embedding: Embedded query vector.
+            top_k:           Number of results to return.
+            parent_topic:    Optional — restrict search to chunks whose
+                             `parent_topic` matches (e.g. "shock_mount").
+                             Set to None to search across all topics.
+
+        Returns each hit with: id, content, similarity, plus any chunk
+        metadata (parent_topic, child_name, title, source_path) if present.
+        """
         chunks = self.load()["chunks"]
-        scored = [
-            {"id": c["id"], "content": c["content"], "similarity": self.cosine_similarity(query_embedding, c["embedding"])}
-            for c in chunks if "embedding" in c
-        ]
+        if parent_topic:
+            chunks = [c for c in chunks if c.get("parent_topic") == parent_topic]
+
+        scored = []
+        for c in chunks:
+            if "embedding" not in c:
+                continue
+            hit = {
+                "id":           c.get("id"),
+                "content":      c.get("content", ""),
+                "similarity":   self.cosine_similarity(query_embedding, c["embedding"]),
+                "parent_topic": c.get("parent_topic"),
+                "child_name":   c.get("child_name"),
+                "title":        c.get("title"),
+                "source_path":  c.get("source_path"),
+            }
+            scored.append(hit)
         scored.sort(key=lambda x: x["similarity"], reverse=True)
         return scored[:top_k]

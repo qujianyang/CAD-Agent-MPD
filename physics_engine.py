@@ -134,47 +134,35 @@ def _loads_per_isolator(
     mass_kg: float,
     n_bottom: int,
     n_wall: int,
-    cg_x_mm: float = 0.0,
-    cg_y_mm: float = 0.0,
-    footprint_x_mm: float = 0.0,  # half-width between bottom mount pairs
-    footprint_y_mm: float = 0.0,  # half-depth between bottom mount pairs
 ) -> dict:
     """
-    Returns effective mass per isolator for each direction.
+    Returns effective mass per isolator for each of the FOUR analysis cases.
+    Formulas transcribed verbatim from "Shock Isolator_850kg_4 Bayed 35U.xls":
 
-    Uniform distribution (CG at centre):
-      - Vertical Z   → bottom mounts only
-      - Horizontal Y → wall mounts (comp) + contributing bottom (matching Excel: n_wall + n_bottom for total)
-      - Horizontal X → same as Y
+      | Case            | Direction | Excel formula        | Physical reasoning                           |
+      |-----------------|-----------|----------------------|----------------------------------------------|
+      | Comp - Bottom   | Z         | M / n_bottom         | Gravity is unidirectional; all bottom mounts |
+      |                 |           |                      | share the weight equally.                    |
+      | Comp - Wall     | Y         | M / n_wall   / 2     | Lateral Y shock: two opposing wall faces     |
+      |                 |           |                      | share the load (load-sharing factor 1/2).    |
+      | Roll - Wall     | X, Z      | M / n_wall   / 2     | Same load-sharing logic; shear stiffness.    |
+      | Roll - Bottom   | X, Y      | M / n_bottom / 2     | Same load-sharing logic; bottom mounts in    |
+      |                 |           |                      | shear.                                       |
 
-    CG-offset correction (Sum of Moments):
-      If footprint dimensions are supplied and CG is off-centre, front/rear
-      bottom mounts carry unequal vertical loads.
+    Validated against 850kg/CB1400-15 reference sheet — see __main__ smoke test.
     """
-    n_total = n_bottom + n_wall
-
-    m_vertical   = mass_kg / n_bottom  # Z: bottom mounts carry full weight
-    m_horizontal = mass_kg / n_total   # X/Y: all mounts share lateral load
-
-    # CG moment correction for vertical load (front vs rear bottom pairs)
-    # Only applied when footprint is known (non-zero) and CG is offset.
-    m_bottom_front = m_bottom_rear = m_vertical  # default: equal
-    if footprint_y_mm > 0 and cg_y_mm != 0:
-        # Simple two-pair beam: R_front = W*(L/2 + cg_y) / L
-        # where L = 2*footprint_y_mm (centre-to-centre of front/rear pairs)
-        L = 2.0 * footprint_y_mm
-        n_front = n_rear = n_bottom // 2
-        if n_front > 0:
-            R_front = mass_kg * 9.81 * (footprint_y_mm + cg_y_mm) / L
-            R_rear  = mass_kg * 9.81 - R_front
-            m_bottom_front = (R_front / 9.81) / n_front
-            m_bottom_rear  = (R_rear  / 9.81) / n_rear
+    if n_bottom <= 0 or n_wall <= 0:
+        raise ValueError("n_bottom and n_wall must both be > 0")
 
     return {
-        "m_comp_vertical_kg":   m_vertical,
-        "m_horizontal_kg":      m_horizontal,
-        "m_bottom_front_kg":    m_bottom_front,
-        "m_bottom_rear_kg":     m_bottom_rear,
+        # Z-axis vertical: all bottom mounts share gravity equally
+        "m_comp_bottom_kg":  mass_kg / n_bottom,
+        # Y-axis lateral compression on wall mounts (load-sharing 1/2)
+        "m_comp_wall_kg":    mass_kg / n_wall   / 2.0,
+        # X,Z-axis shear/roll on wall mounts (load-sharing 1/2)
+        "m_roll_wall_kg":    mass_kg / n_wall   / 2.0,
+        # X,Y-axis shear/roll on bottom mounts (load-sharing 1/2)
+        "m_roll_bottom_kg":  mass_kg / n_bottom / 2.0,
     }
 
 
@@ -205,38 +193,36 @@ def run_analysis(
     env  = shock_env or ShockEnv()
     spec = isolator  or DEFAULT_ISOLATOR
 
-    # Extract optional geometry from CAD
-    cg_x = cg_y = cg_z = 0.0
-    width_mm = depth_mm = height_mm = 0.0
+    # Extract optional geometry from CAD (for warnings only — load distribution
+    # follows the Excel reference and does NOT use CG/footprint corrections).
+    cg_z = 0.0
+    height_mm = 0.0
     if cad_props:
-        cg_x       = cad_props.get("cg_x", 0.0) or 0.0
-        cg_y       = cad_props.get("cg_y", 0.0) or 0.0
-        cg_z       = cad_props.get("cg_z", 0.0) or 0.0
-        width_mm   = cad_props.get("width_mm", 0.0)  or 0.0
-        depth_mm   = cad_props.get("depth_mm", 0.0)  or 0.0
-        height_mm  = cad_props.get("height_mm", 0.0) or 0.0
+        cg_z      = cad_props.get("cg_z", 0.0) or 0.0
+        height_mm = cad_props.get("height_mm", 0.0) or 0.0
 
-    loads = _loads_per_isolator(
-        mass_kg, n_bottom, n_wall,
-        cg_x_mm=cg_x, cg_y_mm=cg_y,
-        footprint_x_mm=width_mm / 2.0,
-        footprint_y_mm=depth_mm / 2.0,
-    )
+    loads = _loads_per_isolator(mass_kg, n_bottom, n_wall)
 
+    # 4 load cases — exactly matches the 4 Excel sheets.
     directions = [
         _calc_direction(
-            "Compression — Z (vertical, bottom mounts)",
-            spec.k_comp_Nm, loads["m_comp_vertical_kg"],
-            spec.d_max_comp_mm, env, g,
+            "Comp - Bottom (Z-axis, vertical)",
+            spec.k_comp_Nm,  loads["m_comp_bottom_kg"],
+            spec.d_max_comp_mm,  env, g,
         ),
         _calc_direction(
-            "Compression — Y (lateral, wall mounts)",
-            spec.k_comp_Nm, loads["m_horizontal_kg"],
-            spec.d_max_comp_mm, env, g,
+            "Comp - Wall (Y-axis, lateral)",
+            spec.k_comp_Nm,  loads["m_comp_wall_kg"],
+            spec.d_max_comp_mm,  env, g,
         ),
         _calc_direction(
-            "Shear/Roll — X & Z (all mounts)",
-            spec.k_shear_Nm, loads["m_horizontal_kg"],
+            "Roll - Wall (X,Z-axis, shear)",
+            spec.k_shear_Nm, loads["m_roll_wall_kg"],
+            spec.d_max_shear_mm, env, g,
+        ),
+        _calc_direction(
+            "Roll - Bottom (X,Y-axis, shear)",
+            spec.k_shear_Nm, loads["m_roll_bottom_kg"],
             spec.d_max_shear_mm, env, g,
         ),
     ]

@@ -22,6 +22,10 @@ from cad_compliance_checker import extract_cad_data as _extract_cad_data_raw
 # Module-level state — set by ShockMountAgent.__init__ before tools are called
 _api_key: Optional[str] = None
 _rag: Optional[object] = None
+_knowledge_embedder: Optional[object] = None
+_knowledge_store: Optional[object] = None
+
+KNOWLEDGE_STORE_PATH = "knowledge_embeddings.json"
 
 
 def _get_rag():
@@ -30,6 +34,19 @@ def _get_rag():
         from mil_std_rag import MILStandardRAG
         _rag = MILStandardRAG(_api_key)
     return _rag
+
+
+def _get_knowledge_search():
+    """Lazy init the hierarchical knowledge store (knowledge/ folder)."""
+    global _knowledge_embedder, _knowledge_store
+    if _knowledge_store is None:
+        from pathlib import Path
+        from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
+        if not Path(KNOWLEDGE_STORE_PATH).exists():
+            return None, None
+        _knowledge_embedder = NVIDIAEmbedder(_api_key) if _api_key else None
+        _knowledge_store    = JSONVectorStore(KNOWLEDGE_STORE_PATH)
+    return _knowledge_embedder, _knowledge_store
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +119,9 @@ def select_isolator(
     catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
     env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
 
+    if mass_kg <= 0:
+        return "ERROR: mass_kg must be a positive number. Ask the user for the assembly mass in kg, or call extract_cad_data to read it from SolidWorks."
+
     report, candidates = select_and_analyze(
         mass_kg=mass_kg,
         n_bottom=n_bottom,
@@ -110,10 +130,45 @@ def select_isolator(
         shock_env=env,
         catalog=catalog,
     )
-    table   = format_selection_table(candidates)
-    summary = selection_context_for_llm(candidates)
-    physics = format_report(report)
-    return f"{table}\n\n{summary}\n\n{physics}"
+
+    valid = [c for c in candidates if c.valid]
+    fail  = [c for c in candidates if not c.valid]
+    rec   = valid[0] if valid else None
+
+    # Lead with a clean, unambiguous answer block that the LLM can read reliably.
+    lines = [
+        "=== ISOLATOR SELECTION RESULT ===",
+        f"Input:  mass={mass_kg} kg | mounts={n_bottom} bottom + {n_wall} wall | shock={Ao_G}G/{to_s*1000:.0f}ms | GT_limit={GT_limit_G}G",
+        "",
+    ]
+    if rec:
+        ld = rec.limiting_direction
+        cb, cw, rw, rb = rec.comp_bottom, rec.comp_wall, rec.roll_wall, rec.roll_bottom
+        lines += [
+            f"RECOMMENDED: {rec.entry.part_no}  (Series {rec.entry.series})",
+            f"  Size      : H={rec.entry.H_in}\" x W={rec.entry.W_in}\"",
+            f"  K_comp    : {rec.entry.k_comp_lbin} lb/in",
+            f"  K_shear   : {rec.entry.k_shear_lbin} lb/in",
+            "",
+            "  4 load cases (all must PASS — matches Excel ref):",
+            f"    Comp-Bottom (Z,  vertical) : m={cb.m_kg:.1f} kg | fn={cb.fn_Hz:.2f} Hz | GT={cb.GT_G:.3f} G | dD={cb.delta_mm:.1f} mm  -> {'PASS' if cb.passed else 'FAIL'}",
+            f"    Comp-Wall   (Y,  lateral)  : m={cw.m_kg:.1f} kg | fn={cw.fn_Hz:.2f} Hz | GT={cw.GT_G:.3f} G | dD={cw.delta_mm:.1f} mm  -> {'PASS' if cw.passed else 'FAIL'}",
+            f"    Roll-Wall   (XZ, shear)    : m={rw.m_kg:.1f} kg | fn={rw.fn_Hz:.2f} Hz | GT={rw.GT_G:.3f} G | dD={rw.delta_mm:.1f} mm  -> {'PASS' if rw.passed else 'FAIL'}",
+            f"    Roll-Bottom (XY, shear)    : m={rb.m_kg:.1f} kg | fn={rb.fn_Hz:.2f} Hz | GT={rb.GT_G:.3f} G | dD={rb.delta_mm:.1f} mm  -> {'PASS' if rb.passed else 'FAIL'}",
+            f"  Limiting direction: {ld.label} (GT ratio: {ld.GT_G/ld.GT_limit:.0%} of limit)",
+            "",
+        ]
+        if len(valid) > 1:
+            lines.append(f"  Also valid (softer = better isolation, but available): {', '.join(c.entry.part_no for c in valid[1:])}")
+    else:
+        lines.append("NO VALID PART FOUND. Increase number of mounts or relax GT limit.")
+
+    lines += [
+        "",
+        f"Parts that FAIL ({len(fail)}): {', '.join(c.entry.part_no for c in fail[:8])}{'...' if len(fail) > 8 else ''}",
+        "=================================",
+    ]
+    return "\n".join(lines)
 
 
 @tool
@@ -154,26 +209,58 @@ def run_shock_analysis(
 
 
 @tool
-def lookup_knowledge(topic: str) -> str:
+def lookup_knowledge(query: str, parent_topic: str = "") -> str:
     """
-    Search the engineering knowledge base for relevant specifications, formulas, or guidelines.
-    Useful topics: 'shock isolation formulas', 'CB1400 selection rules', 'MIL-STD-810 vibration',
-    'natural frequency calculation', 'transmissibility', 'wire rope isolator sizing',
-    'saw-tooth shock pulse', 'dynamic deflection limit'.
-    Returns the most relevant passages from the ingested reference documents.
+    Search the hierarchical engineering knowledge base (knowledge/ folder).
+
+    Available parent topics: 'shock_mount' (more topics coming soon).
+    Inside shock_mount/ there are pages: formulas, load_cases, selection_rules,
+    catalog_overview.
+
+    Use this when you need to cite EXACT formulas (V, fn, GT, dD), explain WHY
+    the mass is divided differently per load case, justify the "softest valid
+    part" selection rule, or quote stiffness/travel values from the CB catalogs.
+
+    Args:
+        query:         What you want to know, in natural language.
+                       Examples: "GT formula", "why divide mass by 2",
+                       "when to use CB1800", "what passes for 1500kg".
+        parent_topic:  Optional filter — e.g. "shock_mount". Leave empty to
+                       search across all topics.
+
+    Returns the top matching pages with topic labels so they can be cited.
     """
-    rag = _get_rag()
-    if rag is None:
-        return "ERROR: Knowledge base not available — RAG system requires an API key."
+    embedder, store = _get_knowledge_search()
+    if store is None:
+        return ("ERROR: knowledge base not built yet. Run `python setup_knowledge.py` "
+                "to ingest the knowledge/ folder.")
+    if embedder is None:
+        return "ERROR: NVIDIA API key not set; cannot embed query."
 
-    sections = rag.retrieve_relevant_sections(topic, top_k=3)
-    if not sections:
-        return f"No relevant passages found for topic: '{topic}'"
+    parent = parent_topic.strip() or None
+    try:
+        q_emb = embedder.embed_text(query)
+    except Exception as e:
+        return f"ERROR: failed to embed query: {e}"
 
-    parts = [f"Knowledge base results for '{topic}':"]
-    for i, s in enumerate(sections, 1):
-        parts.append(f"\n[{i}] Similarity: {s['similarity']:.0%}")
-        parts.append(s["content"][:600])
+    hits = store.search(q_emb, top_k=3, parent_topic=parent)
+    if not hits:
+        msg = f"No matching pages for query '{query}'"
+        if parent:
+            msg += f" within parent_topic='{parent}'"
+        return msg
+
+    parts = [f"Knowledge base hits for '{query}'"
+             + (f" (filtered to parent_topic={parent!r})" if parent else "")
+             + ":"]
+    for i, h in enumerate(hits, 1):
+        label = f"{h.get('parent_topic','?')}/{h.get('child_name','?')}"
+        parts.append(
+            f"\n--- [{i}] {label}  ({h['similarity']:.0%} match)  ---\n"
+            f"Title: {h.get('title','(no title)')}\n"
+            f"Source: {h.get('source_path','?')}\n"
+            f"{h['content']}\n"
+        )
     return "\n".join(parts)
 
 

@@ -119,19 +119,18 @@ ALL_CATALOGS: list[CatalogEntry] = CB1400_CATALOG + CB1500_CATALOG + CB1800_CATA
 @dataclass
 class CatalogCandidate:
     entry: CatalogEntry
-    comp_vertical:    DirectionResult   # Compression, Z (bottom mounts)
-    comp_horizontal:  DirectionResult   # Compression, Y (wall mounts)
-    shear_horizontal: DirectionResult   # Shear/Roll, X & Z
+    comp_bottom: DirectionResult   # Z-axis vertical    (K_comp, bottom mounts)
+    comp_wall:   DirectionResult   # Y-axis lateral     (K_comp, wall mounts)
+    roll_wall:   DirectionResult   # X,Z-axis shear     (K_shear, wall mounts)
+    roll_bottom: DirectionResult   # X,Y-axis shear     (K_shear, bottom mounts)
 
     @property
     def valid(self) -> bool:
-        return (self.comp_vertical.passed and
-                self.comp_horizontal.passed and
-                self.shear_horizontal.passed)
+        return all(d.passed for d in self._dirs)
 
     @property
     def worst_GT_ratio(self) -> float:
-        """Max GT/limit across all directions. < 1.0 = pass. Closer to 0 = more margin."""
+        """Max GT/limit across all 4 cases. < 1.0 = pass."""
         return max(d.GT_G / d.GT_limit for d in self._dirs)
 
     @property
@@ -144,7 +143,7 @@ class CatalogCandidate:
 
     @property
     def _dirs(self):
-        return [self.comp_vertical, self.comp_horizontal, self.shear_horizontal]
+        return [self.comp_bottom, self.comp_wall, self.roll_wall, self.roll_bottom]
 
 
 # ---------------------------------------------------------------------------
@@ -152,28 +151,30 @@ class CatalogCandidate:
 # ---------------------------------------------------------------------------
 
 def select_isolator(
-    m_comp_vertical_kg: float,
-    m_horizontal_kg: float,
+    m_comp_bottom_kg: float,
+    m_comp_wall_kg: float,
+    m_roll_wall_kg: float,
+    m_roll_bottom_kg: float,
     env: ShockEnv,
     catalog: Optional[list[CatalogEntry]] = None,
     g: float = 9.81,
 ) -> list[CatalogCandidate]:
     """
-    Evaluate every catalog entry against the load and shock environment.
+    Evaluate every catalog entry against the FOUR load cases from the Excel reference.
 
     Args:
-        m_comp_vertical_kg: Mass per bottom-mount isolator [kg]
-        m_horizontal_kg:    Mass per wall/all-mount isolator [kg]
-        env:                Shock environment (G, duration, limit)
-        catalog:            List of entries to scan. Defaults to ALL_CATALOGS
-                            (CB1400 + CB1500 + CB1800). Pass CB1400_CATALOG etc.
-                            to restrict to a single series.
+        m_comp_bottom_kg: Mass per bottom-mount in vertical compression  = M/n_bottom
+        m_comp_wall_kg  : Mass per wall-mount   in lateral compression   = M/n_wall/2
+        m_roll_wall_kg  : Mass per wall-mount   in shear/roll            = M/n_wall/2
+        m_roll_bottom_kg: Mass per bottom-mount in shear/roll            = M/n_bottom/2
+        env             : Shock environment (G, duration, GT limit)
+        catalog         : Entries to scan (defaults to ALL_CATALOGS)
 
     Returns all candidates sorted: valid first, then by ascending K_comp (softest first).
     The first entry in the returned list is the RECOMMENDED part.
 
     Why softest first?
-      Lower K → lower fn → lower GT (less shock transmitted).
+      Lower K -> lower fn -> lower GT (less shock transmitted).
       We want the best isolation that still keeps dD within the isolator's travel limit.
     """
     if catalog is None:
@@ -182,10 +183,23 @@ def select_isolator(
     candidates = []
     for entry in catalog:
         spec = entry.to_isolator_spec()
-        comp_v  = _calc_direction("Compression - Z (vertical)",   spec.k_comp_Nm,  m_comp_vertical_kg, spec.d_max_comp_mm,  env, g)
-        comp_h  = _calc_direction("Compression - Y (lateral)",    spec.k_comp_Nm,  m_horizontal_kg,    spec.d_max_comp_mm,  env, g)
-        shear_h = _calc_direction("Shear/Roll   - X & Z",         spec.k_shear_Nm, m_horizontal_kg,    spec.d_max_shear_mm, env, g)
-        candidates.append(CatalogCandidate(entry, comp_v, comp_h, shear_h))
+        comp_bottom = _calc_direction(
+            "Comp - Bottom (Z-axis)",
+            spec.k_comp_Nm,  m_comp_bottom_kg,  spec.d_max_comp_mm,  env, g,
+        )
+        comp_wall = _calc_direction(
+            "Comp - Wall (Y-axis)",
+            spec.k_comp_Nm,  m_comp_wall_kg,    spec.d_max_comp_mm,  env, g,
+        )
+        roll_wall = _calc_direction(
+            "Roll - Wall (X,Z-axis)",
+            spec.k_shear_Nm, m_roll_wall_kg,    spec.d_max_shear_mm, env, g,
+        )
+        roll_bottom = _calc_direction(
+            "Roll - Bottom (X,Y-axis)",
+            spec.k_shear_Nm, m_roll_bottom_kg,  spec.d_max_shear_mm, env, g,
+        )
+        candidates.append(CatalogCandidate(entry, comp_bottom, comp_wall, roll_wall, roll_bottom))
 
     # Sort: valid PASS entries first, then within each group sort by softest (lowest K)
     candidates.sort(key=lambda c: (not c.valid, c.entry.k_comp_lbin))
@@ -212,11 +226,13 @@ def select_and_analyze(
     loads = _loads_per_isolator(mass_kg, n_bottom, n_wall)
 
     candidates = select_isolator(
-        loads["m_comp_vertical_kg"],
-        loads["m_horizontal_kg"],
-        env,
-        catalog=catalog,
-        g=g,
+        m_comp_bottom_kg = loads["m_comp_bottom_kg"],
+        m_comp_wall_kg   = loads["m_comp_wall_kg"],
+        m_roll_wall_kg   = loads["m_roll_wall_kg"],
+        m_roll_bottom_kg = loads["m_roll_bottom_kg"],
+        env              = env,
+        catalog          = catalog,
+        g                = g,
     )
 
     best = next((c for c in candidates if c.valid), None)
@@ -238,50 +254,38 @@ def select_and_analyze(
 
 def format_selection_table(candidates: list[CatalogCandidate]) -> str:
     """
-    ASCII table: all catalog entries with computed GT, dD, and PASS/FAIL.
-    Shows the engineer every option at a glance, grouped by series.
+    ASCII table: all catalog entries with computed GT for the 4 load cases
+    (matches the 4 Excel sheets: Comp-Bottom, Comp-Wall, Roll-Wall, Roll-Bottom).
     """
     header = (
-        f"{'Part':<14} {'Series':<8} {'Kcomp':>8} {'Kshear':>8} | "
-        f"{'Vt-Z GT':>8} {'Vt-Z dD':>8} | "
-        f"{'La-Y GT':>8} | "
-        f"{'Sr GT':>8} {'Sr dD':>8} | "
-        f"{'STATUS':>6}"
+        f"{'Part':<14} {'Series':<8} {'Kcomp':>7} {'Kshear':>7} | "
+        f"{'C-Bot GT':>8} | {'C-Wal GT':>8} | {'R-Wal GT':>8} | {'R-Bot GT':>8} | "
+        f"{'maxGT':>6} {'STATUS':>6}"
     )
     sep = "-" * len(header)
 
-    # Determine shock env from first candidate
-    env_str = ""
-    if candidates:
-        d0 = candidates[0].comp_vertical
-        env_str = f"20G / 11ms"  # default label; callers can customise
-
+    env_str = "20G / 11ms saw-tooth"
     lines = [
         "=" * len(header),
-        f"MULTI-SERIES SELECTION MATRIX (Shock Average K, Saw-Tooth {env_str})",
-        f"{'':14} {'':8} {'lb/in':>8} {'lb/in':>8} | "
-        f"{'[G]':>8} {'[mm]':>8} | "
-        f"{'[G]':>8} | "
-        f"{'[G]':>8} {'[mm]':>8} | "
-        f"{'':>6}",
+        f"MULTI-SERIES SELECTION MATRIX ({env_str}) — 4 load cases per Excel",
+        f"{'':14} {'':8} {'lb/in':>7} {'lb/in':>7} | "
+        f"{'[G]':>8} | {'[G]':>8} | {'[G]':>8} | {'[G]':>8} | "
+        f"{'[G]':>6}",
         header,
         sep,
     ]
 
     for c in candidates:
-        cv, ch, sh = c.comp_vertical, c.comp_horizontal, c.shear_horizontal
+        cb, cw, rw, rb = c.comp_bottom, c.comp_wall, c.roll_wall, c.roll_bottom
+        worst = max(cb.GT_G, cw.GT_G, rw.GT_G, rb.GT_G)
         status = "PASS" if c.valid else "FAIL"
         lines.append(
             f"{c.entry.part_no:<14} "
             f"{c.entry.series:<8} "
-            f"{c.entry.k_comp_lbin:>8.0f} "
-            f"{c.entry.k_shear_lbin:>8.0f} | "
-            f"{cv.GT_G:>8.3f} "
-            f"{cv.delta_mm:>8.1f} | "
-            f"{ch.GT_G:>8.3f} | "
-            f"{sh.GT_G:>8.3f} "
-            f"{sh.delta_mm:>8.1f} | "
-            f"{status:>6}"
+            f"{c.entry.k_comp_lbin:>7.0f} "
+            f"{c.entry.k_shear_lbin:>7.0f} | "
+            f"{cb.GT_G:>8.3f} | {cw.GT_G:>8.3f} | {rw.GT_G:>8.3f} | {rb.GT_G:>8.3f} | "
+            f"{worst:>6.2f} {status:>6}"
         )
     lines.append("=" * len(header))
 
@@ -291,7 +295,7 @@ def format_selection_table(candidates: list[CatalogCandidate]) -> str:
         lines.append(
             f"\nRECOMMENDED: {rec.entry.part_no}  ({rec.entry.series}, "
             f"H={rec.entry.H_in}\" x W={rec.entry.W_in}\" | "
-            f"worst GT ratio: {rec.worst_GT_ratio:.2%} of limit)"
+            f"worst GT ratio: {rec.worst_GT_ratio:.0%} of limit)"
         )
         lines.append(_math_proof(rec))
     else:
