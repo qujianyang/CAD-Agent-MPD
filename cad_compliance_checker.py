@@ -49,16 +49,40 @@ def _parse_cad_output(output: str) -> dict:
                 props["volume_mm3"] = float(line_stripped.split()[2])
             elif "-> Surface Area:" in line_stripped:
                 props["surface_mm2"] = float(line_stripped.split()[3])
-            elif "Center of Mass (CG):" in line_stripped:
+
+            # CG from base (preferred — this is what physics_engine consumes).
+            # Must be checked BEFORE "Center of Mass (CG, raw)" because the
+            # phrase "Center of Mass" doesn't appear in this line.
+            elif "CG from Base:" in line_stripped:
+                props["cg_x_base"] = float(line_stripped.split("X=")[1].split("mm")[0])
+                props["cg_y_base"] = float(line_stripped.split("Y=")[1].split("mm")[0])
+                props["cg_z_base"] = float(line_stripped.split("Z=")[1].split("mm")[0])
+
+            # Raw CG (default origin frame — kept for reference/debugging).
+            elif "Center of Mass (CG" in line_stripped:
                 props["cg_x"] = float(line_stripped.split("X=")[1].split("mm")[0])
                 props["cg_y"] = float(line_stripped.split("Y=")[1].split("mm")[0])
                 props["cg_z"] = float(line_stripped.split("Z=")[1].split("mm")[0])
+
+            # Which coordinate system the raw CG is reported in.
+            elif "-> Coord System:" in line_stripped:
+                props["coord_sys_used"] = line_stripped.split("Coord System:")[1].strip()
 
             # Bounding envelope: OK (W:560.0mm x D:2000.0mm x H:1000.0mm)
             elif "W:" in line_stripped and "D:" in line_stripped and "H:" in line_stripped:
                 props["width_mm"]  = float(line_stripped.split("W:")[1].split("mm")[0])
                 props["depth_mm"]  = float(line_stripped.split("D:")[1].split("mm")[0])
                 props["height_mm"] = float(line_stripped.split("H:")[1].split("mm")[0])
+
+            # Bounding box min/max corners
+            elif "-> BBox Min:" in line_stripped:
+                props["bbox_x_min"] = float(line_stripped.split("X=")[1].split("mm")[0])
+                props["bbox_y_min"] = float(line_stripped.split("Y=")[1].split("mm")[0])
+                props["bbox_z_min"] = float(line_stripped.split("Z=")[1].split("mm")[0])
+            elif "-> BBox Max:" in line_stripped:
+                props["bbox_x_max"] = float(line_stripped.split("X=")[1].split("mm")[0])
+                props["bbox_y_max"] = float(line_stripped.split("Y=")[1].split("mm")[0])
+                props["bbox_z_max"] = float(line_stripped.split("Z=")[1].split("mm")[0])
 
             # File path
             elif "Path:" in line_stripped and "Saved:" in line_stripped:
@@ -103,10 +127,10 @@ def print_cad_summary(props: dict):
 
 if __name__ == "__main__":
     load_dotenv()
-    API_KEY = os.environ.get(
-        "NVIDIA_API_KEY",
-        "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"
-    )
+    API_KEY = os.environ.get("NVIDIA_API_KEY", "").strip()
+    if not API_KEY:
+        print("ERROR: NVIDIA_API_KEY not set. Add it to your .env file.")
+        raise SystemExit(1)
 
     if not Path("mil_std_embeddings.json").exists():
         print("ERROR: Vector store not found. Run: python setup_rag.py")

@@ -195,10 +195,17 @@ def run_analysis(
 
     # Extract optional geometry from CAD (for warnings only — load distribution
     # follows the Excel reference and does NOT use CG/footprint corrections).
+    # Prefer the base-relative CG (cg_z_base) — this is the actual CG height
+    # above the mounting floor and is what the high-CG/overturn warning needs.
+    # Falls back to cg_z (default origin frame) only if base-relative is missing.
     cg_z = 0.0
     height_mm = 0.0
     if cad_props:
-        cg_z      = cad_props.get("cg_z", 0.0) or 0.0
+        cg_z = (
+            cad_props.get("cg_z_base")
+            if cad_props.get("cg_z_base") is not None
+            else (cad_props.get("cg_z", 0.0) or 0.0)
+        )
         height_mm = cad_props.get("height_mm", 0.0) or 0.0
 
     loads = _loads_per_isolator(mass_kg, n_bottom, n_wall)

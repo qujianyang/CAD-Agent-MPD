@@ -105,7 +105,9 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
-    API_KEY = os.environ.get("NVIDIA_API_KEY", "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")
+    API_KEY = os.environ.get("NVIDIA_API_KEY", "").strip()
+    if not API_KEY:
+        raise SystemExit("ERROR: NVIDIA_API_KEY not set in .env or environment.")
 
     # Sample CAD data to test without SolidWorks
     sample_cad = {

@@ -379,12 +379,18 @@ if __name__ == "__main__":
         cad_props = {"mass_kg": mass_kg}
     else:
         mass_kg = cad_props["mass_kg"]
-        print(f"  Mass from CAD : {mass_kg:.2f} kg")
-        print(f"  CG (X,Y,Z)   : {cad_props.get('cg_x','?')}, "
-              f"{cad_props.get('cg_y','?')}, {cad_props.get('cg_z','?')} mm")
-        print(f"  Envelope     : W={cad_props.get('width_mm','?')} "
+        print(f"  Mass from CAD     : {mass_kg:.2f} kg")
+        print(f"  Envelope          : W={cad_props.get('width_mm','?')} "
               f"D={cad_props.get('depth_mm','?')} "
               f"H={cad_props.get('height_mm','?')} mm")
+        print(f"  CG (raw, default) : X={cad_props.get('cg_x','?')}, "
+              f"Y={cad_props.get('cg_y','?')}, Z={cad_props.get('cg_z','?')} mm")
+        if cad_props.get("cg_z_base") is not None:
+            print(f"  CG from Base      : X={cad_props['cg_x_base']:.2f}, "
+                  f"Y={cad_props['cg_y_base']:.2f}, Z={cad_props['cg_z_base']:.2f} mm")
+            if cad_props.get("height_mm"):
+                ratio = cad_props['cg_z_base'] / cad_props['height_mm']
+                print(f"  CG Height Ratio   : {ratio*100:.1f}% of rack height")
 
     # --- Run selection across all series ---
     # CG/envelope from SolidWorks coordinates are not yet calibrated —
@@ -396,7 +402,7 @@ if __name__ == "__main__":
         mass_kg=mass_kg,
         n_bottom=N_BOTTOM,
         n_wall=N_WALL,
-        cad_props=None,
+        cad_props=cad_props,   # now contains cg_z_base — high-CG warning is meaningful
         shock_env=ENV,
     )
     print(format_selection_table(candidates))

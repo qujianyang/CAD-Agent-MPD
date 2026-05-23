@@ -82,18 +82,23 @@ def setup_rag_pipeline(pdf_path: str, api_key: str, output_store: str = "mil_std
 
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
+    import os
+
     parser = argparse.ArgumentParser(description="Setup RAG vector store from MIL-STD PDF")
     parser.add_argument("--local", action="store_true", help="Use local embeddings instead of NVIDIA API")
     args = parser.parse_args()
-    
-    # Configuration
+
+    load_dotenv()
+    API_KEY = os.environ.get("NVIDIA_API_KEY", "").strip()
+    if not API_KEY and not args.local:
+        print("ERROR: NVIDIA_API_KEY not set. Run with --local or add it to your .env file.")
+        sys.exit(1)
+
     PDF_PATH = r"C:\Users\qujia\QuantumKeyDistribution\CAD-Agent-MPD\iso_select[1].pdf"
-    API_KEY = "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"
-    
     if not Path(PDF_PATH).exists():
         print(f"ERROR: PDF not found at {PDF_PATH}")
         sys.exit(1)
-    
-    # Run pipeline
+
     setup_rag_pipeline(PDF_PATH, API_KEY, use_local=args.local)
 
