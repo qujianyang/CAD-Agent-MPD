@@ -109,14 +109,26 @@ def select_isolator(
       - Dynamic deflection < isolator's rated travel in all 3 directions
     Returns the full selection table plus mathematical proof for the recommended part.
 
+    IMPORTANT — parameter handling:
+    Only pass values for parameters the user explicitly specifies. For everything
+    else, OMIT the parameter so the project default applies. Do NOT guess and do
+    NOT pass 0 for the shock parameters — 0 makes the physics trivial.
+
+    Project defaults (used if you omit the parameter):
+        n_bottom=6, n_wall=4, Ao_G=20.0G, to_s=0.011s (11ms),
+        GT_limit_G=10.0G, series="ALL"
+
     Args:
-        mass_kg    : Total assembly mass in kg (get from extract_cad_data or ask user)
-        n_bottom   : Number of bottom-mounted isolators (typical: 6 for a 4-bay rack)
-        n_wall     : Number of wall-mounted isolators (typical: 4)
-        Ao_G       : Shock magnitude in G (use 20G for MIL-STD-810 Category 4 off-road)
-        to_s       : Shock pulse duration in seconds (use 0.011 for 11ms saw-tooth)
-        GT_limit_G : Maximum allowable transmitted G (use 10G per MIL-STD-810)
-        series     : Catalog filter — "ALL", "CB1400", "CB1500", or "CB1800"
+        mass_kg    : REQUIRED. Total assembly mass in kg. Get from extract_cad_data
+                     or ask the user.
+        n_bottom   : Number of bottom-mounted isolators. Default 6. OMIT unless user says.
+        n_wall     : Number of wall-mounted isolators. Default 4. OMIT unless user says.
+        Ao_G       : Shock magnitude in G. Default 20.0 (MIL-STD-810H Category 4).
+                     OMIT unless user explicitly gives a different shock spec.
+        to_s       : Shock pulse duration in seconds. Default 0.011 (11ms saw-tooth).
+                     OMIT unless user explicitly gives a different pulse duration.
+        GT_limit_G : Max allowable transmitted G. Default 10.0 G. OMIT unless user says.
+        series     : Catalog filter. "ALL", "CB1400", "CB1500", or "CB1800". Default "ALL".
     """
     catalog_map = {
         "CB1400": CB1400_CATALOG,
@@ -125,10 +137,24 @@ def select_isolator(
         "ALL":    ALL_CATALOGS,
     }
     catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
-    env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
 
     if mass_kg <= 0:
         return "ERROR: mass_kg must be a positive number. Ask the user for the assembly mass in kg, or call extract_cad_data to read it from SolidWorks."
+
+    # Safety net: the LLM sometimes passes 0 or negative values for shock params
+    # (it truncates 0.011 -> "0"). Clamp to defaults and tell everyone what we did.
+    substitutions: list[str] = []
+    if Ao_G is None or Ao_G <= 0:
+        substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted default 20.0 G")
+        Ao_G = 20.0
+    if to_s is None or to_s <= 0:
+        substitutions.append(f"to_s was {to_s!r} (invalid); substituted default 0.011 s (11 ms)")
+        to_s = 0.011
+    if GT_limit_G is None or GT_limit_G <= 0:
+        substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
+        GT_limit_G = 10.0
+
+    env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
 
     report, candidates = select_and_analyze(
         mass_kg=mass_kg,
@@ -144,7 +170,13 @@ def select_isolator(
     rec   = valid[0] if valid else None
 
     # Lead with a clean, unambiguous answer block that the LLM can read reliably.
-    lines = [
+    lines = []
+    if substitutions:
+        lines.append("NOTE: Tool received invalid shock parameter(s). Substituted defaults:")
+        for s in substitutions:
+            lines.append(f"  - {s}")
+        lines.append("")
+    lines += [
         "=== ISOLATOR SELECTION RESULT ===",
         f"Input:  mass={mass_kg} kg | mounts={n_bottom} bottom + {n_wall} wall | shock={Ao_G}G/{to_s*1000:.0f}ms | GT_limit={GT_limit_G}G",
         "",
@@ -194,14 +226,22 @@ def run_shock_analysis(
     Calculates: fn (natural frequency, Hz), GT (transmitted G), dD (dynamic deflection, mm).
     Use this to confirm the recommended part, or to test a user-specified part number.
 
+    IMPORTANT — parameter handling:
+    Only pass values the user explicitly specifies. OMIT all other parameters
+    so the project defaults apply. Do NOT pass 0 for shock parameters — 0 makes
+    the physics trivial (every part passes).
+
+    Project defaults (used if you omit the parameter):
+        n_bottom=6, n_wall=4, Ao_G=20.0G, to_s=0.011s (11ms), GT_limit_G=10.0G
+
     Args:
-        mass_kg    : Total assembly mass in kg
-        part_no    : Isolator part number, e.g. 'CB1400-15', 'CB1500-30', 'CB1800-20'
-        n_bottom   : Number of bottom-mounted isolators (default 6)
-        n_wall     : Number of wall-mounted isolators (default 4)
-        Ao_G       : Shock magnitude in G (default 20G)
-        to_s       : Shock pulse duration in seconds (default 0.011s = 11ms)
-        GT_limit_G : Maximum allowable transmitted G (default 10G)
+        mass_kg    : REQUIRED. Total assembly mass in kg.
+        part_no    : REQUIRED. Isolator part number, e.g. 'CB1400-15', 'CB1500-30'.
+        n_bottom   : Bottom-mount count. Default 6. OMIT unless user says.
+        n_wall     : Wall-mount count.   Default 4. OMIT unless user says.
+        Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user specifies.
+        to_s       : Shock pulse duration (seconds). Default 0.011. OMIT unless user specifies.
+        GT_limit_G : Max allowable transmitted G. Default 10.0. OMIT unless user says.
     """
     entry = next((e for e in ALL_CATALOGS if e.part_no == part_no), None)
     if entry is None:
@@ -210,10 +250,30 @@ def run_shock_analysis(
             f"ERROR: Part '{part_no}' not found in catalog.\n"
             f"Available parts: {', '.join(available)}"
         )
+
+    # Same safety net as select_isolator — clamp bad shock params to defaults
+    # and tell the caller what we changed so it shows up in the chat trace.
+    substitutions: list[str] = []
+    if Ao_G is None or Ao_G <= 0:
+        substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted default 20.0 G")
+        Ao_G = 20.0
+    if to_s is None or to_s <= 0:
+        substitutions.append(f"to_s was {to_s!r} (invalid); substituted default 0.011 s (11 ms)")
+        to_s = 0.011
+    if GT_limit_G is None or GT_limit_G <= 0:
+        substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
+        GT_limit_G = 10.0
+
     spec = entry.to_isolator_spec()
     env  = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
     report = run_analysis(mass_kg, n_bottom, n_wall, shock_env=env, isolator=spec)
-    return format_report(report)
+    body = format_report(report)
+    if substitutions:
+        note = "NOTE: Tool received invalid shock parameter(s). Substituted defaults:\n"
+        for s in substitutions:
+            note += f"  - {s}\n"
+        return note + "\n" + body
+    return body
 
 
 @tool
@@ -293,6 +353,320 @@ def list_cad_files(directory: str = ".") -> str:
 # Agent
 # ---------------------------------------------------------------------------
 
+@tool
+def find_capacity_limit(
+    part_no: str,
+    n_bottom: int = 6,
+    n_wall: int = 4,
+    Ao_G: float = 20.0,
+    to_s: float = 0.011,
+    GT_limit_G: float = 10.0,
+) -> str:
+    """
+    Find the mass range where a specific isolator part passes all 4 load cases.
+
+    Use this when the user asks "what's the maximum / heaviest mass this part
+    can support?", "what's the valid range for this isolator?", or "at what
+    mass does this part fail?". This tool answers questions that a single
+    run_shock_analysis call cannot — it sweeps the mass axis with binary
+    search to find both the LOWER and UPPER boundaries of the valid range.
+
+    Physics intuition (why there are two boundaries):
+      - At low mass: fn is high -> GT exceeds limit (transmitted shock too high)
+      - At high mass: dD exceeds the isolator's rated travel (too much deflection)
+      - In between: valid range
+
+    Args:
+        part_no   : REQUIRED. Isolator part number, e.g. 'CB1400-30'.
+        n_bottom  : Bottom-mount count. Default 6. OMIT unless user specifies.
+        n_wall    : Wall-mount count.   Default 4. OMIT unless user specifies.
+        Ao_G      : Shock magnitude in G. Default 20.0. OMIT unless user specifies.
+        to_s      : Shock pulse duration (s). Default 0.011. OMIT unless user specifies.
+        GT_limit_G: Max allowable transmitted G. Default 10.0. OMIT unless user specifies.
+
+    Returns mass range as "X kg <= M <= Y kg" plus the limiting failure reason
+    at each boundary (which direction failed and by how much).
+    """
+    entry = next((e for e in ALL_CATALOGS if e.part_no == part_no), None)
+    if entry is None:
+        available = sorted({e.part_no for e in ALL_CATALOGS})
+        return (
+            f"ERROR: Part '{part_no}' not found in catalog.\n"
+            f"Available parts: {', '.join(available)}"
+        )
+
+    # Same safety net as the other tools
+    substitutions: list[str] = []
+    if Ao_G is None or Ao_G <= 0:
+        substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted default 20.0 G")
+        Ao_G = 20.0
+    if to_s is None or to_s <= 0:
+        substitutions.append(f"to_s was {to_s!r} (invalid); substituted default 0.011 s")
+        to_s = 0.011
+    if GT_limit_G is None or GT_limit_G <= 0:
+        substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
+        GT_limit_G = 10.0
+
+    spec = entry.to_isolator_spec()
+    env  = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
+
+    def _eval(mass_kg: float):
+        """Return (all_passed: bool, report: PhysicsReport | None)."""
+        if mass_kg <= 0:
+            return False, None
+        try:
+            r = run_analysis(mass_kg, n_bottom, n_wall, shock_env=env, isolator=spec)
+            return r.all_passed, r
+        except Exception:
+            return False, None
+
+    def _failure_reason(report) -> str:
+        """Short string describing the FIRST failing direction."""
+        if not report:
+            return "(no report)"
+        failed = [d for d in report.directions if not d.passed]
+        if not failed:
+            return "(no failure)"
+        d = failed[0]
+        bits = []
+        if not d.GT_ok:
+            bits.append(f"GT={d.GT_G:.2f}G > limit {d.GT_limit}G")
+        if not d.delta_ok:
+            bits.append(f"dD={d.delta_mm:.1f}mm > limit {d.delta_limit_mm:.1f}mm")
+        return f"{d.label}: " + " AND ".join(bits)
+
+    SEARCH_LO = 1.0       # min mass to consider (kg)
+    SEARCH_HI = 20000.0   # max mass to consider (kg)
+    PRECISION = 1.0       # binary-search to within 1 kg
+
+    # 1. Find an anchor mass that DOES pass (so we know the bracket is non-empty)
+    sample_points = [50, 200, 500, 1000, 2000, 5000, 10000]
+    anchor: float | None = None
+    for m in sample_points:
+        ok, _ = _eval(m)
+        if ok:
+            anchor = float(m)
+            break
+
+    if anchor is None:
+        # Part doesn't pass at any sample point. Run at one mid-point and report why.
+        _, r = _eval(1000.0)
+        why = _failure_reason(r)
+        return (
+            f"=== CAPACITY ANALYSIS: {part_no} ===\n"
+            f"Config: {n_bottom} bottom + {n_wall} wall mounts | Shock: {Ao_G}G/{to_s*1000:.0f}ms | GT limit: {GT_limit_G}G\n\n"
+            f"NO valid mass found in {SEARCH_LO:.0f}-{SEARCH_HI:.0f} kg range.\n"
+            f"At 1000 kg: FAIL — {why}\n\n"
+            f"Try: a softer part (lower K), more mounts, or a looser GT limit."
+        )
+
+    # 2. Binary-search downward for the LOWER bound (M_min)
+    ok_floor, _ = _eval(SEARCH_LO)
+    if ok_floor:
+        M_min = SEARCH_LO
+        M_min_reason = f"(passes even at {SEARCH_LO:.0f} kg — no effective lower limit)"
+    else:
+        lo, hi = SEARCH_LO, anchor
+        while hi - lo > PRECISION:
+            mid = (lo + hi) / 2.0
+            ok, _ = _eval(mid)
+            if ok:
+                hi = mid
+            else:
+                lo = mid
+        M_min = hi
+        _, r_below = _eval(max(SEARCH_LO, M_min - PRECISION * 2))
+        M_min_reason = _failure_reason(r_below)
+
+    # 3. Binary-search upward for the UPPER bound (M_max)
+    ok_ceil, _ = _eval(SEARCH_HI)
+    if ok_ceil:
+        M_max = SEARCH_HI
+        M_max_reason = f"(passes even at {SEARCH_HI:.0f} kg — no effective upper limit)"
+    else:
+        lo, hi = anchor, SEARCH_HI
+        while hi - lo > PRECISION:
+            mid = (lo + hi) / 2.0
+            ok, _ = _eval(mid)
+            if ok:
+                lo = mid
+            else:
+                hi = mid
+        M_max = lo
+        _, r_above = _eval(M_max + PRECISION * 2)
+        M_max_reason = _failure_reason(r_above)
+
+    # 4. Format the result
+    lines: list[str] = []
+    if substitutions:
+        lines.append("NOTE: Tool received invalid shock parameter(s). Substituted defaults:")
+        for s in substitutions:
+            lines.append(f"  - {s}")
+        lines.append("")
+    lines += [
+        f"=== CAPACITY ANALYSIS: {part_no} (Series {entry.series}) ===",
+        f"Config: {n_bottom} bottom + {n_wall} wall mounts",
+        f"Shock : {Ao_G}G / {to_s*1000:.0f}ms saw-tooth",
+        f"GT limit: {GT_limit_G}G | Travel limits: dmax_comp={entry.d_max_comp_mm:.1f}mm, dmax_shear={entry.d_max_shear_mm:.1f}mm",
+        "",
+        f"Valid mass range: {M_min:.0f} kg <= M <= {M_max:.0f} kg",
+        "",
+        f"  LOWER bound = {M_min:.0f} kg",
+        f"    Below this, part FAILS: {M_min_reason}",
+        f"  UPPER bound = {M_max:.0f} kg",
+        f"    Above this, part FAILS: {M_max_reason}",
+    ]
+    return "\n".join(lines)
+
+
+@tool
+def filter_by_deflection(
+    mass_kg: float,
+    max_dD_mm: float,
+    n_bottom: int = 6,
+    n_wall: int = 4,
+    Ao_G: float = 20.0,
+    to_s: float = 0.011,
+    GT_limit_G: float = 10.0,
+    series: str = "ALL",
+) -> str:
+    """
+    List isolator parts that BOTH pass the 4-case shock analysis AND keep
+    dynamic deflection below a user-specified clearance limit.
+
+    Use this when the user mentions a physical deflection / clearance
+    constraint that is stricter than the isolator's own rated travel —
+    for example:
+      "I have only 30 mm clearance above the rack..."
+      "Tight side clearance — what part keeps dD under 20 mm?"
+      "Which CB1400 parts deflect less than 50 mm for 850 kg?"
+
+    Standard selection (`select_isolator`) only checks each part against its
+    OWN rated dmax. This tool adds a SECOND, stricter ΔD limit set by the
+    user's installation geometry, and returns the full list of qualifying
+    parts (not just the softest one).
+
+    Args:
+        mass_kg    : REQUIRED. Total assembly mass in kg.
+        max_dD_mm  : REQUIRED. Maximum allowable dynamic deflection (mm).
+                     This is the user's installation clearance, NOT the
+                     isolator's vendor-rated travel.
+        n_bottom   : Bottom-mount count. Default 6. OMIT unless user says.
+        n_wall     : Wall-mount count.   Default 4. OMIT unless user says.
+        Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user says.
+        to_s       : Shock pulse duration (s). Default 0.011. OMIT unless user says.
+        GT_limit_G : Maximum transmitted G. Default 10.0. OMIT unless user says.
+        series     : Catalog filter. "ALL", "CB1400", "CB1500", or "CB1800". Default "ALL".
+
+    Returns the qualifying parts sorted softest-K first (best isolation that
+    still fits the clearance), plus a list of parts that pass the 4-case
+    shock analysis but exceed the user's clearance.
+    """
+    if mass_kg <= 0:
+        return "ERROR: mass_kg must be a positive number."
+    if max_dD_mm <= 0:
+        return "ERROR: max_dD_mm must be a positive number."
+
+    # Same shock-param safety net
+    substitutions: list[str] = []
+    if Ao_G is None or Ao_G <= 0:
+        substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted 20.0 G")
+        Ao_G = 20.0
+    if to_s is None or to_s <= 0:
+        substitutions.append(f"to_s was {to_s!r} (invalid); substituted 0.011 s")
+        to_s = 0.011
+    if GT_limit_G is None or GT_limit_G <= 0:
+        substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted 10.0 G")
+        GT_limit_G = 10.0
+
+    catalog_map = {
+        "CB1400": CB1400_CATALOG,
+        "CB1500": CB1500_CATALOG,
+        "CB1800": CB1800_CATALOG,
+        "ALL":    ALL_CATALOGS,
+    }
+    catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
+    env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
+
+    _, candidates = select_and_analyze(
+        mass_kg   = mass_kg,
+        n_bottom  = n_bottom,
+        n_wall    = n_wall,
+        cad_props = None,
+        shock_env = env,
+        catalog   = catalog,
+    )
+
+    # Bucket each candidate
+    qualifying:    list[tuple] = []   # passes 4-case AND worst dD <= max_dD_mm
+    over_clearance:list[tuple] = []   # passes 4-case BUT worst dD > max_dD_mm
+    fails_shock:   list[str]   = []   # fails 4-case shock analysis
+
+    for c in candidates:
+        worst_dD = max(d.delta_mm for d in c._dirs)
+        worst_GT = max(d.GT_G    for d in c._dirs)
+        if c.valid:
+            row = (c.entry, worst_GT, worst_dD)
+            if worst_dD <= max_dD_mm:
+                qualifying.append(row)
+            else:
+                over_clearance.append(row)
+        else:
+            fails_shock.append(c.entry.part_no)
+
+    # Sort: qualifying by softest K first; over-clearance by closest-to-limit first
+    qualifying.sort(key=lambda r: r[0].k_comp_lbin)
+    over_clearance.sort(key=lambda r: r[2])  # ascending dD
+
+    lines: list[str] = []
+    if substitutions:
+        lines.append("NOTE: substituted defaults for invalid shock parameter(s):")
+        for s in substitutions:
+            lines.append(f"  - {s}")
+        lines.append("")
+    lines += [
+        "=== DEFLECTION-CONSTRAINED SELECTION ===",
+        f"Input: mass={mass_kg} kg | mounts={n_bottom}+{n_wall} | "
+        f"shock={Ao_G}G/{to_s*1000:.0f}ms | GT_limit={GT_limit_G}G",
+        f"Extra constraint: worst-case dD must be <= {max_dD_mm:.1f} mm",
+        "",
+    ]
+
+    if qualifying:
+        lines.append(f"QUALIFYING PARTS ({len(qualifying)} parts pass shock AND clearance):")
+        lines.append("  (sorted softest first — best isolation that still fits)")
+        for entry, gt, dD in qualifying:
+            lines.append(
+                f"  {entry.part_no:12s} | K_comp={entry.k_comp_lbin:>5.0f} lb/in | "
+                f"worst GT={gt:>5.2f} G | worst dD={dD:>5.1f} mm"
+            )
+        lines.append("")
+        lines.append(f"RECOMMENDED: {qualifying[0][0].part_no} "
+                     f"(softest K that keeps dD <= {max_dD_mm:.1f} mm)")
+    else:
+        lines.append(f"NO part passes both shock analysis AND dD <= {max_dD_mm:.1f} mm.")
+        lines.append("Try: increase clearance, increase mount count, "
+                     "or relax shock spec.")
+
+    if over_clearance:
+        lines.append("")
+        lines.append(f"Parts that PASS shock but EXCEED the {max_dD_mm:.1f} mm clearance "
+                     f"(showing first 8 by ascending dD):")
+        for entry, gt, dD in over_clearance[:8]:
+            over_by = dD - max_dD_mm
+            lines.append(
+                f"  {entry.part_no:12s} | worst dD={dD:>5.1f} mm  (over by {over_by:>5.1f} mm)"
+            )
+
+    if fails_shock:
+        lines.append("")
+        lines.append(f"Parts that FAIL 4-case shock analysis ({len(fails_shock)}): "
+                     + ", ".join(fails_shock[:10])
+                     + ("..." if len(fails_shock) > 10 else ""))
+
+    return "\n".join(lines)
+
+
 _SYSTEM_PROMPT = """\
 You are a mechanical engineering design assistant specializing in shock isolation \
 for military vehicle-mounted shelter equipment.
@@ -300,17 +674,36 @@ for military vehicle-mounted shelter equipment.
 Your primary task: select the correct wire rope isolator (CB1400, CB1500, CB1800 series) \
 for equipment racks given mass, mount configuration, and shock environment.
 
-Standard defaults (use unless the user specifies otherwise):
+Standard defaults (used automatically if you omit the parameter — see CRITICAL rule below):
 - Shock profile : 20G, 11ms saw-tooth (MIL-STD-810H Category 4 off-road)
 - GT limit      : 10G transmitted
 - Mount config  : 6 bottom + 4 wall isolators (typical 4-bay rack)
 
+CRITICAL — parameter passing rule for ALL tools:
+- Only pass values for parameters the user EXPLICITLY mentions.
+- For every other parameter, OMIT it from the tool call so the project default applies.
+- Never pass 0 or "0" for shock parameters (Ao_G, to_s, GT_limit_G). Passing 0
+  makes the physics trivial and the result meaningless.
+- Numeric parameters: pass real numbers (e.g. 0.011, 20.0), never strings of
+  truncated numbers (e.g. "0" instead of "0.011").
+
 Workflow for isolator selection:
 1. Confirm or extract the assembly mass (use extract_cad_data if SolidWorks is open, \
    otherwise ask the user)
-2. Confirm mount configuration (n_bottom, n_wall)
-3. Call select_isolator — it evaluates the entire catalog and returns the recommendation
+2. Confirm mount configuration only if the user specified one (else omit)
+3. Call select_isolator with ONLY the parameters the user gave you
 4. Summarise the result: part number, series, K values, fn, GT, dD
+
+When the user asks "what's the heaviest mass this part can support" or "at what \
+mass does this part fail" or "what's the valid range for this part" — DO NOT \
+guess a number and run run_shock_analysis once. Use find_capacity_limit. It \
+binary-searches both boundaries of the valid mass range.
+
+When the user mentions a deflection / clearance constraint — phrases like \
+"I have only 30 mm of deflection clearance", "tight clearance above the rack", \
+"which parts deflect less than X mm" — use filter_by_deflection. Do NOT add \
+fake parameters like dD_mm or max_dD to select_isolator (that tool does not \
+have a deflection-limit parameter).
 
 Always show key numbers. Never invent stiffness values or GT results — \
 call the tools to compute them.
@@ -324,6 +717,8 @@ class ShockMountAgent:
         extract_cad_data,
         select_isolator,
         run_shock_analysis,
+        find_capacity_limit,
+        filter_by_deflection,
         lookup_knowledge,
         list_cad_files,
     ]

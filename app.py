@@ -55,6 +55,9 @@ def _init_state():
     defaults = {
         "cad_props":   None,
         "raw_output":  "",
+        "raw_stderr":  "",
+        "extract_attempted": False,
+        "extract_returncode": None,
         "agent":       None,
         "chat_history": [],   # list of {"role": "user"|"assistant", "content": str}
     }
@@ -71,9 +74,10 @@ _init_state()
 def run_solidworks_extraction(
     script: str = "test_assembly.py",
     file_path: str | None = None,
-) -> tuple[dict, str]:
+) -> tuple[dict, str, str, int]:
     """
-    Run test_assembly.py in a subprocess; return (parsed props, raw stdout).
+    Run test_assembly.py in a subprocess.
+    Returns (parsed props, raw stdout, raw stderr, returncode).
     If file_path is given, passes --file to the script so it opens that CAD
     file. Otherwise the script uses whatever SolidWorks document is active.
     """
@@ -81,7 +85,10 @@ def run_solidworks_extraction(
     if file_path:
         cmd += ["--file", file_path]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    return _parse_cad_output(result.stdout), result.stdout
+    return (_parse_cad_output(result.stdout),
+            result.stdout,
+            result.stderr or "",
+            result.returncode)
 
 
 def _shock_env_widget(prefix: str) -> ShockEnv:
@@ -250,15 +257,40 @@ with tab_cad:
         if st.button("🔌 Extract from SolidWorks", type="primary",
                      use_container_width=True, key="cad_extract"):
             with st.spinner("Talking to SolidWorks via COM..."):
-                props, raw = run_solidworks_extraction(file_path=cad_file_override)
-                st.session_state.cad_props = props
-                st.session_state.raw_output = raw
+                props, raw, err, rc = run_solidworks_extraction(file_path=cad_file_override)
+                st.session_state.cad_props          = props
+                st.session_state.raw_output         = raw
+                st.session_state.raw_stderr         = err
+                st.session_state.extract_returncode = rc
+                st.session_state.extract_attempted  = True
 
     with col_right:
         props = st.session_state.cad_props
+        attempted = st.session_state.get("extract_attempted", False)
+        rc        = st.session_state.get("extract_returncode")
+        stderr_text = st.session_state.get("raw_stderr", "")
+        stdout_text = st.session_state.get("raw_output", "")
+
         if not props or not props.get("mass_kg"):
-            st.info("Run extraction (left). SolidWorks must be open with the target "
-                    "assembly. If SolidWorks isn't available, use **Quick Selector** instead.")
+            if attempted:
+                # Extraction was run but didn't produce mass — show the error
+                st.error(
+                    f"Extraction failed (subprocess returncode = {rc}). "
+                    "Common causes: SolidWorks not running, no active document, "
+                    "or the file path you gave doesn't exist."
+                )
+                if stderr_text.strip():
+                    with st.expander("Error details (subprocess stderr)", expanded=True):
+                        st.code(stderr_text, language="text")
+                if stdout_text.strip():
+                    with st.expander("Subprocess stdout (last things it tried)", expanded=False):
+                        st.text(stdout_text)
+            else:
+                st.info(
+                    "Click **Extract from SolidWorks** to start. SolidWorks must be open "
+                    "with the target assembly — OR pick **Specify a file path** above. "
+                    "If SolidWorks isn't available at all, use the **Quick Selector** tab."
+                )
         else:
             st.success("Extracted from SolidWorks")
             m1, m2, m3 = st.columns(3)
