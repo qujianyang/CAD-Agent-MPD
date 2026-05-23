@@ -68,13 +68,19 @@ _init_state()
 # ----------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------
-def run_solidworks_extraction(script: str = "test_assembly.py") -> tuple[dict, str]:
-    """Run test_assembly.py in a subprocess; return (parsed props, raw stdout)."""
-    result = subprocess.run(
-        [sys.executable, script],
-        capture_output=True,
-        text=True,
-    )
+def run_solidworks_extraction(
+    script: str = "test_assembly.py",
+    file_path: str | None = None,
+) -> tuple[dict, str]:
+    """
+    Run test_assembly.py in a subprocess; return (parsed props, raw stdout).
+    If file_path is given, passes --file to the script so it opens that CAD
+    file. Otherwise the script uses whatever SolidWorks document is active.
+    """
+    cmd = [sys.executable, script]
+    if file_path:
+        cmd += ["--file", file_path]
+    result = subprocess.run(cmd, capture_output=True, text=True)
     return _parse_cad_output(result.stdout), result.stdout
 
 
@@ -213,6 +219,28 @@ with tab_cad:
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
+        st.markdown("**CAD source**")
+        cad_mode = st.radio(
+            "Where to extract from:",
+            ["Use active SolidWorks document", "Specify a file path"],
+            key="cad_source_mode",
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        cad_file_override: str | None = None
+        if cad_mode == "Specify a file path":
+            cad_file_override = st.text_input(
+                "Path to .SLDASM or .SLDPRT",
+                value=st.session_state.get(
+                    "last_cad_path",
+                    r"C:\mpd\models\SOLIDWORKS DATABASE\Equipment Rack\40U Rack.SLDASM",
+                ),
+                key="cad_file_path_input",
+                help="Absolute path. SolidWorks will open this file if it isn't already.",
+            )
+            if cad_file_override:
+                st.session_state.last_cad_path = cad_file_override
+
         st.markdown("**Mount configuration**")
         n_bot_cad, n_wall_cad = _mount_widget("cad", default_bot=6, default_wall=4)
 
@@ -222,7 +250,7 @@ with tab_cad:
         if st.button("🔌 Extract from SolidWorks", type="primary",
                      use_container_width=True, key="cad_extract"):
             with st.spinner("Talking to SolidWorks via COM..."):
-                props, raw = run_solidworks_extraction()
+                props, raw = run_solidworks_extraction(file_path=cad_file_override)
                 st.session_state.cad_props = props
                 st.session_state.raw_output = raw
 
@@ -304,31 +332,86 @@ with tab_agent:
                 except Exception as e:
                     st.error(f"Failed to initialize agent: {e}")
 
-        # Render conversation history
+        # ----- helper: render the tool-call trace for one assistant turn -----
+        def _render_trace(events: list[dict]):
+            """Render a list of streaming events from the agent inside an expander."""
+            if not events:
+                return
+            with st.expander(f"🔎 Show {len(events)} agent steps", expanded=False):
+                for i, ev in enumerate(events, 1):
+                    if ev["type"] == "reasoning":
+                        st.markdown(f"**{i}. 💭 Reasoning**")
+                        st.markdown(f"> {ev['content']}")
+                    elif ev["type"] == "tool_call":
+                        args_lines = [f"  {k} = {v!r}" for k, v in ev["args"].items()]
+                        st.markdown(f"**{i}. 🔧 Calling `{ev['name']}`**")
+                        st.code("\n".join(args_lines) or "(no args)", language="python")
+                    elif ev["type"] == "tool_result":
+                        preview = ev["content"]
+                        if len(preview) > 800:
+                            preview = preview[:800] + f"\n... ({len(ev['content'])-800} more chars)"
+                        st.markdown(f"**{i}. ✅ Result from `{ev['name']}`**")
+                        st.code(preview, language="text")
+
+        # ----- render conversation history (including past tool traces) -----
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
+                if msg.get("events"):
+                    _render_trace(msg["events"])
                 st.markdown(msg["content"])
 
-        # New user input
+        # ----- new user input -----
         user_q = st.chat_input("Ask anything (e.g. 'what isolator for 1200kg, 6+4 mounts?')")
         if user_q and st.session_state.agent is not None:
             st.session_state.chat_history.append({"role": "user", "content": user_q})
             with st.chat_message("user"):
                 st.markdown(user_q)
 
-            # Build LangChain-style chat history from prior messages
+            # Build LangChain-style chat history from prior turns
             hist = []
             for m in st.session_state.chat_history[:-1]:
                 hist.append(("human" if m["role"] == "user" else "ai", m["content"]))
 
+            # Stream the agent's run live — show each tool call + result inside a
+            # collapsible status block, then the final answer below.
             with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
+                collected_events: list[dict] = []
+                final_text = ""
+                with st.status("Working...", expanded=True) as status:
                     try:
-                        reply = st.session_state.agent.invoke(user_q, chat_history=hist or None)
+                        for ev in st.session_state.agent.stream(user_q, chat_history=hist or None):
+                            if ev["type"] == "reasoning":
+                                st.markdown(f"💭 *{ev['content']}*")
+                                collected_events.append(ev)
+                            elif ev["type"] == "tool_call":
+                                args_preview = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
+                                if len(args_preview) > 120:
+                                    args_preview = args_preview[:120] + "…"
+                                st.markdown(f"🔧 Calling **`{ev['name']}`**({args_preview})")
+                                collected_events.append(ev)
+                            elif ev["type"] == "tool_result":
+                                preview = ev["content"]
+                                if len(preview) > 400:
+                                    preview = preview[:400] + f"… ({len(ev['content'])-400} more chars)"
+                                st.markdown(f"✅ `{ev['name']}` returned:")
+                                st.code(preview, language="text")
+                                collected_events.append(ev)
+                            elif ev["type"] == "final":
+                                final_text = ev["content"]
+                        status.update(label=f"Done — {len([e for e in collected_events if e['type']=='tool_call'])} tool call(s)",
+                                      state="complete", expanded=False)
                     except Exception as e:
-                        reply = f"Agent error: {e}"
-                st.markdown(reply)
-            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+                        final_text = f"Agent error: {e}"
+                        status.update(label="Failed", state="error", expanded=True)
+
+                if final_text:
+                    st.markdown(final_text)
+
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": final_text,
+                "events": collected_events,
+            })
 
         col_clear, _ = st.columns([1, 5])
         if col_clear.button("🧹 Clear chat"):

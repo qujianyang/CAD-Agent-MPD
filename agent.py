@@ -54,14 +54,22 @@ def _get_knowledge_search():
 # ---------------------------------------------------------------------------
 
 @tool
-def extract_cad_data(assembly_script: str = "test_assembly.py") -> str:
+def extract_cad_data(cad_file_path: str = "") -> str:
     """
-    Extract mass, CG, and bounding envelope from the active SolidWorks assembly.
-    Returns mass_kg, CG coordinates (mm), and envelope dimensions (W/D/H in mm).
-    Use this when you need the actual weight/mass of a CAD model before selecting an isolator.
-    SolidWorks must be open with an assembly loaded.
+    Extract mass, CG, and bounding envelope from a SolidWorks assembly or part.
+
+    Args:
+        cad_file_path: Absolute path to a .SLDASM or .SLDPRT file (e.g.
+                       "C:\\path\\to\\Rack.SLDASM"). Leave empty to use the
+                       currently active SolidWorks document. If you don't know
+                       a path, call list_cad_files first to discover available
+                       files, then pass the chosen path here.
+
+    Returns mass_kg, CG (in both default origin and base-relative frames),
+    envelope dimensions (W/D/H mm), and BOM. SolidWorks must be installed and
+    running on the host.
     """
-    props = _extract_cad_data_raw(assembly_script)
+    props = _extract_cad_data_raw(file_path=cad_file_path or None)
     if not props or not props.get("mass_kg"):
         return (
             "ERROR: Could not connect to SolidWorks or extract mass. "
@@ -329,6 +337,10 @@ class ShockMountAgent:
             api_key=api_key,
             temperature=0.1,
             max_tokens=2048,
+            # NVIDIA's hosted Llama 3.1 70B only allows ONE tool call per
+            # turn. Without this, multi-step prompts (extract -> select)
+            # raise: "This model only supports single tool-calls at once!"
+            parallel_tool_calls=False,
         )
 
         # LangChain 1.x: create_agent returns a compiled LangGraph
@@ -341,6 +353,69 @@ class ShockMountAgent:
         # Final answer is the last AI message
         last = result["messages"][-1]
         return last.content if hasattr(last, "content") else str(last)
+
+    def stream(self, question: str, chat_history: list | None = None):
+        """
+        Stream structured events as the agent works. Use this in UIs that want
+        to show tool calls + results live (e.g. Streamlit's st.status).
+
+        Yields dicts of these shapes:
+          {"type": "reasoning",    "content": str}                          # AI text emitted alongside a tool call
+          {"type": "tool_call",    "name": str, "args": dict, "id": str}    # LLM requested a tool
+          {"type": "tool_result",  "name": str, "content": str, "id": str}  # tool returned
+          {"type": "final",        "content": str}                          # last AI message (the answer)
+
+        The graph emits "updates" — one dict per node that produced output.
+        We unpack those into the simpler event stream above so the UI can
+        render without knowing about LangGraph internals.
+        """
+        messages = list(chat_history) if chat_history else []
+        messages.append(("human", question))
+
+        seen_tool_call_ids: set[str] = set()
+        last_ai_content: str = ""
+
+        for update in self._agent.stream({"messages": messages}, stream_mode="updates"):
+            # update == {"agent": {"messages": [...]}}  or  {"tools": {"messages": [...]}}
+            for _node, node_state in update.items():
+                new_messages = node_state.get("messages", []) if isinstance(node_state, dict) else []
+                for msg in new_messages:
+                    # ToolMessage: identifiable by having a tool_call_id attribute
+                    tool_call_id = getattr(msg, "tool_call_id", None)
+                    if tool_call_id is not None:
+                        yield {
+                            "type": "tool_result",
+                            "name": getattr(msg, "name", "?"),
+                            "content": str(getattr(msg, "content", "")),
+                            "id": tool_call_id,
+                        }
+                        continue
+
+                    # AI message: may have tool_calls and/or content
+                    tool_calls = getattr(msg, "tool_calls", None) or []
+                    content    = getattr(msg, "content", "") or ""
+
+                    if tool_calls:
+                        # Some Llama responses emit reasoning text alongside the tool call.
+                        if content.strip():
+                            yield {"type": "reasoning", "content": content}
+                        for tc in tool_calls:
+                            tc_id = tc.get("id", "") if isinstance(tc, dict) else getattr(tc, "id", "")
+                            if tc_id in seen_tool_call_ids:
+                                continue  # avoid duplicates if the same call shows up twice
+                            seen_tool_call_ids.add(tc_id)
+                            yield {
+                                "type": "tool_call",
+                                "name": tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?"),
+                                "args": tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {}),
+                                "id":   tc_id,
+                            }
+                    elif content.strip():
+                        # No tool calls + has content => this is (likely) the final answer.
+                        last_ai_content = content
+
+        if last_ai_content:
+            yield {"type": "final", "content": last_ai_content}
 
 
 # ---------------------------------------------------------------------------

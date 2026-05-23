@@ -1,8 +1,23 @@
-import win32com.client
+import argparse
 import sys
+
+import win32com.client
 import pythoncom
 
 pythoncom.CoInitialize()
+
+# CLI args — used to override which CAD file to extract from.
+# If --file is not given, falls back to whatever SolidWorks has active.
+_parser = argparse.ArgumentParser(
+    description="Extract mass / CG / bounding box / BOM from a SolidWorks assembly or part."
+)
+_parser.add_argument(
+    "--file",
+    default=None,
+    help="Absolute path to a .SLDASM or .SLDPRT file to open. "
+         "If omitted, uses the currently active SolidWorks document.",
+)
+_args = _parser.parse_args()
 
 
 def debug_step(msg):
@@ -57,24 +72,32 @@ try:
     sw.UserControl = True
     print("OK")
 
-    debug_step("Getting Active Document")
-    model_raw = safe_call(sw, "IActiveDoc2") or safe_call(sw, "ActiveDoc")
-
-    if model_raw is None:
-        PART_PATH = r"C:\mpd\models\SOLIDWORKS DATABASE\Equipment Rack\40U Rack.SLDASM"
-        doc_type = 2 if PART_PATH.lower().endswith(".sldasm") else 1
-        debug_step(f"No active doc, opening '{PART_PATH}'")
+    # Resolution order:
+    #   1. --file <path> on the CLI -> always open that file
+    #   2. SolidWorks has an active document -> use it
+    #   3. neither -> error out (no silent hardcoded fallback)
+    if _args.file:
+        debug_step(f"Opening file from --file ('{_args.file}')")
+        doc_type = 2 if _args.file.lower().endswith(".sldasm") else 1
         try:
             errs = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
             warns = win32com.client.VARIANT(pythoncom.VT_BYREF | pythoncom.VT_I4, 0)
-            model_raw = sw.OpenDoc6(PART_PATH, doc_type, 1, "", errs, warns)
+            model_raw = sw.OpenDoc6(_args.file, doc_type, 1, "", errs, warns)
             print("OK")
         except Exception as e:
             print(f"FAILED ({e})")
-
-    if model_raw is None:
-        raise RuntimeError("No active document found.")
-    print("OK")
+            raise RuntimeError(f"Failed to open '{_args.file}': {e}")
+        if model_raw is None:
+            raise RuntimeError(f"OpenDoc6 returned None for '{_args.file}'")
+    else:
+        debug_step("Getting Active Document")
+        model_raw = safe_call(sw, "IActiveDoc2") or safe_call(sw, "ActiveDoc")
+        if model_raw is None:
+            raise RuntimeError(
+                "No --file specified and no active SolidWorks document. "
+                "Either open a model in SolidWorks first, or pass --file PATH."
+            )
+        print("OK")
 
     debug_step("Casting to ModelDoc2/AssemblyDoc")
     try:

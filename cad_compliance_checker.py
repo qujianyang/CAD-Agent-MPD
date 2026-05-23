@@ -13,15 +13,26 @@ from dotenv import load_dotenv
 from mil_std_rag import MILStandardRAG
 
 
-def extract_cad_data(assembly_script: str = "test_assembly.py") -> dict:
-    """Run test_assembly.py and parse CAD properties from its stdout."""
+def extract_cad_data(
+    assembly_script: str = "test_assembly.py",
+    file_path: str | None = None,
+) -> dict:
+    """
+    Run test_assembly.py in a subprocess and parse CAD properties from its stdout.
+
+    Args:
+        assembly_script: The SolidWorks COM driver script. Don't change unless
+                         you've copied it somewhere else.
+        file_path: Optional absolute path to a .SLDASM or .SLDPRT file to open.
+                   If None, test_assembly.py will use the currently active
+                   SolidWorks document.
+    """
     print("[1/3] Connecting to SolidWorks and extracting CAD data...")
+    cmd = [sys.executable, assembly_script]
+    if file_path:
+        cmd += ["--file", file_path]
     try:
-        result = subprocess.run(
-            [sys.executable, assembly_script],
-            capture_output=True,
-            text=True,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True)
         output = result.stdout
         if result.returncode != 0:
             print(f"  Warning: script exited with code {result.returncode}")
