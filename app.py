@@ -355,12 +355,20 @@ with tab_agent:
         st.error("Agent chat requires `NVIDIA_API_KEY` in `.env`. "
                  "The selector tabs above don't need it.")
     else:
-        # Lazy-init the agent (slow first time — loads NVIDIA endpoint)
+        # Cache the agent object at the process level so the NVIDIA endpoint
+        # handshake and LangChain tool registration only happen once, regardless
+        # of how many Streamlit reruns occur. Each stream() call is still a fresh
+        # LLM request — only the constructor is cached, not any answers.
+        # Caveat: if API_KEY changes or agent.py is edited, restart the app.
+        @st.cache_resource
+        def _get_agent(key: str):
+            from agent import ShockMountAgent
+            return ShockMountAgent(key)
+
         if st.session_state.agent is None:
             with st.spinner("Initializing agent (Llama 3.1 70B + 5 tools)..."):
                 try:
-                    from agent import ShockMountAgent
-                    st.session_state.agent = ShockMountAgent(API_KEY)
+                    st.session_state.agent = _get_agent(API_KEY)
                 except Exception as e:
                     st.error(f"Failed to initialize agent: {e}")
 
