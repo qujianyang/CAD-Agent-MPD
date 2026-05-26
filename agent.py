@@ -14,7 +14,8 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
 from physics_engine import ShockEnv, run_analysis, format_report
 from catalog import (
-    ALL_CATALOGS, CB1400_CATALOG, CB1500_CATALOG, CB1800_CATALOG,
+    ALL_CATALOGS,
+    CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
     select_and_analyze, format_selection_table, selection_context_for_llm,
 )
 from cad_compliance_checker import extract_cad_data as _extract_cad_data_raw
@@ -103,7 +104,7 @@ def select_isolator(
     series: str = "ALL",
 ) -> str:
     """
-    Select the optimal wire rope isolator from the CB1400 / CB1500 / CB1800 catalog.
+    Select the optimal wire rope isolator from the CB61400 / CB1400 / CB1500 / CB1700 catalog.
     Evaluates every matching part and recommends the SOFTEST (best isolation) that passes:
       - GT < GT_limit in all 3 load directions (compression vertical, lateral, shear)
       - Dynamic deflection < isolator's rated travel in all 3 directions
@@ -128,12 +129,13 @@ def select_isolator(
         to_s       : Shock pulse duration in seconds. Default 0.011 (11ms saw-tooth).
                      OMIT unless user explicitly gives a different pulse duration.
         GT_limit_G : Max allowable transmitted G. Default 10.0 G. OMIT unless user says.
-        series     : Catalog filter. "ALL", "CB1400", "CB1500", or "CB1800". Default "ALL".
+        series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
     """
     catalog_map = {
         "CB1400": CB1400_CATALOG,
         "CB1500": CB1500_CATALOG,
-        "CB1800": CB1800_CATALOG,
+        "CB61400": CB61400_CATALOG,
+        "CB1700": CB1700_CATALOG,
         "ALL":    ALL_CATALOGS,
     }
     catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
@@ -556,7 +558,7 @@ def filter_by_deflection(
         Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user says.
         to_s       : Shock pulse duration (s). Default 0.011. OMIT unless user says.
         GT_limit_G : Maximum transmitted G. Default 10.0. OMIT unless user says.
-        series     : Catalog filter. "ALL", "CB1400", "CB1500", or "CB1800". Default "ALL".
+        series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
 
     Returns the qualifying parts sorted softest-K first (best isolation that
     still fits the clearance), plus a list of parts that pass the 4-case
@@ -582,7 +584,8 @@ def filter_by_deflection(
     catalog_map = {
         "CB1400": CB1400_CATALOG,
         "CB1500": CB1500_CATALOG,
-        "CB1800": CB1800_CATALOG,
+        "CB61400": CB61400_CATALOG,
+        "CB1700": CB1700_CATALOG,
         "ALL":    ALL_CATALOGS,
     }
     catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
@@ -671,7 +674,7 @@ _SYSTEM_PROMPT = """\
 You are a mechanical engineering design assistant specializing in shock isolation \
 for military vehicle-mounted shelter equipment.
 
-Your primary task: select the correct wire rope isolator (CB1400, CB1500, CB1800 series) \
+Your primary task: select the correct wire rope isolator (CB61400, CB1400, CB1500, CB1700 series) \
 for equipment racks given mass, mount configuration, and shock environment.
 
 Standard defaults (used automatically if you omit the parameter — see CRITICAL rule below):

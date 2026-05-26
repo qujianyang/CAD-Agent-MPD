@@ -21,10 +21,11 @@ from dotenv import load_dotenv
 import streamlit as st
 
 from cad_compliance_checker import _parse_cad_output
-from physics_engine import ShockEnv
+from physics_engine import ShockEnv, _loads_per_isolator, run_analysis
 from catalog import (
-    ALL_CATALOGS, CB1400_CATALOG, CB1500_CATALOG, CB1800_CATALOG,
-    select_and_analyze, format_selection_table, format_report,
+    ALL_CATALOGS, AUTO_SELECT_CATALOGS,
+    CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
+    select_isolator, select_and_analyze, format_selection_table, format_report,
 )
 
 
@@ -41,10 +42,12 @@ load_dotenv()
 API_KEY = (os.environ.get("NVIDIA_API_KEY") or "").strip()
 
 SERIES_MAP = {
-    "All series (CB1400 + CB1500 + CB1800)": ALL_CATALOGS,
-    "CB1400 (1/2\" wire, ~200-1000 kg)":    CB1400_CATALOG,
-    "CB1500 (5/8\" wire, ~500-1800 kg)":    CB1500_CATALOG,
-    "CB1800 (1\" wire, ~1000-3000 kg)":     CB1800_CATALOG,
+    "All series (CB1400 + CB1500 + CB1700)":            AUTO_SELECT_CATALOGS,
+    "CB1400 (1/2\" wire)":                              CB1400_CATALOG,
+    "CB1500 (5/8\" wire)":                              CB1500_CATALOG,
+    "CB1700 (7/8\" wire)":                              CB1700_CATALOG,
+    "All incl. CB61400 (6-strand softer, opt-in)":      ALL_CATALOGS,
+    "CB61400 only (6-strand 1/2\" wire)":               CB61400_CATALOG,
 }
 
 
@@ -110,6 +113,27 @@ def _mount_widget(prefix: str, default_bot: int = 6, default_wall: int = 4) -> t
     n_wall = c2.number_input("n_wall   (wall mounts)",   value=default_wall,
                              min_value=2, max_value=24, step=1, key=f"{prefix}_nw")
     return int(n_bot), int(n_wall)
+
+
+def _browse_cad_file() -> str | None:
+    """Open a native Windows file-explorer dialog; return selected path or None."""
+    import tkinter as tk
+    from tkinter import filedialog
+    root = tk.Tk()
+    root.withdraw()
+    root.wm_attributes("-topmost", True)
+    path = filedialog.askopenfilename(
+        title="Select SolidWorks Assembly or Part",
+        filetypes=[
+            ("SolidWorks files", "*.SLDASM *.SLDPRT"),
+            ("SolidWorks Assembly", "*.SLDASM"),
+            ("SolidWorks Part", "*.SLDPRT"),
+            ("All files", "*.*"),
+        ],
+        initialdir=r"C:\mpd\models\SOLIDWORKS DATABASE",
+    )
+    root.destroy()
+    return path.replace("/", "\\") if path else None
 
 
 def _render_selection_result(report, candidates):
@@ -184,16 +208,32 @@ tab_quick, tab_cad, tab_agent = st.tabs([
 # TAB 1 — Quick Selector (manual entry, server-friendly, no SolidWorks needed)
 # =============================================================================
 with tab_quick:
-    st.subheader("Manual Isolator Selector")
+    st.subheader("Isolator Selector")
     st.caption("Enter the assembly mass directly. Useful when SolidWorks isn't running "
                "or you're working from spec sheets.")
+
+    sel_mode = st.radio(
+        "Mode",
+        ["Auto (recommend best part)", "Manual (verify a specific part)"],
+        horizontal=True,
+        key="q_sel_mode",
+    )
 
     c1, c2 = st.columns([1, 1])
     with c1:
         mass_kg = st.number_input("Total assembly mass [kg]", value=850.0,
                                   min_value=1.0, max_value=10000.0, step=10.0, key="q_mass")
     with c2:
-        series_label = st.selectbox("Catalog filter", list(SERIES_MAP.keys()), key="q_series")
+        if sel_mode == "Auto (recommend best part)":
+            series_label = st.selectbox("Catalog filter", list(SERIES_MAP.keys()), key="q_series")
+        else:
+            all_part_options = {e.part_no: e for e in ALL_CATALOGS}
+            chosen_part_no = st.selectbox(
+                "Select part to verify",
+                list(all_part_options.keys()),
+                index=list(all_part_options.keys()).index("CB1400-15"),
+                key="q_manual_part",
+            )
 
     st.markdown("**Mount configuration**")
     n_bot, n_wall = _mount_widget("q", default_bot=6, default_wall=4)
@@ -201,17 +241,35 @@ with tab_quick:
     st.markdown("**Shock environment**")
     env = _shock_env_widget("q")
 
-    if st.button("🎯 Select Best Isolator", type="primary",
-                 use_container_width=True, key="q_run"):
-        with st.spinner("Running 4-case selection..."):
-            report, candidates = select_and_analyze(
-                mass_kg   = mass_kg,
-                n_bottom  = n_bot,
-                n_wall    = n_wall,
-                cad_props = None,
-                shock_env = env,
-                catalog   = SERIES_MAP[series_label],
-            )
+    btn_label = "🎯 Select Best Isolator" if sel_mode == "Auto (recommend best part)" else "📊 Run Analysis"
+    if st.button(btn_label, type="primary", use_container_width=True, key="q_run"):
+        if sel_mode == "Auto (recommend best part)":
+            with st.spinner("Running 4-case selection..."):
+                report, candidates = select_and_analyze(
+                    mass_kg   = mass_kg,
+                    n_bottom  = n_bot,
+                    n_wall    = n_wall,
+                    cad_props = None,
+                    shock_env = env,
+                    catalog   = SERIES_MAP[series_label],
+                )
+        else:
+            with st.spinner("Computing 4 load cases..."):
+                entry = all_part_options[chosen_part_no]
+                loads = _loads_per_isolator(mass_kg, n_bot, n_wall)
+                candidates = select_isolator(
+                    m_comp_bottom_kg = loads["m_comp_bottom_kg"],
+                    m_comp_wall_kg   = loads["m_comp_wall_kg"],
+                    m_roll_wall_kg   = loads["m_roll_wall_kg"],
+                    m_roll_bottom_kg = loads["m_roll_bottom_kg"],
+                    env              = env,
+                    catalog          = [entry],
+                )
+                report = run_analysis(
+                    mass_kg, n_bot, n_wall,
+                    shock_env = env,
+                    isolator  = entry.to_isolator_spec(),
+                )
         _render_selection_result(report, candidates)
 
 
@@ -236,14 +294,17 @@ with tab_cad:
         )
         cad_file_override: str | None = None
         if cad_mode == "Specify a file path":
+            browse_col, _ = st.columns([1, 4])
+            if browse_col.button("📂 Browse…", key="browse_cad"):
+                picked = _browse_cad_file()
+                if picked:
+                    st.session_state["cad_file_path_input"] = picked
+                    st.session_state.last_cad_path = picked
             cad_file_override = st.text_input(
                 "Path to .SLDASM or .SLDPRT",
-                value=st.session_state.get(
-                    "last_cad_path",
-                    r"C:\mpd\models\SOLIDWORKS DATABASE\Equipment Rack\40U Rack.SLDASM",
-                ),
+                value=st.session_state.get("last_cad_path", ""),
                 key="cad_file_path_input",
-                help="Absolute path. SolidWorks will open this file if it isn't already.",
+                help="Click Browse or paste an absolute path.",
             )
             if cad_file_override:
                 st.session_state.last_cad_path = cad_file_override
@@ -273,17 +334,26 @@ with tab_cad:
 
         if not props or not props.get("mass_kg"):
             if attempted:
-                # Extraction was run but didn't produce mass — show the error
-                st.error(
-                    f"Extraction failed (subprocess returncode = {rc}). "
-                    "Common causes: SolidWorks not running, no active document, "
-                    "or the file path you gave doesn't exist."
+                # Parse [CRITICAL ERROR] from stdout for a precise headline
+                critical = next(
+                    (line.replace("[CRITICAL ERROR]", "").strip()
+                     for line in (stdout_text or "").splitlines()
+                     if "[CRITICAL ERROR]" in line),
+                    None,
                 )
+                if critical:
+                    st.error(f"SolidWorks extraction failed: {critical}")
+                else:
+                    st.error(
+                        f"Extraction returned no data (subprocess rc={rc}). "
+                        "Common causes: SolidWorks not running, no active document, "
+                        "or the file path you gave doesn't exist."
+                    )
                 if stderr_text.strip():
-                    with st.expander("Error details (subprocess stderr)", expanded=True):
+                    with st.expander("Subprocess stderr", expanded=True):
                         st.code(stderr_text, language="text")
                 if stdout_text.strip():
-                    with st.expander("Subprocess stdout (last things it tried)", expanded=False):
+                    with st.expander("Subprocess stdout (full output)", expanded=True):
                         st.text(stdout_text)
             else:
                 st.info(
@@ -465,6 +535,6 @@ with tab_agent:
 st.divider()
 st.caption(
     "Physics: 4 load cases per `Shock Isolator_850kg_4 Bayed 35U.xls` reference  ·  "
-    "Catalog: VMC CB1400 / CB1500 / CB1800  ·  "
+    "Catalog: Helical CB61400 / CB1400 / CB1500 / CB1700  ·  "
     "Agent: NVIDIA Llama 3.1 70B (tool calling)"
 )

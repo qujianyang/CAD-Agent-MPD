@@ -366,3 +366,4 @@ try:
 
 except Exception as e:
     print(f"\n[CRITICAL ERROR] {e}")
+    sys.exit(1)

@@ -53,3 +53,4 @@ Desktop.ini
 mpd/
 __pycache__/
 *.pyc
+__pycache__/nvidia_embedder.cpython-310.pyc

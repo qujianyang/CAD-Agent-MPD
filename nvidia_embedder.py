@@ -34,19 +34,19 @@ class NVIDIAEmbedder:
         print("Testing NVIDIA API connection...", end=" ", flush=True)
         try:
             self._get_client().embed_query("test")
-            print("✓ API is working")
+            print("[OK] API is working")
             self.api_works = True
             return True
         except Exception as e:
             msg = str(e)[:80]
             if "401" in msg:
-                print(f"✗ API key invalid (401)")
+                print(f"[FAIL] API key invalid (401)")
             elif "429" in msg:
-                print("⚠ Rate limited (429)")
+                print("[WARN] Rate limited (429)")
                 self.api_works = True
                 return True
             else:
-                print(f"✗ {msg}")
+                print(f"[FAIL] {msg}")
             self.api_works = False
             return False
 
@@ -57,7 +57,7 @@ class NVIDIAEmbedder:
             from sentence_transformers import SentenceTransformer
             print("Loading local embedding model...", end=" ", flush=True)
             self.local_model = SentenceTransformer("all-MiniLM-L6-v2")
-            print("✓ Loaded")
+            print("[OK] Loaded")
         except ImportError:
             print("\n[WARN] Install with: pip install sentence-transformers")
             raise
@@ -97,7 +97,7 @@ class NVIDIAEmbedder:
                 embeddings = self._get_client().embed_documents(texts)
                 for chunk, emb in zip(chunks, embeddings):
                     chunk["embedding"] = emb
-                print(f"✓ Embedded {total}/{total} chunks")
+                print(f"[OK] Embedded {total}/{total} chunks")
                 return chunks
             except Exception as e:
                 print(f"Batch embed failed ({str(e)[:80]}), falling back to per-chunk...")
@@ -113,13 +113,13 @@ class NVIDIAEmbedder:
             except Exception as e:
                 failed_count += 1
                 if failed_count <= 5:
-                    print(f"\n  ✗ Chunk {idx}: {str(e)[:80]}")
+                    print(f"\n  [FAIL] Chunk {idx}: {str(e)[:80]}")
                 chunk["embedding"] = [0.0] * 384
                 embedded.append(chunk)
 
-        print(f"\n✓ Embedded {len(embedded)}/{total} chunks")
+        print(f"\n[OK] Embedded {len(embedded)}/{total} chunks")
         if failed_count:
-            print(f"⚠ {failed_count} chunks used fallback embeddings")
+            print(f"[WARN] {failed_count} chunks used fallback embeddings")
         return embedded
 
 
@@ -133,7 +133,7 @@ class JSONVectorStore:
         with open(self.store_path, "w") as f:
             json.dump(store_data, f, indent=2)
         size_mb = self.store_path.stat().st_size / (1024 * 1024)
-        print(f"✓ Saved {len(valid)} valid embeddings to {self.store_path} ({size_mb:.1f} MB)")
+        print(f"[OK] Saved {len(valid)} valid embeddings to {self.store_path} ({size_mb:.1f} MB)")
 
     def load(self) -> Dict[str, Any]:
         if not self.store_path.exists():

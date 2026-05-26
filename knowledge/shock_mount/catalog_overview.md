@@ -1,8 +1,8 @@
 # CB-Series Wire Rope Isolator Catalog Overview
 
-VMC Group helical wire rope isolators currently supported in the selection
-engine. Numeric values are transcribed from VMC catalog `706-C` and the
-individual `Model CBxxxx Helical wire rope isolator` datasheets.
+Helical (Aeroflex) wire rope isolators supported in the selection engine.
+All values transcribed from the official Helical datasheet PDF supplied by supervisor.
+Supervisor's stated range: **C1260 to CB1700**.
 
 For exact K and dmax values per part, see `catalog.py` in the codebase.
 
@@ -10,20 +10,38 @@ For exact K and dmax values per part, see `catalog.py` in the codebase.
 
 ## When to use which series
 
-| Series  | Rope dia | Typical use         | Suitable load range | Envelope     |
-|---------|----------|---------------------|---------------------|--------------|
-| CB1400  | 1/2"     | Standard 19" racks  | ~200 - 1000 kg      | 3" - 7" wide |
-| CB1500  | 5/8"     | Heavy 19" racks     | ~500 - 1800 kg      | 4" - 7" wide |
-| CB1800  | 1"       | Shelter / chassis   | ~1000 - 3000 kg     | 6" - 9" wide |
+| Series  | Rope dia | Construction  | Typical use           | Suitable load range | Envelope      |
+|---------|----------|---------------|-----------------------|---------------------|---------------|
+| CB61400 | 1/2"     | 6-strand hel. | Lighter racks, softer | ~150 - 800 kg       | 4" - 7" wide  |
+| CB1400  | 1/2"     | Standard      | Standard 19" racks    | ~200 - 1000 kg      | 3" - 7" wide  |
+| CB1500  | 5/8"     | Standard      | Heavy 19" racks       | ~500 - 1800 kg      | 4" - 7" wide  |
+| CB1700  | 7/8"     | Standard      | Shelter / chassis     | ~800 - 3000 kg      | 6" - 9" wide  |
 
-Mass ranges are rough guides; always run the selector against the 4 load
-cases — a part is suitable only when all 4 pass.
+CB61400 and CB1400 have the same physical dimensions; CB61400 is ~25% softer.
+Mass ranges are rough guides — always run the selector against all 4 load cases.
 
 ---
 
-## CB1400 family (10 variants)
+## CB61400 family (7 variants) — 6-strand helical, 1/2" wire
 
-Source: datasheet REV:5
+Source: Helical CB6 1400 Series datasheet
+
+| Part        | K_comp [lb/in] | K_shear [lb/in] | dmax_comp [in] | dmax_shear [in] |
+|-------------|----------------|-----------------|----------------|-----------------|
+| CB61400-15  | 1990           |  810            | 1.40           | 1.60            |
+| CB61400-17  | 1570           |  650            | 1.60           | 1.80            |
+| CB61400-20  | 1025           |  555            | 2.00           | 2.00            |
+| CB61400-30  |  680           |  315            | 2.40           | 2.40            |
+| CB61400-40  |  500           |  240            | 2.80           | 2.80            |
+| CB61400-50  |  375           |  195            | 3.20           | 3.20            |
+| CB61400-60  |  200           |  110            | 4.00           | 3.60            |
+
+---
+
+## CB1400 family (10 variants) — 1/2" wire
+
+Source: Helical CB 1400 Series datasheet REV:5
+Note: -10, -12, -25 variants from REV:5 only; Helical PDF shows -15 through -60.
 
 | Part      | K_comp [lb/in] | K_shear [lb/in] | dmax_comp [in] | dmax_shear [in] |
 |-----------|----------------|-----------------|----------------|-----------------|
@@ -38,14 +56,13 @@ Source: datasheet REV:5
 | CB1400-50 |  500           |  260            | 3.20           | 3.20            |
 | CB1400-60 |  265           |  145            | 4.00           | 3.60            |
 
-The `-15` suffix is the most common pick for ~850 kg rack systems and is the
-default in the reference Excel.
+CB1400-15 is the most common pick for ~850 kg rack systems (reference Excel validation case).
 
 ---
 
-## CB1500 family (6 variants)
+## CB1500 family (6 variants) — 5/8" wire
 
-Source: datasheet REV:6 / VMC catalog 706-C
+Source: Helical CB 1500 Series datasheet
 
 | Part      | K_comp [lb/in] | K_shear [lb/in] | dmax_comp [in] | dmax_shear [in] |
 |-----------|----------------|-----------------|----------------|-----------------|
@@ -58,17 +75,18 @@ Source: datasheet REV:6 / VMC catalog 706-C
 
 ---
 
-## CB1800 family (5 variants)
+## CB1700 family (5 variants) — 7/8" wire
 
-Source: datasheet REV:7 / VMC catalog 706-C
+Source: Helical CB 1700 Series datasheet p.16
+Replaces CB1800 which does not appear in the official Helical catalog.
 
 | Part      | K_comp [lb/in] | K_shear [lb/in] | dmax_comp [in] | dmax_shear [in] |
 |-----------|----------------|-----------------|----------------|-----------------|
-| CB1800-15 | 12100          | 6220            | 2.00           | 2.00            |
-| CB1800-17 |  9300          | 4470            | 2.40           | 2.40            |
-| CB1800-20 |  5910          | 2840            | 2.80           | 2.80            |
-| CB1800-30 |  3080          | 1440            | 3.60           | 3.60            |
-| CB1800-40 |  2050          |  870            | 4.00           | 4.00            |
+| CB1700-15 | 7565           | 3890            | 2.00           | 2.00            |
+| CB1700-17 | 5815           | 2795            | 2.40           | 2.40            |
+| CB1700-20 | 3695           | 1775            | 2.80           | 2.80            |
+| CB1700-30 | 1925           |  900            | 3.60           | 3.60            |
+| CB1700-40 | 1285           |  545            | 4.00           | 4.00            |
 
 ---
 

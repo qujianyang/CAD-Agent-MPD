@@ -43,14 +43,19 @@ Returned object is a `CompiledStateGraph` from LangGraph.
 - `.env` only for API keys. **No hardcoded fallbacks anywhere** — they leak into git history.
 - Required: `NVIDIA_API_KEY`
 - Do not commit `mil_std_embeddings.json` if it ever contains anything user-specific.
+- **Python venv**: `C:\Users\qujia\QuantumKeyDistribution\CAD-Agent-MPD\mpd\Scripts\python.exe`
+  - All project deps (langchain, streamlit, langchain-nvidia-ai-endpoints, pywin32, etc.) live here.
+  - Always use this interpreter for scripts: `.\mpd\Scripts\python.exe setup_knowledge.py`
+  - Never use bare `python` in this project — system Python 3.13 at `C:\Python313` has none of these packages.
 
 ## Streaming
 
 Agent exposes `stream(messages)` yielding events. UI persists events into `chat_history` so reruns show past tool calls. Don't reach for callbacks or LangChain's `AsyncIteratorCallbackHandler` — `stream_mode="updates"` on the LangGraph object is the supported path.
 
-## No emojis in source files
+## No emojis or non-ASCII symbols in source files
 
 Unless the user explicitly asks for them.
+Never use `✓ ✗ ⚠` or any Unicode symbol in `print()` statements — Windows terminals default to cp1252 which can't encode them, causing `UnicodeEncodeError` at runtime. Use plain ASCII: `[OK]` `[FAIL]` `[WARN]`.
 
 ## Anti-hallucination — three-layer defense (for to_s=0)
 

@@ -1,18 +1,21 @@
 """
 Wire Rope Isolator catalog + automated part selection.
-Covers CB1400 (1/2"), CB1500 (5/8"), and CB1800 (1") series.
+Covers CB61400 (6-strand 1/2"), CB1400 (1/2"), CB1500 (5/8"), CB1700 (7/8") series.
 
-Data sources:
-  CB1400 — datasheet 137R-103480 REV:5
-  CB1500 — datasheet REV:6 / VMC catalog 706-C
-  CB1800 — datasheet REV:7 / VMC catalog 706-C
+Data sources (all from Helical / Aeroflex datasheet PDF supplied by supervisor):
+  CB61400 — Helical CB6 1400 Series, 1/2" 6-strand wire rope
+  CB1400  — Helical CB 1400 Series, 1/2" wire rope (datasheet 137R-103480 REV:5)
+  CB1500  — Helical CB 1500 Series, 5/8" wire rope
+  CB1700  — Helical CB 1700 Series, 7/8" wire rope
+  NOTE: CB1800 removed — not present in the official Helical catalog.
+        Supervisor's stated range is C1260 to CB1700.
 
 Selection logic:
   - GT must be below GT_limit for ALL directions (compression + shear)
   - Dynamic deflection must be below isolator's max travel for ALL directions
   - Among all valid candidates, prefer the SOFTEST (lowest K) that still passes.
     Softer = lower transmitted G = better isolation.
-  - By default all three series are scanned; pass catalog=CB1400_CATALOG etc. to restrict.
+  - By default all four series are scanned; pass catalog=CB1400_CATALOG etc. to restrict.
 """
 import math
 from dataclasses import dataclass, field
@@ -67,7 +70,25 @@ class CatalogEntry:
 
 
 # ---------------------------------------------------------------------------
+# CB61400 — 6-strand helical, 1/2" wire rope  (7 variants, Helical datasheet)
+# Same physical size as CB1400 but ~25% softer due to 6-strand construction.
+# Supervisor explicitly provided this series for inclusion.
+# ---------------------------------------------------------------------------
+CB61400_CATALOG: list[CatalogEntry] = [
+    #                            part_no          H      W    Kcomp  Kshear  dComp  dShear
+    CatalogEntry("CB61400-15", 3.25, 4.00,  1990,   810,  1.40,  1.60),
+    CatalogEntry("CB61400-17", 3.50, 4.13,  1570,   650,  1.60,  1.80),
+    CatalogEntry("CB61400-20", 3.75, 4.75,  1025,   555,  2.00,  2.00),
+    CatalogEntry("CB61400-30", 4.25, 5.25,   680,   315,  2.40,  2.40),
+    CatalogEntry("CB61400-40", 4.90, 5.65,   500,   240,  2.80,  2.80),
+    CatalogEntry("CB61400-50", 5.40, 6.13,   375,   195,  3.20,  3.20),
+    CatalogEntry("CB61400-60", 6.10, 7.10,   200,   110,  4.00,  3.60),
+]
+
+# ---------------------------------------------------------------------------
 # CB1400 — 1/2" wire rope  (10 variants, datasheet REV:5)
+# Note: -10, -12, -25 variants are from REV:5 datasheet; the Helical PDF
+# supplied by supervisor only lists -15 through -60. Kept for completeness.
 # ---------------------------------------------------------------------------
 CB1400_CATALOG: list[CatalogEntry] = [
     #                          part_no        H      W     Kcomp  Kshear  dComp  dShear
@@ -97,19 +118,30 @@ CB1500_CATALOG: list[CatalogEntry] = [
 ]
 
 # ---------------------------------------------------------------------------
-# CB1800 — 1" wire rope  (5 variants, datasheet REV:7 / VMC catalog 706-C)
+# CB1700 — 7/8" wire rope  (5 variants, Helical datasheet p.16)
+# Replaces CB1800 which does not appear in the official Helical catalog.
+# Supervisor's stated range is "C1260 to CB1700" — this is the heaviest series.
 # ---------------------------------------------------------------------------
-CB1800_CATALOG: list[CatalogEntry] = [
-    #                          part_no        H      W      Kcomp   Kshear  dComp  dShear
-    CatalogEntry("CB1800-15", 5.25, 5.50,  12100,  6220,  2.00,  2.00),
-    CatalogEntry("CB1800-17", 6.00, 6.50,   9300,  4470,  2.40,  2.40),
-    CatalogEntry("CB1800-20", 6.25, 7.00,   5910,  2840,  2.80,  2.80),
-    CatalogEntry("CB1800-30", 7.50, 8.25,   3080,  1440,  3.60,  3.60),
-    CatalogEntry("CB1800-40", 8.50, 9.25,   2050,   870,  4.00,  4.00),
+CB1700_CATALOG: list[CatalogEntry] = [
+    #                           part_no          H      W    Kcomp  Kshear  dComp  dShear
+    CatalogEntry("CB1700-15", 5.25, 5.50,  7565,  3890,  2.00,  2.00),
+    CatalogEntry("CB1700-17", 6.00, 6.50,  5815,  2795,  2.40,  2.40),
+    CatalogEntry("CB1700-20", 6.25, 7.00,  3695,  1775,  2.80,  2.80),
+    CatalogEntry("CB1700-30", 7.50, 8.25,  1925,   900,  3.60,  3.60),
+    CatalogEntry("CB1700-40", 8.50, 9.25,  1285,   545,  4.00,  4.00),
 ]
 
-# Combined — all series, used by default
-ALL_CATALOGS: list[CatalogEntry] = CB1400_CATALOG + CB1500_CATALOG + CB1800_CATALOG
+# Auto-select default — matches supervisor's stated range (CB1400 to CB1700).
+# CB61400 excluded: ~25% softer than CB1400, produces 60–80 mm deflections at
+# typical rack masses which is impractical for standard 19" rack installations.
+AUTO_SELECT_CATALOGS: list[CatalogEntry] = (
+    CB1400_CATALOG + CB1500_CATALOG + CB1700_CATALOG
+)
+
+# Full catalog — all four series including CB61400 (opt-in via UI)
+ALL_CATALOGS: list[CatalogEntry] = (
+    CB61400_CATALOG + CB1400_CATALOG + CB1500_CATALOG + CB1700_CATALOG
+)
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +233,7 @@ def select_isolator(
         )
         candidates.append(CatalogCandidate(entry, comp_bottom, comp_wall, roll_wall, roll_bottom))
 
-    # Sort: valid PASS entries first, then within each group sort by softest (lowest K)
+    # Sort: valid PASS entries first, then softest K (best isolation) as tiebreaker.
     candidates.sort(key=lambda c: (not c.valid, c.entry.k_comp_lbin))
     return candidates
 
