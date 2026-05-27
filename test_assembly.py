@@ -2,6 +2,7 @@ import argparse
 import sys
 
 import win32com.client
+import win32com.client.dynamic
 import pythoncom
 
 pythoncom.CoInitialize()
@@ -57,17 +58,23 @@ def _read_cpm_props(cpm):
 
 try:
     debug_step("Connecting to SOLIDWORKS")
-    # EnsureDispatch first — it generates Python wrappers from the SW typelib
-    # so that COM methods like Extension.CreateMassProperty() are exposed.
-    # GetObject alone returns a late-bound dispatch where those methods raise
-    # "Member not found" (DISP_E_MEMBERNOTFOUND).
+    # Priority: GetObject first (attaches to the RUNNING instance via ROT).
+    # We need TWO views of the same SW app:
+    #   - sw_late  : late-bound (dynamic dispatch) — ActiveDoc works here
+    #   - sw       : typelib-wrapped — Extension.CreateMassProperty() works here
+    # EnsureDispatch's typelib drops ActiveDoc as 'Member not found'.
+    sw_late = None
+    sw = None
+    try:
+        sw_late = win32com.client.GetObject(Class="SldWorks.Application")
+    except Exception:
+        pass
     try:
         sw = win32com.client.gencache.EnsureDispatch("SldWorks.Application")
     except Exception:
-        try:
-            sw = win32com.client.GetObject(Class="SldWorks.Application")
-        except Exception:
-            sw = win32com.client.Dispatch("SldWorks.Application")
+        sw = sw_late or win32com.client.Dispatch("SldWorks.Application")
+    if sw_late is None:
+        sw_late = win32com.client.dynamic.Dispatch(sw)
     sw.Visible = True
     sw.UserControl = True
     print("OK")
@@ -91,7 +98,16 @@ try:
             raise RuntimeError(f"OpenDoc6 returned None for '{_args.file}'")
     else:
         debug_step("Getting Active Document")
-        model_raw = safe_call(sw, "IActiveDoc2") or safe_call(sw, "ActiveDoc")
+        # Late-bound dispatch is required — typelib wrapper hides ActiveDoc.
+        try:
+            model_raw = sw_late.ActiveDoc
+        except Exception:
+            model_raw = None
+        if model_raw is None:
+            try:
+                model_raw = sw_late.GetFirstDocument()
+            except Exception:
+                pass
         if model_raw is None:
             raise RuntimeError(
                 "No --file specified and no active SolidWorks document. "

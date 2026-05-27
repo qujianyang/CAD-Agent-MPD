@@ -136,6 +136,142 @@ def _browse_cad_file() -> str | None:
     return path.replace("/", "\\") if path else None
 
 
+def _export_text(chat_history: list[dict]) -> str:
+    from datetime import datetime
+    lines = [
+        f"Shock Mount Agent — Chat Export",
+        f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "=" * 60,
+        "",
+    ]
+    for msg in chat_history:
+        role = "USER" if msg["role"] == "user" else "ASSISTANT"
+        lines.append(f"[{role}]")
+        for ev in msg.get("events") or []:
+            if ev["type"] == "tool_call":
+                args_str = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
+                lines.append(f"  >> Tool: {ev['name']}({args_str})")
+            elif ev["type"] == "tool_result":
+                preview = ev["content"][:400] + ("..." if len(ev["content"]) > 400 else "")
+                lines.append(f"  << Result: {preview}")
+        lines.append(msg["content"])
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _export_markdown(chat_history: list[dict]) -> str:
+    from datetime import datetime
+    lines = [
+        "# Shock Mount Agent — Chat Export",
+        f"*Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*",
+        "",
+        "---",
+        "",
+    ]
+    for msg in chat_history:
+        if msg["role"] == "user":
+            lines.append("### User")
+            lines.append(msg["content"])
+        else:
+            lines.append("### Assistant")
+            events = msg.get("events") or []
+            tool_events = [e for e in events if e["type"] in ("tool_call", "tool_result")]
+            if tool_events:
+                lines.append("<details>")
+                lines.append("<summary>Agent steps</summary>")
+                lines.append("")
+                for ev in tool_events:
+                    if ev["type"] == "tool_call":
+                        args_str = "\n".join(f"  {k} = {v!r}" for k, v in ev["args"].items())
+                        lines.append(f"**Tool call: `{ev['name']}`**")
+                        lines.append(f"```python\n{args_str or '(no args)'}\n```")
+                    elif ev["type"] == "tool_result":
+                        preview = ev["content"][:600] + ("..." if len(ev["content"]) > 600 else "")
+                        lines.append(f"**Result from `{ev['name']}`**")
+                        lines.append(f"```\n{preview}\n```")
+                lines.append("</details>")
+                lines.append("")
+            lines.append(msg["content"])
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _export_html(chat_history: list[dict]) -> str:
+    from datetime import datetime
+    import html as _html
+
+    def esc(s: str) -> str:
+        return _html.escape(str(s))
+
+    rows = []
+    for msg in chat_history:
+        if msg["role"] == "user":
+            rows.append(
+                f'<div class="msg user"><div class="label">User</div>'
+                f'<div class="content">{esc(msg["content"])}</div></div>'
+            )
+        else:
+            events = msg.get("events") or []
+            tool_html = ""
+            tool_events = [e for e in events if e["type"] in ("tool_call", "tool_result")]
+            if tool_events:
+                steps = []
+                for ev in tool_events:
+                    if ev["type"] == "tool_call":
+                        args_str = "\n".join(f"  {k} = {v!r}" for k, v in ev["args"].items())
+                        steps.append(
+                            f'<div class="step"><b>Tool call: <code>{esc(ev["name"])}</code></b>'
+                            f'<pre>{esc(args_str or "(no args)")}</pre></div>'
+                        )
+                    elif ev["type"] == "tool_result":
+                        preview = ev["content"][:600] + ("..." if len(ev["content"]) > 600 else "")
+                        steps.append(
+                            f'<div class="step"><b>Result from <code>{esc(ev["name"])}</code></b>'
+                            f'<pre>{esc(preview)}</pre></div>'
+                        )
+                tool_html = (
+                    f'<details class="trace"><summary>Agent steps ({len(tool_events)})</summary>'
+                    + "".join(steps)
+                    + "</details>"
+                )
+            rows.append(
+                f'<div class="msg assistant"><div class="label">Assistant</div>'
+                f'{tool_html}<div class="content">{esc(msg["content"])}</div></div>'
+            )
+
+    body = "\n".join(rows)
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shock Mount Agent — Chat Export</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; background: #f8f9fa; color: #212529; }}
+  h1 {{ font-size: 1.4em; border-bottom: 2px solid #dee2e6; padding-bottom: 8px; }}
+  .ts {{ color: #6c757d; font-size: 0.85em; margin-bottom: 24px; }}
+  .msg {{ margin-bottom: 20px; border-radius: 8px; padding: 14px 18px; }}
+  .msg.user {{ background: #e7f3ff; border-left: 4px solid #0d6efd; }}
+  .msg.assistant {{ background: #fff; border: 1px solid #dee2e6; border-left: 4px solid #198754; }}
+  .label {{ font-weight: 700; font-size: 0.8em; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; color: #6c757d; }}
+  .content {{ white-space: pre-wrap; line-height: 1.6; }}
+  details.trace {{ margin-bottom: 10px; background: #f1f3f5; border-radius: 6px; padding: 8px 12px; font-size: 0.88em; }}
+  details.trace summary {{ cursor: pointer; font-weight: 600; color: #495057; }}
+  .step {{ margin-top: 8px; }}
+  pre {{ background: #212529; color: #f8f9fa; border-radius: 4px; padding: 8px; overflow-x: auto; font-size: 0.82em; white-space: pre-wrap; }}
+  code {{ background: #e9ecef; padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }}
+</style>
+</head>
+<body>
+<h1>Shock Mount Agent — Chat Export</h1>
+<p class="ts">Exported: {ts}</p>
+{body}
+</body>
+</html>"""
+
+
 def _render_selection_result(report, candidates):
     """Render the selection result section: recommended part, then per-case table."""
     valid = [c for c in candidates if c.valid]
@@ -523,10 +659,26 @@ with tab_agent:
                 "events": collected_events,
             })
 
-        col_clear, _ = st.columns([1, 5])
+        col_clear, col_exp_md, col_exp_txt, col_exp_html, _ = st.columns([1, 1, 1, 1, 2])
         if col_clear.button("🧹 Clear chat"):
             st.session_state.chat_history = []
             st.rerun()
+
+        if st.session_state.chat_history:
+            from datetime import datetime
+            _ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            col_exp_md.download_button(
+                "⬇ Markdown", data=_export_markdown(st.session_state.chat_history),
+                file_name=f"chat_{_ts}.md", mime="text/markdown",
+            )
+            col_exp_txt.download_button(
+                "⬇ Text", data=_export_text(st.session_state.chat_history),
+                file_name=f"chat_{_ts}.txt", mime="text/plain",
+            )
+            col_exp_html.download_button(
+                "⬇ HTML", data=_export_html(st.session_state.chat_history),
+                file_name=f"chat_{_ts}.html", mime="text/html",
+            )
 
 
 # ----------------------------------------------------------------------------

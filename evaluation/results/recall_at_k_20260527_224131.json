@@ -1,0 +1,880 @@
+{
+  "summary": {
+    "n_main": 25,
+    "hit@1": 0.92,
+    "recall@1": 0.84,
+    "hit@3": 1.0,
+    "recall@3": 0.96,
+    "hit@5": 1.0,
+    "recall@5": 1.0,
+    "mrr": 0.9533
+  },
+  "by_category": {
+    "paraphrase": {
+      "n": 8,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "realistic": {
+      "n": 7,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "multi": {
+      "n": 5,
+      "hit@1": 0.8,
+      "hit@3": 1.0,
+      "mrr": 0.9
+    },
+    "lexical": {
+      "n": 5,
+      "hit@1": 0.8,
+      "hit@3": 1.0,
+      "mrr": 0.8667
+    }
+  },
+  "adversarial": {
+    "n_adversarial": 5,
+    "adv_top1_sim_mean": 0.2331,
+    "adv_top1_sim_max": 0.3259
+  },
+  "per_query": [
+    {
+      "qid": "f01",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "What is the transmissibility formula?",
+      "relevant": [
+        "formulas"
+      ],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.193,
+        0.1231,
+        0.0792,
+        0.0355
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "f02",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "How do I calculate natural frequency of a mount?",
+      "relevant": [
+        "formulas"
+      ],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3914,
+        0.3153,
+        0.2974,
+        0.2395
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "f03",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "Static deflection equation",
+      "relevant": [
+        "formulas"
+      ],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.2463,
+        0.2442,
+        0.1506,
+        0.1376
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "l01",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "Compression bottom load case mass distribution",
+      "relevant": [
+        "load_cases"
+      ],
+      "retrieved": [
+        "load_cases",
+        "selection_rules",
+        "formulas",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3651,
+        0.2144,
+        0.1986,
+        0.1305
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "l02",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "Why divide by 2 in the roll wall case?",
+      "relevant": [
+        "load_cases"
+      ],
+      "retrieved": [
+        "load_cases",
+        "selection_rules",
+        "formulas",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.1672,
+        0.0839,
+        0.0786,
+        0.0279
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "s01",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "Rule for picking the softest valid spring",
+      "relevant": [
+        "selection_rules"
+      ],
+      "retrieved": [
+        "selection_rules",
+        "load_cases",
+        "catalog_overview",
+        "formulas"
+      ],
+      "similarities": [
+        0.3105,
+        0.2241,
+        0.1919,
+        0.1663
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "c01",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "CB1500 stiffness values",
+      "relevant": [
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "catalog_overview",
+        "selection_rules",
+        "load_cases",
+        "formulas"
+      ],
+      "similarities": [
+        0.3719,
+        0.2937,
+        0.2884,
+        0.2869
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "c02",
+      "category": "paraphrase",
+      "adversarial": false,
+      "query": "Maximum allowable deflection for CB1800",
+      "relevant": [
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "catalog_overview",
+        "selection_rules",
+        "load_cases",
+        "formulas"
+      ],
+      "similarities": [
+        0.3204,
+        0.3074,
+        0.2985,
+        0.2905
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "r01",
+      "category": "realistic",
+      "adversarial": false,
+      "query": "whats the difference between CB1400 and CB1500 which one for heavier rack",
+      "relevant": [
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "catalog_overview",
+        "selection_rules",
+        "load_cases",
+        "formulas"
+      ],
+      "similarities": [
+        0.3802,
+        0.3522,
+        0.2123,
+        0.1376
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "r02",
+      "category": "realistic",
+      "adversarial": false,
+      "query": "how do i know if the isolator i picked is actually valid for my design",
+      "relevant": [
+        "selection_rules"
+      ],
+      "retrieved": [
+        "selection_rules",
+        "load_cases",
+        "formulas",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.4949,
+        0.3958,
+        0.3726,
+        0.345
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "r03",
+      "category": "realistic",
+      "adversarial": false,
+      "query": "none of the CB parts pass for my mass what do i do",
+      "relevant": [
+        "selection_rules"
+      ],
+      "retrieved": [
+        "selection_rules",
+        "catalog_overview",
+        "load_cases",
+        "formulas"
+      ],
+      "similarities": [
+        0.3484,
+        0.2378,
+        0.22,
+        0.1514
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "r04",
+      "category": "realistic",
+      "adversarial": false,
+      "query": "do i need to divide by 2 for the bottom z-axis compression case",
+      "relevant": [
+        "load_cases"
+      ],
+      "retrieved": [
+        "load_cases",
+        "formulas",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3042,
+        0.2265,
+        0.21,
+        0.1566
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "r05",
+      "category": "realistic",
+      "adversarial": false,
+      "query": "give me the equation for transmitted G",
+      "relevant": [
+        "formulas"
+      ],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.2444,
+        0.1567,
+        0.1317,
+        0.0498
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "r06",
+      "category": "realistic",
+      "adversarial": false,
+      "query": "i have K in lb/in how do i convert it to N/m",
+      "relevant": [
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "catalog_overview",
+        "load_cases",
+        "formulas",
+        "selection_rules"
+      ],
+      "similarities": [
+        0.1905,
+        0.1612,
+        0.1477,
+        0.138
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "r07",
+      "category": "realistic",
+      "adversarial": false,
+      "query": "what shock pulse is this whole analysis based on",
+      "relevant": [
+        "formulas"
+      ],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3704,
+        0.245,
+        0.1314,
+        0.0953
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "m01",
+      "category": "multi",
+      "adversarial": false,
+      "query": "formula for transmitted G and which load cases have the divide by 2",
+      "relevant": [
+        "formulas",
+        "load_cases"
+      ],
+      "retrieved": [
+        "load_cases",
+        "formulas",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3085,
+        0.308,
+        0.1952,
+        0.1407
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "m02",
+      "category": "multi",
+      "adversarial": false,
+      "query": "for an 850 kg rack with 6 bottom 4 wall whats the per-isolator mass and how to pick spring",
+      "relevant": [
+        "load_cases",
+        "selection_rules"
+      ],
+      "retrieved": [
+        "load_cases",
+        "selection_rules",
+        "catalog_overview",
+        "formulas"
+      ],
+      "similarities": [
+        0.5844,
+        0.535,
+        0.4631,
+        0.453
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "m03",
+      "category": "multi",
+      "adversarial": false,
+      "query": "softest spring wins rule and the dmax limits i need to check it against",
+      "relevant": [
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "load_cases",
+        "selection_rules",
+        "formulas",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3092,
+        0.3077,
+        0.2658,
+        0.2628
+      ],
+      "mrr": 0.5,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "m04",
+      "category": "multi",
+      "adversarial": false,
+      "query": "natural frequency formula and which K applies to the roll wall case",
+      "relevant": [
+        "formulas",
+        "load_cases"
+      ],
+      "retrieved": [
+        "load_cases",
+        "formulas",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3465,
+        0.3341,
+        0.2409,
+        0.1838
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "m05",
+      "category": "multi",
+      "adversarial": false,
+      "query": "the 4 load cases an isolator must pass and where to find dmax values",
+      "relevant": [
+        "load_cases",
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "load_cases",
+        "formulas",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.5651,
+        0.4384,
+        0.4364,
+        0.37
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "x01",
+      "category": "lexical",
+      "adversarial": false,
+      "query": "how far can the wire mount squish before failing",
+      "relevant": [
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "selection_rules",
+        "load_cases",
+        "catalog_overview",
+        "formulas"
+      ],
+      "similarities": [
+        0.292,
+        0.2861,
+        0.2515,
+        0.1743
+      ],
+      "mrr": 0.3333,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "x02",
+      "category": "lexical",
+      "adversarial": false,
+      "query": "what makes one CB part more forgiving on impact than another",
+      "relevant": [
+        "selection_rules"
+      ],
+      "retrieved": [
+        "selection_rules",
+        "catalog_overview",
+        "load_cases",
+        "formulas"
+      ],
+      "similarities": [
+        0.3649,
+        0.2501,
+        0.1841,
+        0.1655
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "x03",
+      "category": "lexical",
+      "adversarial": false,
+      "query": "how to estimate how much shock energy makes it through to the equipment",
+      "relevant": [
+        "formulas"
+      ],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.4018,
+        0.3205,
+        0.3097,
+        0.177
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "x04",
+      "category": "lexical",
+      "adversarial": false,
+      "query": "what road conditions inform the input pulse choice",
+      "relevant": [
+        "formulas"
+      ],
+      "retrieved": [
+        "formulas",
+        "selection_rules",
+        "load_cases",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.2062,
+        0.1941,
+        0.1265,
+        0.1044
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "x05",
+      "category": "lexical",
+      "adversarial": false,
+      "query": "what gauge of cable does each series use",
+      "relevant": [
+        "catalog_overview"
+      ],
+      "retrieved": [
+        "catalog_overview",
+        "selection_rules",
+        "load_cases",
+        "formulas"
+      ],
+      "similarities": [
+        0.2311,
+        0.1974,
+        0.1215,
+        0.0642
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "a01",
+      "category": "adversarial",
+      "adversarial": true,
+      "query": "Whats the procedure for MIL-STD-810H Method 514.8 vibration test",
+      "relevant": [],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3259,
+        0.274,
+        0.2094,
+        0.1517
+      ],
+      "mrr": 0.0,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 0,
+      "recall@3": 0.0,
+      "hit@5": 0,
+      "recall@5": 0.0
+    },
+    {
+      "qid": "a02",
+      "category": "adversarial",
+      "adversarial": true,
+      "query": "How to set up an electrodynamic shaker for sine sweep testing",
+      "relevant": [],
+      "retrieved": [
+        "formulas",
+        "load_cases",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.3176,
+        0.2605,
+        0.2187,
+        0.1583
+      ],
+      "mrr": 0.0,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 0,
+      "recall@3": 0.0,
+      "hit@5": 0,
+      "recall@5": 0.0
+    },
+    {
+      "qid": "a03",
+      "category": "adversarial",
+      "adversarial": true,
+      "query": "Calculating mode shapes of a cantilever beam",
+      "relevant": [],
+      "retrieved": [
+        "load_cases",
+        "formulas",
+        "selection_rules",
+        "catalog_overview"
+      ],
+      "similarities": [
+        0.2163,
+        0.209,
+        0.1413,
+        0.1229
+      ],
+      "mrr": 0.0,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 0,
+      "recall@3": 0.0,
+      "hit@5": 0,
+      "recall@5": 0.0
+    },
+    {
+      "qid": "a04",
+      "category": "adversarial",
+      "adversarial": true,
+      "query": "Difference between FEA and CFD for thermal analysis",
+      "relevant": [],
+      "retrieved": [
+        "load_cases",
+        "formulas",
+        "catalog_overview",
+        "selection_rules"
+      ],
+      "similarities": [
+        0.0993,
+        0.0946,
+        0.0716,
+        0.0593
+      ],
+      "mrr": 0.0,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 0,
+      "recall@3": 0.0,
+      "hit@5": 0,
+      "recall@5": 0.0
+    },
+    {
+      "qid": "a05",
+      "category": "adversarial",
+      "adversarial": true,
+      "query": "Bolt torque spec for M6 grade 8.8 stainless steel",
+      "relevant": [],
+      "retrieved": [
+        "catalog_overview",
+        "load_cases",
+        "formulas",
+        "selection_rules"
+      ],
+      "similarities": [
+        0.2063,
+        0.1721,
+        0.1673,
+        0.1267
+      ],
+      "mrr": 0.0,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 0,
+      "recall@3": 0.0,
+      "hit@5": 0,
+      "recall@5": 0.0
+    }
+  ]
+}
