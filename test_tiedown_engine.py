@@ -1,0 +1,87 @@
+"""Standalone checks for tiedown_engine. Run: .\\mpd\\Scripts\\python.exe test_tiedown_engine.py"""
+from tiedown_engine import DesignLoads, MountFace, FastenerSpec, Item
+
+
+def test_fastener_forces():
+    m6 = FastenerSpec("8.8 M6", "BOLT", 640.0, 320.0, 17.894)
+    assert abs(m6.tensile_force_N - 11452.16) < 1e-6
+    assert abs(m6.shear_force_N - 5726.08) < 1e-6
+    assert abs(m6.yield_force_N("Tensile") - 11452.16) < 1e-6
+    assert abs(m6.yield_force_N("Shear") - 5726.08) < 1e-6
+
+
+def test_mount_face_force_types():
+    assert MountFace.WALL_X.force_type("long") == "Tensile"
+    assert MountFace.WALL_X.force_type("vert") == "Shear"
+    assert MountFace.WALL_X.force_type("lat") == "Shear"
+    assert MountFace.FLOOR_Z.force_type("vert") == "Tensile"
+    assert MountFace.FLOOR_Z.force_type("long") == "Shear"
+    assert MountFace.WALL_Y.force_type("lat") == "Tensile"
+    assert MountFace.WALL_Y.force_type("long") == "Shear"
+
+
+def test_design_loads_defaults():
+    L = DesignLoads()
+    assert (L.g, L.long_G, L.vert_G, L.lat_G) == (9.81, 4.0, 2.0, 1.5)
+
+
+def test_item_design_kg_override():
+    f = FastenerSpec("x", "BOLT", 640.0, 320.0, 17.894)
+    assert Item("a", 59.0, MountFace.FLOOR_Z, f, 2, design_override_kg=60.0).design_kg == 60.0
+    assert Item("b", 14.0, MountFace.WALL_X, f, 6).design_kg == 14.0
+
+
+def test_generator_anchor():
+    from tiedown_engine import analyze_item
+    m12 = FastenerSpec("8.8 M12", "BOLT", 640.0, 320.0, 76.247)
+    gen = Item("Generator", 1269.0, MountFace.FLOOR_Z, m12, 10)
+    res = analyze_item(gen)
+    by = {a.axis: a for a in res.axes}
+    assert abs(by["long"].SF - 4.9) < 1e-2, by["long"].SF
+    assert abs(by["vert"].SF - 19.599) < 1e-2, by["vert"].SF
+    assert abs(by["lat"].SF - 13.066) < 1e-2, by["lat"].SF
+    assert by["long"].force_type == "Shear"
+    assert by["vert"].force_type == "Tensile"
+    assert abs(res.min_SF - 4.9) < 1e-2
+
+
+def test_water_jerry_can_marginal():
+    from tiedown_engine import analyze_item
+    camlock = FastenerSpec('Camlock Strap (1")', "CAMLOCK", 2500.0, 2500.0, 1.0)
+    res = analyze_item(Item("Water Jerry Cans", 60.0, MountFace.FLOOR_Z, camlock, 1))
+    assert abs(res.min_SF - 1.062) < 1e-2, res.min_SF
+    assert res.limiting_axis.axis == "long"
+
+
+def test_report_and_critical_items():
+    from tiedown_engine import run_tiedown_analysis, format_report
+    f8 = FastenerSpec("8.8 M6", "BOLT", 640.0, 320.0, 17.894)
+    camlock = FastenerSpec('Camlock Strap (1")', "CAMLOCK", 2500.0, 2500.0, 1.0)
+    items = [
+        Item("Bolted box", 14.0, MountFace.WALL_X, f8, 6),
+        Item("Water Jerry Cans", 60.0, MountFace.FLOOR_Z, camlock, 1),
+    ]
+    rep = run_tiedown_analysis(items, target_SF=2.0)
+    assert not rep.all_passed                       # water cans min_SF 1.06 < 2.0
+    crit = rep.critical_items()
+    assert len(crit) == 1 and crit[0].item.name == "Water Jerry Cans"
+    assert "TIE-DOWN PROVISION ANALYSIS" in format_report(rep)
+
+
+def _run():
+    import sys
+    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    failed = 0
+    for fn in fns:
+        try:
+            fn()
+            print(f"[PASS] {fn.__name__}")
+        except AssertionError as e:
+            failed += 1
+            print(f"[FAIL] {fn.__name__}: {e}")
+    print(f"\n{len(fns) - failed}/{len(fns)} passed")
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    _run()
