@@ -7,6 +7,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+# Sentinel "no clearance constraint" — large enough that min(d_max, this) == d_max,
+# so leaving clearance unset reproduces the original (travel-limited) behaviour.
+_NO_CLEARANCE_MM = 1.0e9
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -26,6 +30,7 @@ class ShockEnv:
     Ao_G: float = 20.0    # Shock magnitude [G]
     to_s: float = 0.011   # Shock pulse duration [s]  (saw-tooth)
     GT_limit_G: float = 10.0  # Max allowable transmitted G
+    pulse_shape: str = "sawtooth"  # "sawtooth" (V=0.5*g*Ao*to) or "half_sine" (V=(2/pi)*g*Ao*to)
 
 
 @dataclass
@@ -87,9 +92,19 @@ DEFAULT_ISOLATOR = CB1400_15
 # Core calculations
 # ---------------------------------------------------------------------------
 
-def _velocity_change(g: float, Ao_G: float, to_s: float) -> float:
-    """Saw-tooth pulse: V = 0.5 * g * Ao * to"""
-    return 0.5 * g * Ao_G * to_s
+# Velocity-change coefficient by pulse profile.  V = coeff * g * Ao * to
+# Saw-tooth (terminal-peak) integrates to 1/2 of the peak; a half-sine pulse
+# integrates to 2/pi (~0.637), i.e. ~27% harsher for the same Ao/to.
+_PULSE_COEFF = {
+    "sawtooth":  0.5,
+    "half_sine": 2.0 / math.pi,
+}
+
+
+def _velocity_change(g: float, Ao_G: float, to_s: float, pulse_shape: str = "sawtooth") -> float:
+    """V = coeff * g * Ao * to, where coeff depends on the pulse profile."""
+    coeff = _PULSE_COEFF.get(pulse_shape, 0.5)
+    return coeff * g * Ao_G * to_s
 
 
 def _natural_freq(k_Nm: float, m_kg: float) -> float:
@@ -115,7 +130,7 @@ def _calc_direction(
     env: ShockEnv,
     g: float = 9.81,
 ) -> DirectionResult:
-    V  = _velocity_change(g, env.Ao_G, env.to_s)
+    V  = _velocity_change(g, env.Ao_G, env.to_s, env.pulse_shape)
     fn = _natural_freq(k_Nm, m_kg)
     GT = _transmitted_g(fn, V, g)
     dD = _dynamic_deflection_mm(V, fn)
@@ -178,6 +193,9 @@ def run_analysis(
     shock_env: Optional[ShockEnv] = None,
     isolator: Optional[IsolatorSpec] = None,
     g: float = 9.81,
+    clr_x_mm: float = _NO_CLEARANCE_MM,
+    clr_y_mm: float = _NO_CLEARANCE_MM,
+    clr_z_mm: float = _NO_CLEARANCE_MM,
 ) -> PhysicsReport:
     """
     Full shock isolation analysis.
@@ -189,6 +207,10 @@ def run_analysis(
         cad_props:  Full CAD dict (used for CG, dimensions, warnings).
         shock_env:  Shock environment (defaults to 20G, 11ms saw-tooth).
         isolator:   Isolator specification (defaults to CB1400-15).
+        clr_*_mm:   Installation clearance per axis [mm]. The effective deflection
+                    limit per case is min(mount travel, mapped clearance) — see
+                    catalog.select_isolator for the axis->case mapping. Defaults to
+                    "unlimited" so behaviour is unchanged when clearance is unset.
     """
     env  = shock_env or ShockEnv()
     spec = isolator  or DEFAULT_ISOLATOR
@@ -210,27 +232,35 @@ def run_analysis(
 
     loads = _loads_per_isolator(mass_kg, n_bottom, n_wall)
 
+    # Effective deflection limit per case = min(mount travel, mapped clearance).
+    # Axis->case mapping per the Excel direction sheets (Z=Comp-Bottom, Y=Comp-Wall,
+    # X&Z=Roll-Wall, X&Y=Roll-Bottom).
+    lim_comp_bottom = min(spec.d_max_comp_mm,  clr_z_mm)
+    lim_comp_wall   = min(spec.d_max_comp_mm,  clr_y_mm)
+    lim_roll_wall   = min(spec.d_max_shear_mm, clr_x_mm, clr_z_mm)
+    lim_roll_bottom = min(spec.d_max_shear_mm, clr_x_mm, clr_y_mm)
+
     # 4 load cases — exactly matches the 4 Excel sheets.
     directions = [
         _calc_direction(
             "Comp - Bottom (Z-axis, vertical)",
             spec.k_comp_Nm,  loads["m_comp_bottom_kg"],
-            spec.d_max_comp_mm,  env, g,
+            lim_comp_bottom,  env, g,
         ),
         _calc_direction(
             "Comp - Wall (Y-axis, lateral)",
             spec.k_comp_Nm,  loads["m_comp_wall_kg"],
-            spec.d_max_comp_mm,  env, g,
+            lim_comp_wall,  env, g,
         ),
         _calc_direction(
             "Roll - Wall (X,Z-axis, shear)",
             spec.k_shear_Nm, loads["m_roll_wall_kg"],
-            spec.d_max_shear_mm, env, g,
+            lim_roll_wall, env, g,
         ),
         _calc_direction(
             "Roll - Bottom (X,Y-axis, shear)",
             spec.k_shear_Nm, loads["m_roll_bottom_kg"],
-            spec.d_max_shear_mm, env, g,
+            lim_roll_bottom, env, g,
         ),
     ]
 
@@ -276,7 +306,7 @@ def format_report(report: PhysicsReport) -> str:
         f"  Isolator    : {report.isolator.name}",
         f"  System Mass : {report.mass_kg:.1f} kg",
         f"  Mounts      : {report.n_bottom} bottom + {report.n_wall} wall",
-        f"  Shock Env   : {report.shock_env.Ao_G} G, {report.shock_env.to_s*1000:.0f} ms (saw-tooth)",
+        f"  Shock Env   : {report.shock_env.Ao_G} G, {report.shock_env.to_s*1000:.0f} ms ({report.shock_env.pulse_shape})",
         "=" * 60,
     ]
     for d in report.directions:

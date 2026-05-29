@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 import streamlit as st
 
 from cad_compliance_checker import _parse_cad_output
-from physics_engine import ShockEnv, _loads_per_isolator, run_analysis
+from physics_engine import ShockEnv, _loads_per_isolator, run_analysis, _NO_CLEARANCE_MM
 from catalog import (
     ALL_CATALOGS, AUTO_SELECT_CATALOGS,
     CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
@@ -48,6 +48,21 @@ SERIES_MAP = {
     "CB1700 (7/8\" wire)":                              CB1700_CATALOG,
     "All incl. CB61400 (6-strand softer, opt-in)":      ALL_CATALOGS,
     "CB61400 only (6-strand 1/2\" wire)":               CB61400_CATALOG,
+}
+
+# Shock pulse profile: UI label -> physics_engine pulse_shape key.
+PULSE_MAP = {
+    "Saw-Tooth (terminal-peak)": "sawtooth",
+    "Half-Sine (~27% harsher)":  "half_sine",
+}
+
+# Selection objective: UI label -> catalog.select_isolator objective key.
+# Clearance is a hard gate in ALL modes; the objective only breaks ties among
+# the parts that already pass all four cases.
+OBJECTIVE_MAP = {
+    "Balanced (furthest from any limit)": "balanced",
+    "Best isolation (softest, lowest G)": "best_isolation",
+    "Max clearance (stiffest, least travel)": "max_clearance",
 }
 
 
@@ -95,15 +110,49 @@ def run_solidworks_extraction(
 
 
 def _shock_env_widget(prefix: str) -> ShockEnv:
-    """Render a 3-column shock environment input row; return a ShockEnv."""
-    c1, c2, c3 = st.columns(3)
+    """Render a shock environment input row (Ao / to / GT limit / pulse); return a ShockEnv."""
+    c1, c2, c3, c4 = st.columns(4)
     Ao = c1.number_input("Shock Ao [G]",       value=20.0, min_value=1.0,  max_value=60.0,
                          step=1.0, key=f"{prefix}_Ao")
     to = c2.number_input("Pulse to [ms]",      value=11.0, min_value=1.0,  max_value=100.0,
                          step=1.0, key=f"{prefix}_to")
     GL = c3.number_input("GT limit [G]",       value=10.0, min_value=1.0,  max_value=50.0,
                          step=1.0, key=f"{prefix}_GL")
-    return ShockEnv(Ao_G=Ao, to_s=to / 1000.0, GT_limit_G=GL)
+    pulse_label = c4.selectbox("Pulse profile", list(PULSE_MAP.keys()), key=f"{prefix}_pulse")
+    return ShockEnv(Ao_G=Ao, to_s=to / 1000.0, GT_limit_G=GL,
+                    pulse_shape=PULSE_MAP[pulse_label])
+
+
+def _clearance_widget(prefix: str) -> tuple[float, float, float]:
+    """Render X/Y/Z installation-clearance inputs [mm].
+
+    Returns the per-axis gap to neighbouring equipment. A value of 0 means
+    'no clearance limit' and is mapped to the sentinel so only the mount's own
+    travel constrains that axis (i.e. original behaviour).
+    """
+    st.caption("Free gap to neighbouring equipment / rack wall per axis. "
+               "0 = no limit (mount travel only). Z = vertical, X/Y = lateral.")
+    c1, c2, c3 = st.columns(3)
+    cx = c1.number_input("Clearance X [mm]", value=0.0, min_value=0.0, max_value=500.0,
+                         step=1.0, key=f"{prefix}_clrx")
+    cy = c2.number_input("Clearance Y [mm]", value=0.0, min_value=0.0, max_value=500.0,
+                         step=1.0, key=f"{prefix}_clry")
+    cz = c3.number_input("Clearance Z [mm]", value=0.0, min_value=0.0, max_value=500.0,
+                         step=1.0, key=f"{prefix}_clrz")
+    conv = lambda v: v if v > 0 else _NO_CLEARANCE_MM
+    return conv(cx), conv(cy), conv(cz)
+
+
+def _objective_widget(prefix: str) -> str:
+    """Render the selection-objective selectbox; return the catalog objective key."""
+    label = st.selectbox(
+        "Selection objective",
+        list(OBJECTIVE_MAP.keys()),
+        key=f"{prefix}_obj",
+        help="Clearance is a hard pass/fail gate in every mode. This only chooses "
+             "between parts that already pass all 4 cases.",
+    )
+    return OBJECTIVE_MAP[label]
 
 
 def _mount_widget(prefix: str, default_bot: int = 6, default_wall: int = 4) -> tuple[int, int]:
@@ -293,8 +342,20 @@ def _render_selection_result(report, candidates):
     # 4-case table for the recommended part
     if rec:
         st.subheader("4 Load Cases (all must pass)")
+        # Pair each case with the mount's *raw* travel so we can tell whether the
+        # deflection limit shown is the mount's own travel or the tighter clearance gap.
+        cases = [
+            (rec.comp_bottom, rec.entry.d_max_comp_mm),
+            (rec.comp_wall,   rec.entry.d_max_comp_mm),
+            (rec.roll_wall,   rec.entry.d_max_shear_mm),
+            (rec.roll_bottom, rec.entry.d_max_shear_mm),
+        ]
         rows = []
-        for d in [rec.comp_bottom, rec.comp_wall, rec.roll_wall, rec.roll_bottom]:
+        for d, dmax_raw in cases:
+            gt_ratio = d.GT_G / d.GT_limit
+            dd_ratio = d.delta_mm / d.delta_limit_mm
+            limit_src = "clearance" if d.delta_limit_mm < dmax_raw - 1e-6 else "travel"
+            binding = "GT" if gt_ratio >= dd_ratio else f"deflection ({limit_src})"
             rows.append({
                 "Case":          d.label,
                 "m [kg]":        round(d.m_kg, 2),
@@ -303,9 +364,13 @@ def _render_selection_result(report, candidates):
                 "GT limit":      d.GT_limit,
                 "dD [mm]":       round(d.delta_mm, 2),
                 "dD limit [mm]": round(d.delta_limit_mm, 2),
+                "Binding":       binding,
                 "PASS":          "✅" if d.passed else "❌",
             })
         st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.caption("**Binding** = the constraint closest to failing in each case. "
+                   "`deflection (clearance)` means the neighbouring-equipment gap — "
+                   "not the mount's own travel — is the limiting factor.")
 
     # Full catalog comparison
     with st.expander("📊 Full multi-series matrix"):
@@ -345,7 +410,7 @@ tab_quick, tab_cad, tab_agent = st.tabs([
 # =============================================================================
 with tab_quick:
     st.subheader("Isolator Selector")
-    st.caption("Enter the assembly mass directly. Useful when SolidWorks isn't running "
+    st.caption("Enter weights directly. Useful when SolidWorks isn't running "
                "or you're working from spec sheets.")
 
     sel_mode = st.radio(
@@ -355,11 +420,18 @@ with tab_quick:
         key="q_sel_mode",
     )
 
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        mass_kg = st.number_input("Total assembly mass [kg]", value=850.0,
-                                  min_value=1.0, max_value=10000.0, step=10.0, key="q_mass")
-    with c2:
+    st.markdown("**Weights**")
+    w1, w2, w3 = st.columns([1, 1, 1])
+    with w1:
+        equip_kg = st.number_input("Equipment weight [kg]", value=750.0, min_value=0.0,
+                                   max_value=10000.0, step=10.0, key="q_equip",
+                                   help="Network gear / payload mounted on the shelf.")
+    with w2:
+        rack_kg = st.number_input("Rack / chassis weight [kg]", value=100.0, min_value=0.0,
+                                  max_value=10000.0, step=10.0, key="q_rack",
+                                  help="Frame / enclosure weight.")
+    mass_kg = equip_kg + rack_kg
+    with w3:
         if sel_mode == "Auto (recommend best part)":
             series_label = st.selectbox("Catalog filter", list(SERIES_MAP.keys()), key="q_series")
         else:
@@ -370,12 +442,20 @@ with tab_quick:
                 index=list(all_part_options.keys()).index("CB1400-15"),
                 key="q_manual_part",
             )
+    st.caption(f"Total system mass **M = {mass_kg:.1f} kg** (equipment + rack), "
+               "distributed M/n across mounts.")
+
+    if sel_mode == "Auto (recommend best part)":
+        objective = _objective_widget("q")
 
     st.markdown("**Mount configuration**")
     n_bot, n_wall = _mount_widget("q", default_bot=6, default_wall=4)
 
     st.markdown("**Shock environment**")
     env = _shock_env_widget("q")
+
+    st.markdown("**Installation clearance**")
+    clr_x, clr_y, clr_z = _clearance_widget("q")
 
     btn_label = "🎯 Select Best Isolator" if sel_mode == "Auto (recommend best part)" else "📊 Run Analysis"
     if st.button(btn_label, type="primary", use_container_width=True, key="q_run"):
@@ -388,6 +468,10 @@ with tab_quick:
                     cad_props = None,
                     shock_env = env,
                     catalog   = SERIES_MAP[series_label],
+                    clr_x_mm  = clr_x,
+                    clr_y_mm  = clr_y,
+                    clr_z_mm  = clr_z,
+                    objective = objective,
                 )
         else:
             with st.spinner("Computing 4 load cases..."):
@@ -400,11 +484,17 @@ with tab_quick:
                     m_roll_bottom_kg = loads["m_roll_bottom_kg"],
                     env              = env,
                     catalog          = [entry],
+                    clr_x_mm         = clr_x,
+                    clr_y_mm         = clr_y,
+                    clr_z_mm         = clr_z,
                 )
                 report = run_analysis(
                     mass_kg, n_bot, n_wall,
                     shock_env = env,
                     isolator  = entry.to_isolator_spec(),
+                    clr_x_mm  = clr_x,
+                    clr_y_mm  = clr_y,
+                    clr_z_mm  = clr_z,
                 )
         _render_selection_result(report, candidates)
 
@@ -448,8 +538,13 @@ with tab_cad:
         st.markdown("**Mount configuration**")
         n_bot_cad, n_wall_cad = _mount_widget("cad", default_bot=6, default_wall=4)
 
+        objective_cad = _objective_widget("cad")
+
         st.markdown("**Shock environment**")
         env_cad = _shock_env_widget("cad")
+
+        st.markdown("**Installation clearance**")
+        clr_x_cad, clr_y_cad, clr_z_cad = _clearance_widget("cad")
 
         if st.button("🔌 Extract from SolidWorks", type="primary",
                      use_container_width=True, key="cad_extract"):
@@ -545,6 +640,10 @@ with tab_cad:
             n_wall    = n_wall_cad,
             cad_props = st.session_state.cad_props,
             shock_env = env_cad,
+            clr_x_mm  = clr_x_cad,
+            clr_y_mm  = clr_y_cad,
+            clr_z_mm  = clr_z_cad,
+            objective = objective_cad,
         )
         _render_selection_result(report, candidates)
 

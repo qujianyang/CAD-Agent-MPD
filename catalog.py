@@ -24,16 +24,14 @@ from typing import Optional
 from physics_engine import (
     IsolatorSpec, ShockEnv, DirectionResult, PhysicsReport,
     _calc_direction, _loads_per_isolator, run_analysis, format_report,
+    _NO_CLEARANCE_MM,
 )
 
 _LB_IN_TO_N_M = 175.1268   # 1 lb/in = 175.1268 N/m
 _IN_TO_MM     = 25.4        # 1 inch  = 25.4 mm
 
-# Sentinel "no clearance constraint" — large enough that min(dmax, this) == dmax,
-# so leaving clearance blank reproduces the original (travel-limited) behaviour.
-_NO_CLEARANCE_MM = 1.0e9
-
 # Valid selection objectives (tiebreak among parts that pass all 4 cases).
+# _NO_CLEARANCE_MM is imported from physics_engine (single source of truth).
 SELECT_OBJECTIVES = ("best_isolation", "max_clearance", "balanced")
 
 
@@ -196,6 +194,21 @@ class CatalogCandidate:
 # Core selection
 # ---------------------------------------------------------------------------
 
+def _objective_sort_key(objective: str):
+    """Return a sort key putting valid parts first, then ordering them per objective.
+
+    - best_isolation : softest K first  -> lowest GT (today's default behaviour)
+    - max_clearance  : stiffest K first -> smallest deflection / biggest clearance margin
+    - balanced       : smallest worst_overall_ratio first -> furthest from ANY limit
+    """
+    if objective == "max_clearance":
+        return lambda c: (not c.valid, -c.entry.k_comp_lbin)
+    if objective == "balanced":
+        return lambda c: (not c.valid, c.worst_overall_ratio)
+    # default / "best_isolation"
+    return lambda c: (not c.valid, c.entry.k_comp_lbin)
+
+
 def select_isolator(
     m_comp_bottom_kg: float,
     m_comp_wall_kg: float,
@@ -204,6 +217,10 @@ def select_isolator(
     env: ShockEnv,
     catalog: Optional[list[CatalogEntry]] = None,
     g: float = 9.81,
+    clr_x_mm: float = _NO_CLEARANCE_MM,
+    clr_y_mm: float = _NO_CLEARANCE_MM,
+    clr_z_mm: float = _NO_CLEARANCE_MM,
+    objective: str = "best_isolation",
 ) -> list[CatalogCandidate]:
     """
     Evaluate every catalog entry against the FOUR load cases from the Excel reference.
@@ -213,15 +230,23 @@ def select_isolator(
         m_comp_wall_kg  : Mass per wall-mount   in lateral compression   = M/n_wall/2
         m_roll_wall_kg  : Mass per wall-mount   in shear/roll            = M/n_wall/2
         m_roll_bottom_kg: Mass per bottom-mount in shear/roll            = M/n_bottom/2
-        env             : Shock environment (G, duration, GT limit)
+        env             : Shock environment (G, duration, GT limit, pulse shape)
         catalog         : Entries to scan (defaults to ALL_CATALOGS)
+        clr_x_mm/y/z    : Installation clearance to neighbouring equipment per axis [mm].
+                          Defaults to "unlimited" so blank input == original behaviour.
+        objective       : Tiebreak among valid parts — see _objective_sort_key.
 
-    Returns all candidates sorted: valid first, then by ascending K_comp (softest first).
+    Clearance gate (per the Excel direction sheets):
+        Comp-Bottom -> Z          : limit = min(d_max_comp, clr_z)
+        Comp-Wall   -> Y          : limit = min(d_max_comp, clr_y)
+        Roll-Wall   -> X and Z    : limit = min(d_max_shear, clr_x, clr_z)
+        Roll-Bottom -> X and Y    : limit = min(d_max_shear, clr_x, clr_y)
+    The effective deflection limit is the *tighter* of the mount's own travel and the
+    clearance gap — a mount that would collide with neighbouring gear is rejected even
+    if it is within its own rated travel.
+
+    Returns all candidates sorted: valid first, then per `objective`.
     The first entry in the returned list is the RECOMMENDED part.
-
-    Why softest first?
-      Lower K -> lower fn -> lower GT (less shock transmitted).
-      We want the best isolation that still keeps dD within the isolator's travel limit.
     """
     if catalog is None:
         catalog = ALL_CATALOGS
@@ -229,26 +254,32 @@ def select_isolator(
     candidates = []
     for entry in catalog:
         spec = entry.to_isolator_spec()
+        # Effective deflection limit per case = min(mount travel, mapped clearance).
+        lim_comp_bottom = min(spec.d_max_comp_mm,  clr_z_mm)
+        lim_comp_wall   = min(spec.d_max_comp_mm,  clr_y_mm)
+        lim_roll_wall   = min(spec.d_max_shear_mm, clr_x_mm, clr_z_mm)
+        lim_roll_bottom = min(spec.d_max_shear_mm, clr_x_mm, clr_y_mm)
+
         comp_bottom = _calc_direction(
             "Comp - Bottom (Z-axis)",
-            spec.k_comp_Nm,  m_comp_bottom_kg,  spec.d_max_comp_mm,  env, g,
+            spec.k_comp_Nm,  m_comp_bottom_kg,  lim_comp_bottom,  env, g,
         )
         comp_wall = _calc_direction(
             "Comp - Wall (Y-axis)",
-            spec.k_comp_Nm,  m_comp_wall_kg,    spec.d_max_comp_mm,  env, g,
+            spec.k_comp_Nm,  m_comp_wall_kg,    lim_comp_wall,    env, g,
         )
         roll_wall = _calc_direction(
             "Roll - Wall (X,Z-axis)",
-            spec.k_shear_Nm, m_roll_wall_kg,    spec.d_max_shear_mm, env, g,
+            spec.k_shear_Nm, m_roll_wall_kg,    lim_roll_wall,    env, g,
         )
         roll_bottom = _calc_direction(
             "Roll - Bottom (X,Y-axis)",
-            spec.k_shear_Nm, m_roll_bottom_kg,  spec.d_max_shear_mm, env, g,
+            spec.k_shear_Nm, m_roll_bottom_kg,  lim_roll_bottom,  env, g,
         )
         candidates.append(CatalogCandidate(entry, comp_bottom, comp_wall, roll_wall, roll_bottom))
 
-    # Sort: valid PASS entries first, then softest K (best isolation) as tiebreaker.
-    candidates.sort(key=lambda c: (not c.valid, c.entry.k_comp_lbin))
+    # Sort: valid PASS entries first, then per the chosen objective.
+    candidates.sort(key=_objective_sort_key(objective))
     return candidates
 
 
@@ -260,13 +291,20 @@ def select_and_analyze(
     shock_env: Optional[ShockEnv] = None,
     catalog: Optional[list[CatalogEntry]] = None,
     g: float = 9.81,
+    clr_x_mm: float = _NO_CLEARANCE_MM,
+    clr_y_mm: float = _NO_CLEARANCE_MM,
+    clr_z_mm: float = _NO_CLEARANCE_MM,
+    objective: str = "best_isolation",
 ) -> tuple[PhysicsReport, list[CatalogCandidate]]:
     """
     Full pipeline:
       1. Compute load per isolator from mass + mount count
-      2. Scan catalog → find valid candidates
-      3. Run PhysicsReport with the recommended (softest valid) part
+      2. Scan catalog → find valid candidates (clearance-gated)
+      3. Run PhysicsReport with the recommended part (per `objective`)
       4. Return both for downstream use (LLM context, UI display)
+
+    clr_*_mm and objective are forwarded to select_isolator; clearance is also
+    threaded into run_analysis so the full physics report reflects the same limits.
     """
     env   = shock_env or ShockEnv()
     loads = _loads_per_isolator(mass_kg, n_bottom, n_wall)
@@ -279,6 +317,10 @@ def select_and_analyze(
         env              = env,
         catalog          = catalog,
         g                = g,
+        clr_x_mm         = clr_x_mm,
+        clr_y_mm         = clr_y_mm,
+        clr_z_mm         = clr_z_mm,
+        objective        = objective,
     )
 
     best = next((c for c in candidates if c.valid), None)
@@ -290,6 +332,9 @@ def select_and_analyze(
         shock_env=env,
         isolator=selected_spec,
         g=g,
+        clr_x_mm=clr_x_mm,
+        clr_y_mm=clr_y_mm,
+        clr_z_mm=clr_z_mm,
     )
     return report, candidates
 
