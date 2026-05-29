@@ -88,7 +88,8 @@ DEFAULT_POOL = [
 
 def size_fasteners(weight_kg: float, mount_face: MountFace, target_SF: float = 1.0,
                    pool: Optional[list] = None, loads: Optional[DesignLoads] = None) -> list:
-    """Return sizing options (smallest valid first): fewest fasteners, then smallest area."""
+    """Return sizing options (smallest valid first): fewest fasteners, then real bolts
+    by area (sentinel-area straps/latches lose size ties so they cannot masquerade as 'smallest')."""
     pool = pool if pool is not None else DEFAULT_POOL
     L = loads or DesignLoads()
     opts = []
@@ -96,5 +97,5 @@ def size_fasteners(weight_kg: float, mount_face: MountFace, target_SF: float = 1
         q = min_qty_for_target(weight_kg, mount_face, spec, target_SF, L)
         res = analyze_item(Item(spec.name, weight_kg, mount_face, spec, q), L)
         opts.append(SizingOption(spec, q, res.min_SF))
-    opts.sort(key=lambda o: (o.qty, o.fastener.area_mm2))
+    opts.sort(key=lambda o: (o.qty, 0 if o.fastener.kind == "BOLT" else 1, o.fastener.area_mm2))
     return opts

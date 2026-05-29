@@ -68,6 +68,37 @@ def test_report_and_critical_items():
     assert "TIE-DOWN PROVISION ANALYSIS" in format_report(rep)
 
 
+def test_qty_zero_raises():
+    from tiedown_engine import analyze_item
+    f = FastenerSpec("8.8 M6", "BOLT", 640.0, 320.0, 17.894)
+    try:
+        analyze_item(Item("zero qty", 10.0, MountFace.WALL_X, f, 0))
+        assert False, "expected ValueError for qty=0"
+    except ValueError:
+        pass
+
+
+def test_wall_y_lateral_tensile():
+    from tiedown_engine import analyze_item
+    camlock = FastenerSpec('Camlock Strap (1")', "CAMLOCK", 2500.0, 2500.0, 1.0)
+    res = analyze_item(Item("Side panel", 15.0, MountFace.WALL_Y, camlock, 4))
+    by = {a.axis: a for a in res.axes}
+    assert by["lat"].force_type == "Tensile"
+    assert by["long"].force_type == "Shear" and by["vert"].force_type == "Shear"
+
+
+def test_format_item_detail():
+    from tiedown_engine import analyze_item, format_item_detail
+    m12 = FastenerSpec("8.8 M12", "BOLT", 640.0, 320.0, 76.247)
+    res = analyze_item(Item("Generator", 1269.0, MountFace.FLOOR_Z, m12, 10))
+    txt = format_item_detail(res)
+    assert "Generator" in txt
+    assert "Tensile" in txt and "Shear" in txt
+    assert "long" in txt and "vert" in txt and "lat" in txt
+    assert "4.9" in txt                  # long-axis SF ~4.9
+    assert "M12" in txt and "10" in txt   # fastener label + qty
+
+
 def _run():
     import sys
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
@@ -79,6 +110,9 @@ def _run():
         except AssertionError as e:
             failed += 1
             print(f"[FAIL] {fn.__name__}: {e}")
+        except Exception as e:
+            failed += 1
+            print(f"[ERROR] {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     sys.exit(1 if failed else 0)
 

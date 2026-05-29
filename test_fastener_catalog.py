@@ -35,10 +35,30 @@ def test_make_fastener_dispatch():
     assert make_fastener('Ratchet (1")').kind == "RATCHET"
 
 
+def test_make_fastener_unknown_raises():
+    try:
+        make_fastener("NOPE", "M99")
+        assert False, "expected KeyError for unknown bolt"
+    except KeyError:
+        pass
+    try:
+        make_fastener("Totally Unknown Strap")
+        assert False, "expected KeyError for unknown non-bolt"
+    except KeyError:
+        pass
+
+
 def test_min_qty_generator():
     from fastener_catalog import min_qty_for_target
     q = min_qty_for_target(1269.0, MountFace.FLOOR_Z, bolt("8.8", "M12"), target_SF=1.0)
     assert q == 3, q   # long axis governs: 49795.56 / 24399.04 = 2.04 -> ceil 3
+
+
+def test_min_qty_scales_with_target():
+    from fastener_catalog import min_qty_for_target
+    q1 = min_qty_for_target(1269.0, MountFace.FLOOR_Z, bolt("8.8", "M12"), target_SF=1.0)
+    q2 = min_qty_for_target(1269.0, MountFace.FLOOR_Z, bolt("8.8", "M12"), target_SF=2.0)
+    assert q2 >= q1 and q2 >= 2 * q1 - 1   # roughly doubles (ceil effects)
 
 
 def test_size_fasteners_meets_target():
@@ -51,6 +71,14 @@ def test_size_fasteners_meets_target():
     assert all(opts[i].qty <= opts[i + 1].qty for i in range(len(opts) - 1))
 
 
+def test_size_fasteners_prefers_real_bolt_on_ties():
+    from fastener_catalog import size_fasteners
+    # Generator-class load: several options tie at qty=3. A real bolt must rank above
+    # a sentinel-area strap (area=1 must NOT masquerade as the "smallest" fastener).
+    top = size_fasteners(1269.0, MountFace.FLOOR_Z, target_SF=1.0)[0]
+    assert top.fastener.kind == "BOLT", (top.fastener.name, top.fastener.kind, top.qty)
+
+
 def _run():
     import sys
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
@@ -60,6 +88,8 @@ def _run():
             fn(); print(f"[PASS] {fn.__name__}")
         except AssertionError as e:
             failed += 1; print(f"[FAIL] {fn.__name__}: {e}")
+        except Exception as e:
+            failed += 1; print(f"[ERROR] {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     sys.exit(1 if failed else 0)
 

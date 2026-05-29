@@ -158,6 +158,24 @@ def format_report(report: TiedownReport) -> str:
     return "\n".join(lines)
 
 
+def format_item_detail(result: ItemResult) -> str:
+    """Per-axis breakdown for one item (Workings-style: force type, forces, SF)."""
+    it = result.item
+    lines = [
+        f"Item: {it.name}",
+        f"  Fastener: {it.fastener.name} x{it.qty}   Mount face: {it.mount_face.value}   "
+        f"(design mass {it.design_kg:g} kg)",
+        f"  {'axis':<5}{'type':<9}{'design(N)':>12}{'per-fastener(N)':>17}{'yield(N)':>12}{'SF':>10}",
+    ]
+    for a in result.axes:
+        lines.append(
+            f"  {a.axis:<5}{a.force_type:<9}{a.design_force_N:>12.2f}"
+            f"{a.exp_force_N:>17.2f}{a.yield_force_N:>12.2f}{a.SF:>10.3f}"
+        )
+    lines.append(f"  min SF = {result.min_SF:.3f} ({result.limiting_axis.axis})")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     m12 = FastenerSpec("8.8 M12", "BOLT", 640.0, 320.0, 76.247)
     camlock = FastenerSpec('Camlock Strap (1")', "CAMLOCK", 2500.0, 2500.0, 1.0)
@@ -167,6 +185,8 @@ if __name__ == "__main__":
     ]
     rep = run_tiedown_analysis(demo, target_SF=2.0)
     print(format_report(rep))
+    print()
+    print(format_item_detail(rep.items[0]))
     gen = rep.items[0]
     assert abs(gen.min_SF - 4.9) < 1e-2, gen.min_SF   # anchor (matches Excel)
     print("\n[OK] Generator anchor min SF = 4.9")

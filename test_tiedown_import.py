@@ -23,6 +23,17 @@ def test_import_item49_override():
     assert abs(it.design_kg - 60.0) < 1e-3
 
 
+def test_only_item49_has_override():
+    items = import_workbook(WB_DEFAULT)
+    overrides = [i for i, it in enumerate(items) if it.design_override_kg is not None]
+    assert overrides == [48], overrides   # item 49 is the ONLY design-kg override
+
+
+def test_all_items_have_positive_qty():
+    items = import_workbook(WB_DEFAULT)
+    assert all(it.qty > 0 for it in items)   # guarantees analyze_item never divides by zero
+
+
 def _run():
     import sys
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
@@ -33,7 +44,7 @@ def _run():
         except AssertionError as e:
             failed += 1; print(f"[FAIL] {fn.__name__}: {e}")
         except Exception as e:
-            failed += 1; print(f"[ERROR] {fn.__name__}: {e}")
+            failed += 1; print(f"[ERROR] {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     sys.exit(1 if failed else 0)
 
