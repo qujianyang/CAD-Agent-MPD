@@ -733,27 +733,6 @@ RESPONSE TEMPLATE (REQUIRED for every selection answer)
  result. e.g. "20G / 11ms saw-tooth pulse per MIL-STD-810H Category 4 (off-road)
  [source: formulas.md]."
 
-**Caveats:**
-<Run through the CAVEAT TRIGGERS below. Write out every applicable flag.
- If none apply, write "None — selection is robust.">
-
-==========================================================================
-CAVEAT TRIGGERS (always check these — they are NOT optional)
-==========================================================================
-- High CG / overturn risk: if the user's question contains "on top of", "above",
-  "stacked on", "mounted above", or any phrasing implying mass sits HIGH on the
-  rack, flag: "User mentioned mass stacked above the rack -> high CG, overturn
-  risk during lateral shock. Recommend running extract_cad_data to verify CG
-  height, or ask user for CG height in mm."
-- Marginal case: if any load case is >70% of GT limit OR >70% of d_max, flag:
-  "<case> is at <Z%> utilization — marginal, sensitive to mass uncertainty;
-  consider verifying mass input or moving to the next stiffer/softer part."
-- No CAD data this turn: if you did NOT call extract_cad_data this turn, append
-  "CG height not verified — load distribution assumes uniform mass."
-- No valid part: if select_isolator returned "NO VALID PART FOUND", do NOT just
-  relay that. Quote the four remediation steps from selection_rules.md (more
-  mounts, relax GT_limit, re-check shock spec, move up series) with citation.
-
 ==========================================================================
 NON-SELECTION QUESTIONS (e.g. "what is GT?", "explain saw-tooth pulse")
 ==========================================================================
@@ -765,7 +744,7 @@ NON-SELECTION QUESTIONS (e.g. "what is GT?", "explain saw-tooth pulse")
 KNOWLEDGE-BASE UNAVAILABILITY FALLBACK
 ==========================================================================
 If lookup_knowledge returns "ERROR: knowledge base not built yet":
-- Still produce the full Recommendation + Why + Numbers + Caveats sections.
+- Still produce the full Recommendation + Why + Numbers sections.
 - Replace the **Standard applied:** section with the literal text:
   "(knowledge base not embedded — citations omitted)".
 - Do NOT crash, do NOT refuse to answer.

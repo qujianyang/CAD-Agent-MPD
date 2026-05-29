@@ -29,6 +29,13 @@ from physics_engine import (
 _LB_IN_TO_N_M = 175.1268   # 1 lb/in = 175.1268 N/m
 _IN_TO_MM     = 25.4        # 1 inch  = 25.4 mm
 
+# Sentinel "no clearance constraint" — large enough that min(dmax, this) == dmax,
+# so leaving clearance blank reproduces the original (travel-limited) behaviour.
+_NO_CLEARANCE_MM = 1.0e9
+
+# Valid selection objectives (tiebreak among parts that pass all 4 cases).
+SELECT_OBJECTIVES = ("best_isolation", "max_clearance", "balanced")
+
 
 # ---------------------------------------------------------------------------
 # Catalog entry dataclass
@@ -168,6 +175,13 @@ class CatalogCandidate:
     @property
     def worst_delta_ratio(self) -> float:
         return max(d.delta_mm / d.delta_limit_mm for d in self._dirs)
+
+    @property
+    def worst_overall_ratio(self) -> float:
+        """Worst of GT-ratio and deflection-ratio across all cases.
+        Lower = more comfortably clear of *every* limit. Used by the
+        'balanced' selection objective."""
+        return max(self.worst_GT_ratio, self.worst_delta_ratio)
 
     @property
     def limiting_direction(self) -> DirectionResult:
