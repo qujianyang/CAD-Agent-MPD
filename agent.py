@@ -19,6 +19,9 @@ from catalog import (
     select_and_analyze, format_selection_table, selection_context_for_llm,
 )
 from cad_compliance_checker import extract_cad_data as _extract_cad_data_raw
+from tiedown_tools import (
+    run_tiedown_check, recommend_fasteners, flag_critical_items, _TIEDOWN_PROMPT,
+)
 
 # Module-level state — set by ShockMountAgent.__init__ before tools are called
 _api_key: Optional[str] = None
@@ -770,59 +773,63 @@ call the tools to compute them.
 """
 
 
-class ShockMountAgent:
-    """LangChain tool-calling agent for shock mount selection."""
+# ---------------------------------------------------------------------------
+# Domain registry + agent factory (tab-routed specialists)
+# ---------------------------------------------------------------------------
 
-    _TOOLS = [
-        extract_cad_data,
-        select_isolator,
-        run_shock_analysis,
-        find_capacity_limit,
-        filter_by_deflection,
-        lookup_knowledge,
-        list_cad_files,
-    ]
+_SHOCK_TOOLS = [
+    extract_cad_data,
+    select_isolator,
+    run_shock_analysis,
+    find_capacity_limit,
+    filter_by_deflection,
+    lookup_knowledge,
+    list_cad_files,
+]
 
-    def __init__(self, api_key: str):
+_TIEDOWN_TOOLS = [
+    run_tiedown_check,
+    recommend_fasteners,
+    flag_critical_items,
+    lookup_knowledge,           # shared retriever; tiedown prompt scopes it to parent_topic="tiedown"
+]
+
+DOMAINS = {
+    "shock_mount": {"prompt": _SYSTEM_PROMPT,  "tools": _SHOCK_TOOLS},
+    "tiedown":     {"prompt": _TIEDOWN_PROMPT, "tools": _TIEDOWN_TOOLS},
+}
+
+
+class DomainAgent:
+    """LangChain tool-calling agent for one engineering domain (focused prompt + tools)."""
+
+    def __init__(self, api_key: str, system_prompt: str, tools: list):
         global _api_key
         _api_key = api_key
+        self.system_prompt = system_prompt
+        self.tools = tools
 
         llm = ChatNVIDIA(
             model="meta/llama-3.1-70b-instruct",
             api_key=api_key,
             temperature=0.1,
             max_tokens=2048,
-            # NVIDIA's hosted Llama 3.1 70B only allows ONE tool call per
-            # turn. Without this, multi-step prompts (extract -> select)
-            # raise: "This model only supports single tool-calls at once!"
+            # NVIDIA's hosted Llama 3.1 70B only allows ONE tool call per turn.
             parallel_tool_calls=False,
         )
-
-        # LangChain 1.x: create_agent returns a compiled LangGraph
-        self._agent = create_agent(llm, self._TOOLS, system_prompt=_SYSTEM_PROMPT)
+        self._agent = create_agent(llm, tools, system_prompt=system_prompt)
 
     def invoke(self, question: str, chat_history: list | None = None) -> str:
         messages = list(chat_history) if chat_history else []
         messages.append(("human", question))
         result = self._agent.invoke({"messages": messages})
-        # Final answer is the last AI message
         last = result["messages"][-1]
         return last.content if hasattr(last, "content") else str(last)
 
     def stream(self, question: str, chat_history: list | None = None):
         """
-        Stream structured events as the agent works. Use this in UIs that want
-        to show tool calls + results live (e.g. Streamlit's st.status).
-
-        Yields dicts of these shapes:
-          {"type": "reasoning",    "content": str}                          # AI text emitted alongside a tool call
-          {"type": "tool_call",    "name": str, "args": dict, "id": str}    # LLM requested a tool
-          {"type": "tool_result",  "name": str, "content": str, "id": str}  # tool returned
-          {"type": "final",        "content": str}                          # last AI message (the answer)
-
-        The graph emits "updates" — one dict per node that produced output.
-        We unpack those into the simpler event stream above so the UI can
-        render without knowing about LangGraph internals.
+        Stream structured events as the agent works (for Streamlit st.status).
+        Yields dicts: reasoning | tool_call | tool_result | final.
         """
         messages = list(chat_history) if chat_history else []
         messages.append(("human", question))
@@ -831,11 +838,9 @@ class ShockMountAgent:
         last_ai_content: str = ""
 
         for update in self._agent.stream({"messages": messages}, stream_mode="updates"):
-            # update == {"agent": {"messages": [...]}}  or  {"tools": {"messages": [...]}}
             for _node, node_state in update.items():
                 new_messages = node_state.get("messages", []) if isinstance(node_state, dict) else []
                 for msg in new_messages:
-                    # ToolMessage: identifiable by having a tool_call_id attribute
                     tool_call_id = getattr(msg, "tool_call_id", None)
                     if tool_call_id is not None:
                         yield {
@@ -846,31 +851,45 @@ class ShockMountAgent:
                         }
                         continue
 
-                    # AI message: may have tool_calls and/or content
                     tool_calls = getattr(msg, "tool_calls", None) or []
-                    content    = getattr(msg, "content", "") or ""
+                    content = getattr(msg, "content", "") or ""
 
                     if tool_calls:
-                        # Some Llama responses emit reasoning text alongside the tool call.
                         if content.strip():
                             yield {"type": "reasoning", "content": content}
                         for tc in tool_calls:
                             tc_id = tc.get("id", "") if isinstance(tc, dict) else getattr(tc, "id", "")
                             if tc_id in seen_tool_call_ids:
-                                continue  # avoid duplicates if the same call shows up twice
+                                continue
                             seen_tool_call_ids.add(tc_id)
                             yield {
                                 "type": "tool_call",
                                 "name": tc.get("name", "?") if isinstance(tc, dict) else getattr(tc, "name", "?"),
                                 "args": tc.get("args", {}) if isinstance(tc, dict) else getattr(tc, "args", {}),
-                                "id":   tc_id,
+                                "id": tc_id,
                             }
                     elif content.strip():
-                        # No tool calls + has content => this is (likely) the final answer.
                         last_ai_content = content
 
         if last_ai_content:
             yield {"type": "final", "content": last_ai_content}
+
+
+def build_agent(domain: str, api_key: str) -> DomainAgent:
+    """Construct the specialist agent for a domain ('shock_mount' or 'tiedown')."""
+    if domain not in DOMAINS:
+        raise KeyError(f"Unknown domain {domain!r}. Available: {list(DOMAINS)}")
+    cfg = DOMAINS[domain]
+    return DomainAgent(api_key, cfg["prompt"], cfg["tools"])
+
+
+class ShockMountAgent(DomainAgent):
+    """Back-compat: the original shock-mount agent is now a 'shock_mount' DomainAgent."""
+    _TOOLS = _SHOCK_TOOLS
+
+    def __init__(self, api_key: str):
+        cfg = DOMAINS["shock_mount"]
+        super().__init__(api_key, cfg["prompt"], cfg["tools"])
 
 
 # ---------------------------------------------------------------------------
