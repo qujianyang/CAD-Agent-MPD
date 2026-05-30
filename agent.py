@@ -897,6 +897,7 @@ class ShockMountAgent(DomainAgent):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    import sys
     from dotenv import load_dotenv
     load_dotenv()
 
@@ -904,8 +905,12 @@ if __name__ == "__main__":
     if not api_key:
         raise SystemExit("ERROR: Set NVIDIA_API_KEY in your .env file or environment.")
 
-    agent = ShockMountAgent(api_key)
-    print("Shock Mount Agent ready. Type 'quit' to exit.\n")
+    domain = sys.argv[1] if len(sys.argv) > 1 else "shock_mount"
+    if domain not in DOMAINS:
+        raise SystemExit(f"Unknown domain {domain!r}. Available: {list(DOMAINS)}")
+
+    agent = build_agent(domain, api_key)
+    print(f"{domain} agent ready. Type 'quit' to exit.\n")
     history: list = []
 
     while True:
@@ -917,13 +922,8 @@ if __name__ == "__main__":
             continue
         if q.lower() in ("quit", "exit", "q"):
             break
-
         response = agent.invoke(q, chat_history=history if history else None)
         print(f"\nAgent: {response}\n")
-
-        # Maintain a rolling 6-message history (3 exchanges)
-        from langchain_core.messages import HumanMessage, AIMessage
-        # Keep last 3 exchanges in history (6 messages)
         history.append(("human", q))
         history.append(("ai", response))
         if len(history) > 6:
