@@ -27,6 +27,9 @@ from catalog import (
     CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
     select_isolator, select_and_analyze, format_selection_table, format_report,
 )
+from tiedown_engine import MountFace, Item, analyze_item, run_tiedown_analysis
+from fastener_catalog import make_fastener, size_fasteners, BOLT_CLASSES, BOLT_SIZES, NON_BOLTS
+from tiedown_import import import_workbook, WB_DEFAULT
 
 
 # ----------------------------------------------------------------------------
@@ -78,6 +81,8 @@ def _init_state():
         "extract_returncode": None,
         "agent":       None,
         "chat_history": [],   # list of {"role": "user"|"assistant", "content": str}
+        "tiedown_agent": None,
+        "tiedown_chat_history": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -398,9 +403,10 @@ if not API_KEY:
 # ----------------------------------------------------------------------------
 # Tabs
 # ----------------------------------------------------------------------------
-tab_quick, tab_cad, tab_agent = st.tabs([
+tab_quick, tab_cad, tab_tiedown, tab_agent = st.tabs([
     "📐 Quick Selector",
     "🔌 CAD + Shock",
+    "🔗 Tie-Down",
     "🤖 Agent Chat",
 ])
 
@@ -778,6 +784,197 @@ with tab_agent:
                 "⬇ HTML", data=_export_html(st.session_state.chat_history),
                 file_name=f"chat_{_ts}.html", mime="text/html",
             )
+
+
+# =============================================================================
+# TAB — Tie-Down Provision (Appendix G / Chapter 4 of the Safety Assessment Report)
+# =============================================================================
+with tab_tiedown:
+    st.subheader("Tie-Down Provision Check")
+    st.caption("Transport restraint per MIL-STD-209K: 4G longitudinal / 2G vertical / 1.5G lateral "
+               "(g=9.81). Engine validated against the MCDLL workbook — 177/177 safety factors.")
+
+    _FACE_LABELS = {
+        "Front / rear wall (X-normal)":            MountFace.WALL_X,
+        "Floor / ceiling / top / base (Z-normal)": MountFace.FLOOR_Z,
+        "Left / right side wall (Y-normal)":       MountFace.WALL_Y,
+    }
+    _BOLT_CLASS_OPTS = list(BOLT_CLASSES.keys())
+    _BOLT_SIZE_OPTS  = list(BOLT_SIZES.keys())
+    _STRAP_OPTS      = list(NON_BOLTS.keys())
+
+    def _td_fastener_picker(prefix: str):
+        kind = st.radio("Fastener kind", ["Bolt", "Strap / Latch"], horizontal=True, key=f"{prefix}_kind")
+        if kind == "Bolt":
+            c1, c2 = st.columns(2)
+            cls = c1.selectbox("Property class", _BOLT_CLASS_OPTS,
+                               index=_BOLT_CLASS_OPTS.index("8.8"), key=f"{prefix}_cls")
+            sz  = c2.selectbox("Bolt size", _BOLT_SIZE_OPTS,
+                               index=_BOLT_SIZE_OPTS.index("M8"), key=f"{prefix}_sz")
+            return make_fastener(cls, sz)
+        name = st.selectbox("Strap / latch", _STRAP_OPTS, key=f"{prefix}_strap")
+        return make_fastener(name)
+
+    # ---- Section 1: check one item ----
+    st.markdown("### 1. Check one item")
+    c1, c2, c3 = st.columns([1, 1.6, 1])
+    td_wt = c1.number_input("Item weight [kg]", value=60.0, min_value=0.1, max_value=5000.0,
+                            step=1.0, key="td_wt")
+    td_face_label = c2.selectbox("Mounted to", list(_FACE_LABELS.keys()), key="td_face")
+    td_qty = c3.number_input("Fasteners (qty)", value=4, min_value=1, max_value=200, step=1, key="td_qty")
+    td_fastener = _td_fastener_picker("td_chk")
+    td_tgt = st.number_input("Target safety factor", value=1.0, min_value=0.1, max_value=20.0, step=0.5,
+                             key="td_tgt",
+                             help="Pass if the minimum SF across the 3 axes >= this. "
+                                  "MIL-STD-209K design factor is 1.5.")
+    if st.button("Check tie-down", type="primary", use_container_width=True, key="td_check_btn"):
+        res = analyze_item(Item(td_fastener.name, td_wt, _FACE_LABELS[td_face_label],
+                                td_fastener, int(td_qty)))
+        if res.min_SF >= td_tgt:
+            st.success(f"PASS — min SF = {res.min_SF:.2f} "
+                       f"(limiting axis: {res.limiting_axis.axis}), target {td_tgt}")
+        else:
+            st.error(f"FAIL — min SF = {res.min_SF:.2f} "
+                     f"(limiting axis: {res.limiting_axis.axis}) < target {td_tgt}")
+        st.dataframe(
+            [{"Axis": a.axis, "Design force [N]": round(a.design_force_N, 1),
+              "Force type": a.force_type, "Per fastener [N]": round(a.exp_force_N, 1),
+              "Yield [N]": round(a.yield_force_N, 1), "Safety factor": round(a.SF, 3)}
+             for a in res.axes],
+            use_container_width=True, hide_index=True,
+        )
+        st.caption(f"Fastener: **{td_fastener.name}** · tensile {td_fastener.tensile_force_N:.0f} N / "
+                   f"shear {td_fastener.shear_force_N:.0f} N per fastener")
+
+    st.divider()
+    # ---- Section 2: size fasteners ----
+    st.markdown("### 2. Size fasteners for a target SF")
+    s1, s2, s3 = st.columns([1, 1.6, 1])
+    td_swt = s1.number_input("Item weight [kg]", value=1269.0, min_value=0.1, max_value=5000.0,
+                             step=1.0, key="td_swt")
+    td_sface_label = s2.selectbox("Mounted to", list(_FACE_LABELS.keys()), key="td_sface")
+    td_stgt = s3.number_input("Target SF", value=2.0, min_value=0.1, max_value=20.0, step=0.5, key="td_stgt")
+    if st.button("Recommend fasteners", use_container_width=True, key="td_size_btn"):
+        opts = size_fasteners(td_swt, _FACE_LABELS[td_sface_label], target_SF=td_stgt)
+        best = opts[0]
+        st.success(f"Smallest valid: **{best.fastener.name} x{best.qty}**  (achieved min SF {best.min_SF:.2f})")
+        st.dataframe(
+            [{"Fastener": o.fastener.name, "Qty": o.qty, "Achieved min SF": round(o.min_SF, 2)}
+             for o in opts[:6]],
+            use_container_width=True, hide_index=True,
+        )
+
+    st.divider()
+    # ---- Section 3: scan the provision workbook ----
+    st.markdown("### 3. Scan the provision workbook for marginal items")
+    td_wbpath = st.text_input("Workbook path", value=WB_DEFAULT, key="td_wbpath",
+                              help="The MCDLL Tie-Down Provision .xlsx to import and scan.")
+    td_scan_tgt = st.number_input("Flag items below SF", value=2.0, min_value=0.1, max_value=20.0,
+                                  step=0.5, key="td_scan_tgt")
+    if st.button("Scan workbook", use_container_width=True, key="td_scan_btn"):
+        try:
+            items = import_workbook(td_wbpath)
+            report = run_tiedown_analysis(items, target_SF=td_scan_tgt)
+            crit = sorted(report.critical_items(), key=lambda r: r.min_SF)
+            st.info(f"{len(items)} items imported · {len(crit)} below SF {td_scan_tgt}")
+            if crit:
+                st.dataframe(
+                    [{"Item": r.item.name, "Min SF": round(r.min_SF, 3),
+                      "Limiting axis": r.limiting_axis.axis, "Fastener": r.item.fastener.name,
+                      "Qty": r.item.qty} for r in crit],
+                    use_container_width=True, hide_index=True,
+                )
+            else:
+                st.success("All items meet the target.")
+        except Exception as e:
+            st.error(f"Could not read workbook: {e}")
+
+    st.divider()
+    # ---- Section 4: tie-down assistant chat ----
+    st.markdown("### 4. Ask the tie-down assistant")
+    if not API_KEY:
+        st.info("Set `NVIDIA_API_KEY` in `.env` to enable the chat. Sections 1-3 work without it.")
+    else:
+        @st.cache_resource
+        def _get_tiedown_agent(key: str):
+            from agent import build_agent
+            return build_agent("tiedown", key)
+
+        if st.session_state.tiedown_agent is None:
+            with st.spinner("Initializing tie-down agent..."):
+                try:
+                    st.session_state.tiedown_agent = _get_tiedown_agent(API_KEY)
+                except Exception as e:
+                    st.error(f"Failed to initialize tie-down agent: {e}")
+
+        def _td_render_trace(events: list[dict]):
+            if not events:
+                return
+            with st.expander(f"🔎 Show {len(events)} agent steps", expanded=False):
+                for i, ev in enumerate(events, 1):
+                    if ev["type"] == "reasoning":
+                        st.markdown(f"**{i}. 💭 Reasoning**")
+                        st.markdown(f"> {ev['content']}")
+                    elif ev["type"] == "tool_call":
+                        args_lines = [f"  {k} = {v!r}" for k, v in ev["args"].items()]
+                        st.markdown(f"**{i}. 🔧 Calling `{ev['name']}`**")
+                        st.code("\n".join(args_lines) or "(no args)", language="python")
+                    elif ev["type"] == "tool_result":
+                        prev = ev["content"]
+                        if len(prev) > 800:
+                            prev = prev[:800] + f"\n... ({len(ev['content'])-800} more chars)"
+                        st.markdown(f"**{i}. ✅ Result from `{ev['name']}`**")
+                        st.code(prev, language="text")
+
+        for msg in st.session_state.tiedown_chat_history:
+            with st.chat_message(msg["role"]):
+                if msg.get("events"):
+                    _td_render_trace(msg["events"])
+                st.markdown(msg["content"])
+
+        td_q = st.chat_input("e.g. 'how many M12 bolts to floor-mount a 1269 kg generator at SF 2?'",
+                             key="td_chat_input")
+        if td_q and st.session_state.tiedown_agent is not None:
+            st.session_state.tiedown_chat_history.append({"role": "user", "content": td_q})
+            with st.chat_message("user"):
+                st.markdown(td_q)
+            hist = [("human" if m["role"] == "user" else "ai", m["content"])
+                    for m in st.session_state.tiedown_chat_history[:-1]]
+            with st.chat_message("assistant"):
+                collected: list[dict] = []
+                final_text = ""
+                with st.status("Working...", expanded=True) as status:
+                    try:
+                        for ev in st.session_state.tiedown_agent.stream(td_q, chat_history=hist or None):
+                            if ev["type"] == "reasoning":
+                                st.markdown(f"💭 *{ev['content']}*"); collected.append(ev)
+                            elif ev["type"] == "tool_call":
+                                ap = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
+                                if len(ap) > 120:
+                                    ap = ap[:120] + "…"
+                                st.markdown(f"🔧 Calling **`{ev['name']}`**({ap})"); collected.append(ev)
+                            elif ev["type"] == "tool_result":
+                                prev = ev["content"]
+                                if len(prev) > 400:
+                                    prev = prev[:400] + f"… ({len(ev['content'])-400} more chars)"
+                                st.markdown(f"✅ `{ev['name']}` returned:"); st.code(prev, language="text")
+                                collected.append(ev)
+                            elif ev["type"] == "final":
+                                final_text = ev["content"]
+                        status.update(
+                            label=f"Done — {len([e for e in collected if e['type']=='tool_call'])} tool call(s)",
+                            state="complete", expanded=False)
+                    except Exception as e:
+                        final_text = f"Agent error: {e}"
+                        status.update(label="Failed", state="error", expanded=True)
+                if final_text:
+                    st.markdown(final_text)
+            st.session_state.tiedown_chat_history.append(
+                {"role": "assistant", "content": final_text, "events": collected})
+
+        if st.button("🧹 Clear tie-down chat", key="td_clear"):
+            st.session_state.tiedown_chat_history = []
+            st.rerun()
 
 
 # ----------------------------------------------------------------------------

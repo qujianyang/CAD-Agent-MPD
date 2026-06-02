@@ -810,7 +810,7 @@ class DomainAgent:
         self.tools = tools
 
         llm = ChatNVIDIA(
-            model="meta/llama-3.1-70b-instruct",
+            model=os.environ.get("NVIDIA_MODEL") or "meta/llama-3.1-70b-instruct",
             api_key=api_key,
             temperature=0.1,
             max_tokens=2048,
