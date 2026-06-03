@@ -176,6 +176,67 @@ def format_item_detail(result: ItemResult) -> str:
     return "\n".join(lines)
 
 
+def format_full_report_table(report: TiedownReport) -> str:
+    """
+    Appendix-G style table: one row per item, columns for each axis SF + verdict.
+    Suitable for pasting directly into the SAR (Tie-Down Provision chapter).
+
+    Columns:
+      No. | Item | Weight (kg) | Fastener | Qty | SF Long | SF Vert | SF Lat | Min SF | Verdict
+    """
+    W_NO   = 4
+    W_ITEM = 38
+    W_KG   = 10
+    W_FAS  = 24
+    W_QTY  = 4
+    W_SF   = 8      # per axis SF column
+    W_MIN  = 8
+    W_VER  = 7
+    SEP = "-" * (W_NO + W_ITEM + W_KG + W_FAS + W_QTY + W_SF * 3 + W_MIN + W_VER + 10)
+
+    hdr = (
+        f"{'No.':<{W_NO}} {'Item':<{W_ITEM}} {'Wt(kg)':>{W_KG}} {'Fastener':<{W_FAS}} "
+        f"{'Qty':>{W_QTY}} {'SF Long':>{W_SF}} {'SF Vert':>{W_SF}} "
+        f"{'SF Lat':>{W_SF}} {'Min SF':>{W_MIN}} {'Verdict':>{W_VER}}"
+    )
+
+    lines = [
+        "=" * len(SEP),
+        "TIE-DOWN PROVISION ANALYSIS -- APPENDIX G SUMMARY TABLE",
+        f"  Design loads : 4G long / 2G vert / 1.5G lat   (g=9.81)   "
+        f"Target SF: {report.target_SF}",
+        "=" * len(SEP),
+        hdr,
+        SEP,
+    ]
+
+    for i, r in enumerate(report.items, 1):
+        by = {a.axis: a.SF for a in r.axes}
+        verdict = "PASS" if r.passed(report.target_SF) else "FAIL"
+        lines.append(
+            f"{i:<{W_NO}} {r.item.name[:W_ITEM]:<{W_ITEM}} "
+            f"{r.item.weight_kg:>{W_KG}.1f} "
+            f"{r.item.fastener.name[:W_FAS]:<{W_FAS}} "
+            f"{r.item.qty:>{W_QTY}} "
+            f"{by['long']:>{W_SF}.3f} "
+            f"{by['vert']:>{W_SF}.3f} "
+            f"{by['lat']:>{W_SF}.3f} "
+            f"{r.min_SF:>{W_MIN}.3f} "
+            f"{verdict:>{W_VER}}"
+        )
+
+    lines.append(SEP)
+    crit = report.critical_items()
+    lines.append(
+        "Overall: " + ("ALL PASS" if report.all_passed
+                       else f"{len(crit)} item(s) below target SF {report.target_SF}: "
+                            + ", ".join(r.item.name for r in crit[:5])
+                            + (" ..." if len(crit) > 5 else ""))
+    )
+    lines.append("=" * len(SEP))
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     m12 = FastenerSpec("8.8 M12", "BOLT", 640.0, 320.0, 76.247)
     camlock = FastenerSpec('Camlock Strap (1")', "CAMLOCK", 2500.0, 2500.0, 1.0)

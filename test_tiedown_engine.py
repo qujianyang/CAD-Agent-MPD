@@ -99,6 +99,29 @@ def test_format_item_detail():
     assert "M12" in txt and "10" in txt   # fastener label + qty
 
 
+def test_format_full_report_table():
+    from tiedown_engine import run_tiedown_analysis, format_full_report_table
+    m12 = FastenerSpec("8.8 M12", "BOLT", 640.0, 320.0, 76.247)
+    camlock = FastenerSpec('Camlock Strap (1")', "CAMLOCK", 2500.0, 2500.0, 1.0)
+    items = [
+        Item("Generator", 1269.0, MountFace.FLOOR_Z, m12, 10),
+        Item("Water Jerry Cans", 60.0, MountFace.FLOOR_Z, camlock, 1),
+    ]
+    rep = run_tiedown_analysis(items, target_SF=2.0)
+    t = format_full_report_table(rep)
+    # header columns present
+    assert "SF Long" in t and "SF Vert" in t and "SF Lat" in t and "Min SF" in t
+    # anchor values reproduced
+    assert "4.900" in t    # generator long SF
+    assert "19.599" in t   # generator vert SF
+    assert "13.066" in t   # generator lat SF
+    assert "1.062" in t    # water jerry cans min SF
+    # verdict column
+    assert "PASS" in t and "FAIL" in t
+    # overall summary mentions the failing item
+    assert "Water Jerry Cans" in t
+
+
 def _run():
     import sys
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
