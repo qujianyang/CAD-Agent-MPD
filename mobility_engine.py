@@ -173,36 +173,58 @@ def axle_loads(v: Vehicle, min_front_pct: float = 25.0) -> AxleResult:
     )
 
 
-def slope_stability(v: Vehicle, grade_pct: float, direction: str) -> SlopeResult:
+def _trig(theta: float, trig_dp: Optional[int]):
+    """cos/sin of theta, optionally rounded to trig_dp decimals to mirror a
+    hand/spreadsheet calculation (the SAR uses 3-dp trig constants)."""
+    c, s = math.cos(theta), math.sin(theta)
+    if trig_dp is not None:
+        c, s = round(c, trig_dp), round(s, trig_dp)
+    return c, s
+
+
+def slope_stability(v: Vehicle, grade_pct: float, direction: str,
+                    angle_deg: Optional[float] = None,
+                    trig_dp: Optional[int] = None) -> SlopeResult:
     """
     Longitudinal slope stability.
     direction: "ascending" (tips toward rear) or "descending" (tips toward front).
+    angle_deg: optional slope angle override. If given, used instead of
+               atan(grade_pct/100) -- matches the SAR which computes with the
+               rounded printed angle (e.g. 31 deg for a 60% grade).
+    trig_dp:   optional rounding of cos/sin to N decimals (SAR uses 3) so the
+               output reproduces the published safety factors exactly.
     """
-    theta = math.atan(grade_pct / 100)
+    theta = math.radians(angle_deg) if angle_deg is not None else math.atan(grade_pct / 100)
     if direction == "ascending":
         lever_mm = v.wheelbase_mm - v.xcg_mm   # rear axle to CG
     else:
         lever_mm = v.xcg_mm                     # front axle to CG
-    stab = G * v.gw_kg * math.cos(theta) * lever_mm / 1000
-    over = G * v.gw_kg * math.sin(theta) * v.zcg_mm / 1000
+    cos_t, sin_t = _trig(theta, trig_dp)
+    stab = G * v.gw_kg * cos_t * lever_mm / 1000
+    over = G * v.gw_kg * sin_t * v.zcg_mm / 1000
     SF = stab / over
     crit_angle_deg = math.degrees(math.atan(lever_mm / v.zcg_mm))
     return SlopeResult(grade_pct, direction, math.degrees(theta),
                        lever_mm, stab, over, SF, crit_angle_deg)
 
 
-def side_slope_stability(v: Vehicle, grade_pct: float, side: str) -> SlopeResult:
+def side_slope_stability(v: Vehicle, grade_pct: float, side: str,
+                         angle_deg: Optional[float] = None,
+                         trig_dp: Optional[int] = None) -> SlopeResult:
     """
     Lateral (side) slope stability.
     side: "kerbside" (tips left, pivot = left axle) or "roadside" (tips right).
+    angle_deg: optional angle override (SAR uses 16.7 deg for a 30% grade).
+    trig_dp:   optional cos/sin rounding (SAR uses 3) for exact replication.
     """
-    theta = math.atan(grade_pct / 100)
+    theta = math.radians(angle_deg) if angle_deg is not None else math.atan(grade_pct / 100)
     if side == "kerbside":
         lever_mm = v.track_mm / 2 + v.ycg_mm   # kerbside axle to CG (+Ycg adds)
     else:
         lever_mm = v.track_mm / 2 - v.ycg_mm   # roadside axle to CG
-    stab = G * v.gw_kg * math.cos(theta) * lever_mm / 1000
-    over = G * v.gw_kg * math.sin(theta) * v.zcg_mm / 1000
+    cos_t, sin_t = _trig(theta, trig_dp)
+    stab = G * v.gw_kg * cos_t * lever_mm / 1000
+    over = G * v.gw_kg * sin_t * v.zcg_mm / 1000
     SF = stab / over
     crit_angle_deg = math.degrees(math.atan(lever_mm / v.zcg_mm))
     return SlopeResult(grade_pct, side, math.degrees(theta),

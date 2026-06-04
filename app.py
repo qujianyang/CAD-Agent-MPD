@@ -31,7 +31,10 @@ from tiedown_engine import MountFace, Item, analyze_item, run_tiedown_analysis
 from fastener_catalog import make_fastener, size_fasteners, BOLT_CLASSES, BOLT_SIZES, NON_BOLTS
 from tiedown_import import import_workbook, WB_DEFAULT
 from mobility_engine import Vehicle, Aero, run_mobility_analysis, format_mobility_report, format_slope_table
-from mobility_import import vehicle_measured, vehicle_theory, approach_departure_angles, WB_DEFAULT as MB_DEFAULT
+from mobility_import import (
+    vehicle_measured, vehicle_theory, approach_departure_angles,
+    measurement_measured, WB_DEFAULT as MB_DEFAULT,
+)
 
 
 # ----------------------------------------------------------------------------
@@ -1015,7 +1018,7 @@ with tab_tiedown:
 
 
 # =============================================================================
-# TAB — Mobility and Stability Analysis (Appendix H)
+# TAB — Mobility and Stability Analysis (SAR Appendices B–E)
 # =============================================================================
 with tab_mobility:
     st.subheader("Mobility & Stability Analysis")
@@ -1122,40 +1125,54 @@ with tab_mobility:
 
     st.divider()
 
-    # ---- Section 4: Generate Appendix H ----
-    st.markdown("### 4. Generate Appendix H (Mobility Chapter)")
-    mb4_project  = st.text_input("Project", value="Project Spinel",   key="mb4_proj")
-    mb4_variant_lbl = st.text_input("Variant", value="Variant E-2",   key="mb4_var")
-    mb4_standard = st.text_input("Standard", value="AVTP / Def Stan", key="mb4_std")
+    # ---- Section 4: Generate SAR Appendices B-E (.docx) ----
+    st.markdown("### 4. Generate SAR Appendices B–E (Word .docx)")
+    st.caption("Drop-in replica of the SAR mobility appendices. Reproduces the published "
+               "safety factors (2.21 / 2.73 / 2.20 / 2.11 / 3.12). Figures inserted as placeholders.")
+    mb4_project  = st.text_input("Project", value="Project Spinel", key="mb4_proj")
+    mb4_variant_lbl = st.text_input("Variant", value="Variant E-2", key="mb4_var")
 
-    if st.button("Generate Appendix H", key="mb4_gen"):
+    if st.button("Generate Appendices B–E (.docx)", key="mb4_gen"):
         try:
-            v4 = vehicle_measured(mb_path) if mb_variant == "measured" else vehicle_theory(mb_path)
-            try:
-                app_deg4, dep_deg4 = approach_departure_angles(mb_path, mb_variant)
-            except Exception:
-                app_deg4 = dep_deg4 = None
-            report4 = run_mobility_analysis(v4, approach_deg=app_deg4, departure_deg=dep_deg4)
-            from mobility_report import generate_mobility_chapter
-            chapter = generate_mobility_chapter(
-                report4,
-                project=mb4_project,
-                variant=mb4_variant_lbl,
-                standard=mb4_standard,
+            if mb_variant != "measured":
+                st.warning("Appendix B (wheel-load derivation) uses Measured-CG data. "
+                           "Switch CG variant to 'measured' for the full B-E set.")
+            v4 = vehicle_measured(mb_path)
+            m4 = measurement_measured(mb_path)
+            from sar_report import generate_sar_appendices
+            from io import BytesIO
+            doc = generate_sar_appendices(
+                v4, m4, project=mb4_project, variant=mb4_variant_lbl,
             )
-            with st.expander("Preview Appendix H", expanded=True):
-                st.markdown(chapter)
+            buf = BytesIO()
+            doc.save(buf)
+            buf.seek(0)
+
+            # quick on-screen confirmation of the headline SFs
+            from mobility_engine import slope_stability, side_slope_stability, cornering_stability
+            sf_a = slope_stability(v4, 60, "ascending", angle_deg=31.0, trig_dp=3).SF
+            sf_d = slope_stability(v4, 60, "descending", angle_deg=31.0, trig_dp=3).SF
+            sf_k = side_slope_stability(v4, 30, "kerbside", angle_deg=16.7, trig_dp=3).SF
+            sf_r = side_slope_stability(v4, 30, "roadside", angle_deg=16.7, trig_dp=3).SF
+            sf_c = cornering_stability(v4, Aero(), 15, 11, 60).SF
+            st.success("Generated 4 appendices (B, C, D, E).")
+            mcols = st.columns(5)
+            for col, (lbl, val) in zip(mcols, [
+                ("C.1 Asc 60%", sf_a), ("C.2 Desc 60%", sf_d),
+                ("D.1 Kerb 30%", sf_k), ("D.2 Road 30%", sf_r), ("E Corner", sf_c)]):
+                col.metric(lbl, f"{val:.2f}")
+
             import datetime
             _ts4 = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-            dl1, dl2 = st.columns(2)
-            dl1.download_button("Download .md", data=chapter,
-                                file_name=f"Appendix_H_{_ts4}.md",
-                                mime="text/markdown", key="mb4_dl_md")
-            dl2.download_button("Download .txt", data=chapter,
-                                file_name=f"Appendix_H_{_ts4}.txt",
-                                mime="text/plain", key="mb4_dl_txt")
+            st.download_button(
+                "⬇ Download Appendices B–E (.docx)",
+                data=buf,
+                file_name=f"Appendix_BCDE_{_ts4}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key="mb4_dl_docx",
+            )
         except Exception as e:
-            st.error(f"Error generating chapter: {e}")
+            st.error(f"Error generating appendices: {e}")
 
     st.divider()
 

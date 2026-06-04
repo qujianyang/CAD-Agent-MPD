@@ -54,3 +54,7 @@ mpd/
 __pycache__/
 *.pyc
 __pycache__/nvidia_embedder.cpython-310.pyc
+
+# generated SAR appendix artifacts (contain confidential data)
+Appendix_*.docx
+Appendix_BCDE_demo.docx

@@ -11,11 +11,48 @@ Override workbook path via MOBILITY_XLS environment variable.
 """
 
 import os
+from dataclasses import dataclass
 import xlrd
 
 from mobility_engine import Vehicle, Aero
 
 WB_DEFAULT = r"C:\Users\qujia\Downloads\Spinel -E2 Measured CG in FIT_13-5-2026_Turning Radius R_Final 1.xls"
+
+
+# ---------------------------------------------------------------------------
+# Raw measurement data for Appendix B (wheel loads -> CG derivation)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class WheelReading:
+    label: str           # e.g. "Front Left (FL)"
+    r1: float            # 1st reading (kg)
+    r2: float            # 2nd reading (kg)
+    avg: float           # average reading (kg)
+
+
+@dataclass
+class TiltTest:
+    case: int
+    angle_deg: float
+    radius_mm: float
+    fi_kg: float         # rear-axle reading on inclined plane
+    z_mm: float          # computed Z for this case
+
+
+@dataclass
+class MeasurementData:
+    """Everything Appendix B needs, read straight from 'E2 Measured CG'."""
+    wheels: list         # [WheelReading x4] FL, FR, RL, RR
+    gw_kg: float
+    front_axle_kg: float
+    rear_axle_kg: float
+    driver_kg: float
+    kerb_kg: float
+    front_diff_pct: float
+    rear_diff_pct: float
+    tilt_tests: list     # [TiltTest x4]
+    avg_z_mm: float
 
 # ---------------------------------------------------------------------------
 # Cell references — change here if the workbook layout ever shifts.
@@ -154,6 +191,53 @@ def approach_departure_angles(path: str = None, variant: str = "measured") -> tu
     app = s.cell_value(*_APPROACH["approach_deg"])
     dep = s.cell_value(*_APPROACH["departure_deg"])
     return float(app), float(dep)
+
+
+def measurement_measured(path: str = None) -> MeasurementData:
+    """
+    Read raw wheel-load readings and the Z-axis tilt test from 'E2 Measured CG'.
+    These feed Appendix B (the measured CG derivation).
+    """
+    wb = _open(path)
+    s = wb.sheet_by_name(_MEAS_CG)
+
+    # Wheel readings: rows 17-20 (0-idx 16-19), cols C/D/E = 1st/2nd/avg (idx 2,3,4)
+    labels = ["Front Left (FL)", "Front Right (FR)", "Rear Left (RL)", "Rear Right (RR)"]
+    wheels = []
+    for i, lab in enumerate(labels):
+        r = 16 + i
+        wheels.append(WheelReading(lab, s.cell_value(r, 2), s.cell_value(r, 3), s.cell_value(r, 4)))
+
+    # Axle summary: col I (idx 8), rows 17-20
+    front_axle = s.cell_value(16, 8)   # I17
+    rear_axle  = s.cell_value(17, 8)   # I18
+    driver     = s.cell_value(18, 8)   # I19
+    kerb       = s.cell_value(19, 8)   # I20
+    gw         = s.cell_value(20, 4)   # E21
+
+    # Wheel difference %: col F (idx 5), rows 18 & 20
+    front_diff = s.cell_value(17, 5)   # F18
+    rear_diff  = s.cell_value(19, 5)   # F20
+
+    # Tilt test: rows 27-30 (0-idx 26-29). B=case, C=angle, D=radius, F=FI, G=Z
+    tilts = []
+    for r in range(26, 30):
+        tilts.append(TiltTest(
+            case=int(s.cell_value(r, 1)),
+            angle_deg=s.cell_value(r, 2),
+            radius_mm=s.cell_value(r, 3),
+            fi_kg=s.cell_value(r, 5),
+            z_mm=s.cell_value(r, 6),
+        ))
+    avg_z = s.cell_value(30, 6)        # G31
+
+    return MeasurementData(
+        wheels=wheels, gw_kg=gw,
+        front_axle_kg=front_axle, rear_axle_kg=rear_axle,
+        driver_kg=driver, kerb_kg=kerb,
+        front_diff_pct=front_diff, rear_diff_pct=rear_diff,
+        tilt_tests=tilts, avg_z_mm=avg_z,
+    )
 
 
 def import_workbook(path: str = None) -> dict:
