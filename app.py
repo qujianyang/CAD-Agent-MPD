@@ -890,10 +890,42 @@ with tab_tiedown:
             st.error(f"Could not read workbook: {e}")
 
     st.divider()
-    # ---- Section 4: tie-down assistant chat ----
-    st.markdown("### 4. Ask the tie-down assistant")
+    # ---- Section 4: generate the Appendix G report section ----
+    st.markdown("### 4. Generate the Appendix G report section")
+    st.caption("Runs the whole workbook, then drafts the SAR Appendix G section "
+               "(scope + MIL-STD-209K basis, results table, pass/fail assessment). "
+               "Every number comes from the validated engine -- no AI in the numbers.")
+    rg1, rg2 = st.columns([3, 1])
+    td_rg_path = rg1.text_input("Workbook path", value=WB_DEFAULT, key="td_rg_path")
+    td_rg_tgt = rg2.number_input("Required SF", value=1.5, min_value=0.1, max_value=20.0,
+                                 step=0.5, key="td_rg_tgt",
+                                 help="MIL-STD-209K design factor is 1.5.")
+    if st.button("Generate Appendix G", type="primary", use_container_width=True, key="td_rg_btn"):
+        try:
+            from tiedown_report import generate_appendix_g
+            items = import_workbook(td_rg_path)
+            report = run_tiedown_analysis(items, target_SF=td_rg_tgt)
+            st.session_state["td_appendix_g"] = generate_appendix_g(report)
+        except Exception as e:
+            st.session_state["td_appendix_g"] = ""
+            st.error(f"Could not generate report: {e}")
+    if st.session_state.get("td_appendix_g"):
+        section = st.session_state["td_appendix_g"]
+        with st.expander("Preview", expanded=True):
+            st.markdown(section)
+        from datetime import datetime as _dt
+        _ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+        dl1, dl2, _ = st.columns([1, 1, 3])
+        dl1.download_button("Download .md", data=section, file_name=f"Appendix_G_{_ts}.md",
+                            mime="text/markdown", key="td_rg_dl_md")
+        dl2.download_button("Download .txt", data=section, file_name=f"Appendix_G_{_ts}.txt",
+                            mime="text/plain", key="td_rg_dl_txt")
+
+    st.divider()
+    # ---- Section 5: tie-down assistant chat ----
+    st.markdown("### 5. Ask the tie-down assistant")
     if not API_KEY:
-        st.info("Set `NVIDIA_API_KEY` in `.env` to enable the chat. Sections 1-3 work without it.")
+        st.info("Set `NVIDIA_API_KEY` in `.env` to enable the chat. Sections 1-4 work without it.")
     else:
         @st.cache_resource
         def _get_tiedown_agent(key: str):
