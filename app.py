@@ -415,7 +415,7 @@ tab_quick, tab_cad, tab_tiedown, tab_mobility, tab_agent = st.tabs([
     "🔌 CAD + Shock",
     "🔗 Tie-Down",
     "🚗 Mobility",
-    "🤖 Agent Chat",
+    "🤖 Co-Pilot",
 ])
 
 
@@ -663,16 +663,27 @@ with tab_cad:
 
 
 # =============================================================================
-# TAB 3 — Agent Chat (LLM with tool calling)
+# TAB — Co-Pilot (unified LLM agent across all three domains)
 # =============================================================================
 with tab_agent:
-    st.subheader("Engineering Assistant")
-    st.caption("LLM-driven agent with 5 tools: extract CAD, select isolator, run shock analysis, "
-               "lookup knowledge base, list CAD files.")
+    st.subheader("Engineering Co-Pilot")
+    st.caption("One assistant across all three domains — shock isolation, tie-down, and "
+               "mobility/stability. Ask in plain English; it picks the right tool, asks when "
+               "unsure, and every number comes from the validated engines.")
+    with st.expander("What can I ask?"):
+        st.markdown(
+            "- *Select an isolator for a 1500 kg rack, 6 bottom + 4 wall.*\n"
+            "- *How many M12 bolts to floor-mount a 1269 kg generator at SF 2?*\n"
+            "- *Is the Spinel E2 stable on a 60% slope? What's the max safe cornering speed?*\n"
+            "- *Which tie-down items fall below SF 2 in the workbook?*\n"
+            "- *What's the heaviest mass a CB1400-30 can support?*\n\n"
+            "It remembers context across the chat (mass, CG, variant), and shows every tool "
+            "call + arguments so you can verify what it ran."
+        )
 
     if not API_KEY:
-        st.error("Agent chat requires `NVIDIA_API_KEY` in `.env`. "
-                 "The selector tabs above don't need it.")
+        st.error("The Co-Pilot requires `NVIDIA_API_KEY` in `.env`. "
+                 "The calculator tabs above don't need it.")
     else:
         # Cache the agent object at the process level so the NVIDIA endpoint
         # handshake and LangChain tool registration only happen once, regardless
@@ -681,11 +692,11 @@ with tab_agent:
         # Caveat: if API_KEY changes or agent.py is edited, restart the app.
         @st.cache_resource
         def _get_agent(key: str):
-            from agent import ShockMountAgent
-            return ShockMountAgent(key)
+            from agent import build_agent
+            return build_agent("unified", key)
 
         if st.session_state.agent is None:
-            with st.spinner("Initializing agent (Llama 3.1 70B + 5 tools)..."):
+            with st.spinner("Initializing co-pilot (Llama 3.1 70B + 14 tools across 3 domains)..."):
                 try:
                     st.session_state.agent = _get_agent(API_KEY)
                 except Exception as e:
@@ -720,7 +731,8 @@ with tab_agent:
                 st.markdown(msg["content"])
 
         # ----- new user input -----
-        user_q = st.chat_input("Ask anything (e.g. 'what isolator for 1200kg, 6+4 mounts?')")
+        user_q = st.chat_input("Ask anything across shock / tie-down / mobility "
+                                "(e.g. 'is the Spinel stable on a 60% slope?')")
         if user_q and st.session_state.agent is not None:
             st.session_state.chat_history.append({"role": "user", "content": user_q})
             with st.chat_message("user"):

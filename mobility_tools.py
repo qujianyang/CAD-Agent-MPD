@@ -28,14 +28,20 @@ def _vehicle_from_params(gw_kg, xcg_mm, ycg_mm, zcg_mm, wb_mm, track_mm) -> Vehi
 @tool
 def run_mobility_check(variant: str = "measured", workbook_path: str = "") -> str:
     """
-    Run a full mobility and stability analysis on the Spinel E2, reading the
-    vehicle CG from the source workbook (measured or theory CG).
+    THE DEFAULT MOBILITY TOOL for the Spinel E2 / "the vehicle" / any workbook
+    question. Reads the REAL CG from the workbook -- takes NO CG inputs.
 
-    Returns axle loadings, slope stability grid (4G/4 directions), and
-    cornering stability. Identifies the governing (lowest SF) case.
+    Use this for ALL questions about the known vehicle, including:
+      - "is it stable on a 60% slope?"
+      - "what is the max safe CORNERING speed?"   (cornering is included here)
+      - "what are the axle loads / is it steerable?"
+    It returns axle loadings, the full slope stability grid, AND cornering
+    stability (centrifugal + wind, with max safe speed), plus the governing case.
 
-    OMIT variant if user says "measured CG" (default). Pass "theory" for
-    the calculated/theory CG variant.
+    Do NOT use slope_limit or cornering_check for the Spinel -- those need CG
+    typed in by hand and must never be fed invented numbers.
+
+    OMIT variant unless the user says "theory CG" (default "measured").
 
     Args:
         variant:       "measured" or "theory". Default "measured".
@@ -76,14 +82,12 @@ def slope_limit(
     direction: str = "ascending",
 ) -> str:
     """
-    Compute the slope stability safety factors and geometric critical tip angle
-    for a vehicle with the given CG, for a range of grades.
+    CUSTOM / HYPOTHETICAL VEHICLES ONLY. Requires the user to give explicit CG
+    numbers in their message. For the Spinel E2 or any workbook vehicle, use
+    run_mobility_check instead -- NEVER invent CG values to call this tool.
 
-    Returns: SF at 60%, 50%, 40%, 30% grades and the angle at which the vehicle
-    would tip over (independent of grade — depends only on CG geometry).
-
-    Use this when the user asks about slope capability, tipping angle, or
-    "can this vehicle handle X% grade."
+    Computes slope stability SFs and the geometric critical tip angle for a
+    vehicle with the given CG, across 60/50/40/30% grades.
 
     Args:
         gw_kg    : REQUIRED. Gross weight in kg.
@@ -147,11 +151,13 @@ def cornering_check(
     wind_kmh: float = 60.0,
 ) -> str:
     """
-    Compute the cornering stability safety factor at a given speed, turning
-    radius, and wind speed. Also returns the maximum safe cornering speed.
+    CUSTOM / HYPOTHETICAL VEHICLES ONLY. Requires the user to give explicit CG
+    numbers in their message. For the Spinel E2 / known vehicle, including its
+    "max safe cornering speed", use run_mobility_check instead -- it already
+    reports cornering. NEVER invent CG values to call this tool.
 
-    Use this when the user asks "is it safe to turn at X km/h?", "what is
-    the max safe cornering speed?", or checks cornering with a specific radius.
+    Computes the cornering stability SF and the maximum safe cornering speed for
+    a vehicle with the given CG, speed, turning radius and wind speed.
 
     Args:
         gw_kg    : REQUIRED. Gross weight in kg.
