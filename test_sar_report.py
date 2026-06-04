@@ -7,9 +7,27 @@ Verifies the generated document reproduces the PUBLISHED SAR safety factors
 """
 from mobility_engine import Vehicle, Aero
 from mobility_import import (
-    MeasurementData, WheelReading, TiltTest,
+    MeasurementData, WheelReading, TiltTest, PlatformCG,
 )
 from sar_report import generate_sar_appendices
+
+
+_M_UNLADEN = MeasurementData(
+    wheels=[
+        WheelReading("Front Left (FL)", 3650, 3700, 3675),
+        WheelReading("Front Right (FR)", 3500, 3550, 3525),
+        WheelReading("Rear Left (RL)", 2250, 2300, 2275),
+        WheelReading("Rear Right (RR)", 2300, 2300, 2300),
+    ],
+    gw_kg=11775, front_axle_kg=7200, rear_axle_kg=4575,
+    driver_kg=5825, kerb_kg=5950, front_diff_pct=2.08, rear_diff_pct=0.55,
+    tilt_tests=[], avg_z_mm=1163,
+    name="Unladen AFE Transporter L1", weight_label="CW",
+    xcg_mm=1865.0, ycg_mm=-11.1, zcg_mm=1163,
+    z_note="AFE Transporter L1 Data from DSTA, Table 2-1",
+)
+
+_SHELTER = PlatformCG("Laden E2 Shelter", 6075, 4190.7, 125.2, 2506.5)
 
 
 _V = Vehicle(
@@ -87,6 +105,25 @@ def test_table_captions():
     for cap in ["Table B-1", "Table B-2", "Table C-1", "Table C-2",
                 "Table D-1", "Table D-2", "Table E-1"]:
         assert cap in txt, cap
+
+
+def test_b2_b3_when_provided():
+    doc = generate_sar_appendices(_V, _M, m_unladen=_M_UNLADEN, shelter=_SHELTER)
+    txt = _all_text(doc)
+    assert "B.2" in txt and "B.3" in txt
+    assert "Unladen AFE Transporter L1" in txt
+    assert "7200" in txt and "11775" in txt       # unladen axle + weight
+    assert "Table B-3" in txt and "Table B-4" in txt
+    assert "Laden E2 Shelter" in txt
+    assert "4190.7" in txt and "125.2" in txt      # shelter X + (correct) Y
+    assert "1163" in txt                            # ZCW from DSTA
+
+
+def test_b1_only_omits_b2_b3():
+    doc = generate_sar_appendices(_V, _M)   # no unladen/shelter
+    txt = _all_text(doc)
+    assert "Table B-3" not in txt
+    assert "B.2" not in txt
 
 
 def test_saves_file(tmp_path=None):

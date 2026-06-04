@@ -42,7 +42,8 @@ class TiltTest:
 
 @dataclass
 class MeasurementData:
-    """Everything Appendix B needs, read straight from 'E2 Measured CG'."""
+    """One platform's measured loads + CG (Appendix B). Works for both the laden
+    Integrated Platform (with Z tilt test) and the unladen Transporter (Z from DSTA)."""
     wheels: list         # [WheelReading x4] FL, FR, RL, RR
     gw_kg: float
     front_axle_kg: float
@@ -51,8 +52,27 @@ class MeasurementData:
     kerb_kg: float
     front_diff_pct: float
     rear_diff_pct: float
-    tilt_tests: list     # [TiltTest x4]
+    tilt_tests: list     # [TiltTest x4], empty if Z not measured by tilt
     avg_z_mm: float
+    # generalized fields (defaults keep older keyword construction working)
+    name: str = "Integrated Platform"
+    weight_label: str = "GW"
+    xcg_mm: float = 0.0
+    ycg_mm: float = 0.0
+    zcg_mm: float = 0.0
+    wheelbase_mm: float = 4800.0
+    track_mm: float = 2088.0
+    z_note: str = ""     # e.g. "AFE Transporter L1 Data from DSTA" for unladen Z
+
+
+@dataclass
+class PlatformCG:
+    """A simple weight + CG summary (used for the derived E2 Shelter, Appendix B.3)."""
+    name: str
+    weight_kg: float
+    xcg_mm: float
+    ycg_mm: float
+    zcg_mm: float
 
 # ---------------------------------------------------------------------------
 # Cell references — change here if the workbook layout ever shifts.
@@ -193,50 +213,76 @@ def approach_departure_angles(path: str = None, variant: str = "measured") -> tu
     return float(app), float(dep)
 
 
-def measurement_measured(path: str = None) -> MeasurementData:
+def _read_measurement_sheet(wb, sheet_name, *, name, weight_label,
+                            has_tilt, z_note="") -> MeasurementData:
     """
-    Read raw wheel-load readings and the Z-axis tilt test from 'E2 Measured CG'.
-    These feed Appendix B (the measured CG derivation).
+    Read a standard-layout CG sheet ('E2 Measured CG' or 'Measured Unladen L1').
+    Both share the same cell layout: D6 WB, D7 track, D9 weight, D10/11/12 X/Y/Z,
+    rows 17-20 wheel readings + axle summary, rows 27-30 the (optional) tilt test.
     """
-    wb = _open(path)
-    s = wb.sheet_by_name(_MEAS_CG)
+    s = wb.sheet_by_name(sheet_name)
 
-    # Wheel readings: rows 17-20 (0-idx 16-19), cols C/D/E = 1st/2nd/avg (idx 2,3,4)
     labels = ["Front Left (FL)", "Front Right (FR)", "Rear Left (RL)", "Rear Right (RR)"]
-    wheels = []
-    for i, lab in enumerate(labels):
-        r = 16 + i
-        wheels.append(WheelReading(lab, s.cell_value(r, 2), s.cell_value(r, 3), s.cell_value(r, 4)))
+    wheels = [WheelReading(lab, s.cell_value(16 + i, 2), s.cell_value(16 + i, 3),
+                           s.cell_value(16 + i, 4)) for i, lab in enumerate(labels)]
 
-    # Axle summary: col I (idx 8), rows 17-20
-    front_axle = s.cell_value(16, 8)   # I17
-    rear_axle  = s.cell_value(17, 8)   # I18
-    driver     = s.cell_value(18, 8)   # I19
-    kerb       = s.cell_value(19, 8)   # I20
-    gw         = s.cell_value(20, 4)   # E21
-
-    # Wheel difference %: col F (idx 5), rows 18 & 20
-    front_diff = s.cell_value(17, 5)   # F18
-    rear_diff  = s.cell_value(19, 5)   # F20
-
-    # Tilt test: rows 27-30 (0-idx 26-29). B=case, C=angle, D=radius, F=FI, G=Z
     tilts = []
-    for r in range(26, 30):
-        tilts.append(TiltTest(
-            case=int(s.cell_value(r, 1)),
-            angle_deg=s.cell_value(r, 2),
-            radius_mm=s.cell_value(r, 3),
-            fi_kg=s.cell_value(r, 5),
-            z_mm=s.cell_value(r, 6),
-        ))
-    avg_z = s.cell_value(30, 6)        # G31
+    avg_z = s.cell_value(11, 3)        # D12 (Z) — default if no tilt
+    if has_tilt:
+        for r in range(26, 30):
+            tilts.append(TiltTest(
+                case=int(s.cell_value(r, 1)), angle_deg=s.cell_value(r, 2),
+                radius_mm=s.cell_value(r, 3), fi_kg=s.cell_value(r, 5),
+                z_mm=s.cell_value(r, 6)))
+        avg_z = s.cell_value(30, 6)    # G31 tilt average
 
     return MeasurementData(
-        wheels=wheels, gw_kg=gw,
-        front_axle_kg=front_axle, rear_axle_kg=rear_axle,
-        driver_kg=driver, kerb_kg=kerb,
-        front_diff_pct=front_diff, rear_diff_pct=rear_diff,
+        wheels=wheels,
+        gw_kg=s.cell_value(20, 4),                 # E21
+        front_axle_kg=s.cell_value(16, 8),         # I17
+        rear_axle_kg=s.cell_value(17, 8),          # I18
+        driver_kg=s.cell_value(18, 8),             # I19
+        kerb_kg=s.cell_value(19, 8),               # I20
+        front_diff_pct=s.cell_value(17, 5),        # F18
+        rear_diff_pct=s.cell_value(19, 5),         # F20
         tilt_tests=tilts, avg_z_mm=avg_z,
+        name=name, weight_label=weight_label,
+        xcg_mm=s.cell_value(9, 3),                 # D10
+        ycg_mm=s.cell_value(10, 3),                # D11
+        zcg_mm=s.cell_value(11, 3),                # D12
+        wheelbase_mm=s.cell_value(5, 3),           # D6
+        track_mm=s.cell_value(6, 3),               # D7
+        z_note=z_note,
+    )
+
+
+def measurement_measured(path: str = None) -> MeasurementData:
+    """Laden Integrated Platform (B.1) — Z by tilt test."""
+    return _read_measurement_sheet(
+        _open(path), _MEAS_CG,
+        name="Integrated Platform", weight_label="GW", has_tilt=True)
+
+
+def measurement_unladen(path: str = None) -> MeasurementData:
+    """Unladen AFE Transporter L1 (B.2) — Z referenced from DSTA, no tilt test."""
+    return _read_measurement_sheet(
+        _open(path), "Measured Unladen L1",
+        name="Unladen AFE Transporter L1", weight_label="CW", has_tilt=False,
+        z_note="AFE Transporter L1 Data from DSTA, Table 2-1")
+
+
+def shelter_cg(path: str = None) -> PlatformCG:
+    """
+    Laden E2 Shelter (B.3) — derived by subtracting the transporter from the
+    integrated platform. Read straight from 'Re-engrg E2 Shelter Wt & CG'.
+    """
+    s = _open(path).sheet_by_name("Re-engrg E2 Shelter Wt & CG")
+    return PlatformCG(
+        name="Laden E2 Shelter",
+        weight_kg=s.cell_value(5, 4),    # E6
+        xcg_mm=s.cell_value(28, 4),      # E29
+        ycg_mm=s.cell_value(36, 4),      # E37
+        zcg_mm=s.cell_value(21, 4),      # E22
     )
 
 

@@ -33,7 +33,7 @@ from tiedown_import import import_workbook, WB_DEFAULT
 from mobility_engine import Vehicle, Aero, run_mobility_analysis, format_mobility_report, format_slope_table
 from mobility_import import (
     vehicle_measured, vehicle_theory, approach_departure_angles,
-    measurement_measured, WB_DEFAULT as MB_DEFAULT,
+    measurement_measured, measurement_unladen, shelter_cg, WB_DEFAULT as MB_DEFAULT,
 )
 
 
@@ -1139,10 +1139,13 @@ with tab_mobility:
                            "Switch CG variant to 'measured' for the full B-E set.")
             v4 = vehicle_measured(mb_path)
             m4 = measurement_measured(mb_path)
+            mu4 = measurement_unladen(mb_path)
+            sh4 = shelter_cg(mb_path)
             from sar_report import generate_sar_appendices
             from io import BytesIO
             doc = generate_sar_appendices(
-                v4, m4, project=mb4_project, variant=mb4_variant_lbl,
+                v4, m4, m_unladen=mu4, shelter=sh4,
+                project=mb4_project, variant=mb4_variant_lbl,
             )
             buf = BytesIO()
             doc.save(buf)
@@ -1155,7 +1158,12 @@ with tab_mobility:
             sf_k = side_slope_stability(v4, 30, "kerbside", angle_deg=16.7, trig_dp=3).SF
             sf_r = side_slope_stability(v4, 30, "roadside", angle_deg=16.7, trig_dp=3).SF
             sf_c = cornering_stability(v4, Aero(), 15, 11, 60).SF
-            st.success("Generated 4 appendices (B, C, D, E).")
+            st.success("Generated appendices B (B.1+B.2+B.3), C, D, E.")
+            if abs(sh4.ycg_mm - 152.2) > 1:
+                st.warning(f"Note: workbook computes Laden E2 Shelter Ycg = {sh4.ycg_mm:.1f} mm, "
+                           f"but the signed SAR Table B-4 shows 152.2 mm — likely a digit "
+                           f"transposition (125.2 → 152.2) in the report. Output uses the "
+                           f"workbook-computed value.")
             mcols = st.columns(5)
             for col, (lbl, val) in zip(mcols, [
                 ("C.1 Asc 60%", sf_a), ("C.2 Desc 60%", sf_d),

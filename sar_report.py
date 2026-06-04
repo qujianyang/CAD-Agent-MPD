@@ -25,7 +25,7 @@ from mobility_engine import (
     Vehicle, Aero, G,
     axle_loads, slope_stability, side_slope_stability, cornering_stability,
 )
-from mobility_import import MeasurementData
+from mobility_import import MeasurementData, PlatformCG
 
 
 # ---------------------------------------------------------------------------
@@ -82,24 +82,19 @@ def _grid_table(doc, data, *, header=True, widths=None):
 # Appendix B — CG, Weight Distribution, Axle Loadings
 # ---------------------------------------------------------------------------
 
-def appendix_b(doc, v: Vehicle, m: MeasurementData):
-    doc.add_heading("Appendix B  Centre of Gravity, Weight Distribution and Axle Loadings", level=1)
-
-    doc.add_heading("B.1  Integrated Platform", level=2)
-    doc.add_heading("B.1.1  Integrated Platform Measured Wheel Load Readings", level=3)
-
-    # Wheel-load table
+def _wheel_axle_tables(doc, m: MeasurementData):
+    """Wheel-load reading table + axle summary table (shared by B.1 and B.2)."""
     rows = [["Axle Loading Measurement On Flat Ground", "1st Reading (kg)",
              "2nd Reading (kg)", "Average Reading (kg)", "Wheel Diff. (%)"]]
     diff_map = {1: f"{m.front_diff_pct:.1f}", 3: f"{m.rear_diff_pct:.1f}"}
     for i, w in enumerate(m.wheels):
         rows.append([w.label, f"{w.r1:.0f}", f"{w.r2:.0f}", f"{w.avg:.0f}",
                      diff_map.get(i, "")])
-    rows.append(["Gross Weight, GW (FL + FR + RL + RR)", "", "", f"{m.gw_kg:.0f}", ""])
+    wlabel = "Gross Weight, GW" if m.weight_label == "GW" else "Unladen Transporter Weight, CW"
+    rows.append([f"{wlabel} (FL + FR + RL + RR)", "", "", f"{m.gw_kg:.0f}", ""])
     _grid_table(doc, rows)
     doc.add_paragraph()
 
-    # Axle summary
     ax_rows = [["", "Weight (kg)"],
                ["Front Axle (FL + FR)", f"{m.front_axle_kg:.0f}"],
                ["Rear Axle (RL + RR)", f"{m.rear_axle_kg:.0f}"],
@@ -108,67 +103,115 @@ def appendix_b(doc, v: Vehicle, m: MeasurementData):
     _grid_table(doc, ax_rows)
     doc.add_paragraph()
 
-    # Summary of axle loadings vs limits
+
+def _cg_derivation(doc, m: MeasurementData, *, sym, fig_x, fig_y, fig_z, fig_summary,
+                   summary_label, summary_caption, datum_note):
+    """Xcg/Ycg/Zcg worked derivation + summary CG table (shared by B.1 and B.2)."""
+    wl = m.weight_label
+    # --- X ---
+    doc.add_paragraph().add_run(f"Measured X{sym}").bold = True
+    _figure_placeholder(doc, fig_x)
+    doc.add_paragraph(f"Taking moments about front axle, distance between centre of gravity "
+                      f"and front axle, X{sym}:")
+    _formula(doc, f"X{sym} = (RA / {wl}) x WB")
+    _formula(doc, f"    = ({m.rear_axle_kg:.0f} / {m.gw_kg:.0f}) x {m.wheelbase_mm:.0f}")
+    _formula(doc, f"    = {m.xcg_mm:.1f} mm", bold=True)
+    # --- Y ---
+    doc.add_paragraph().add_run(f"Measured Y{sym}").bold = True
+    _figure_placeholder(doc, fig_y)
+    ly_kerb = m.track_mm / 2 + m.ycg_mm
+    doc.add_paragraph(f"Taking moments about centre of kerbside tyre, position of Y{sym} "
+                      f"from kerbside tyre, Ly:")
+    _formula(doc, f"Ly = (RGA / {wl}) x TW")
+    _formula(doc, f"   = ({m.driver_kg:.0f} / {m.gw_kg:.0f}) x {m.track_mm:.0f}")
+    _formula(doc, f"   = {ly_kerb:.1f} mm  (from kerbside tyre)")
+    _formula(doc, f"Y{sym} (from centreline, right +) = {m.ycg_mm:.1f} mm", bold=True)
+    # --- Z ---
+    doc.add_paragraph().add_run(f"Measured Z{sym}").bold = True
+    if m.tilt_tests:
+        doc.add_paragraph("The Z-axis is determined by lifting the vehicle from the front at "
+                          "several inclination angles and reading the rear-axle load.")
+        _figure_placeholder(doc, fig_z)
+        _formula(doc, "Z = [(FI - FL) x WB] / (W x tan a) + Rstat")
+        z_rows = [["Test", "Inclined angle (deg)", "Radius of Wheel (mm)",
+                   "Reading, FI (kg)", "Z-Axis (mm)"]]
+        for t in m.tilt_tests:
+            z_rows.append([f"{t.case}", f"{t.angle_deg:.1f}", f"{t.radius_mm:.0f}",
+                           f"{t.fi_kg:.0f}", f"{t.z_mm:.1f}"])
+        z_rows.append(["", "", "", f"Average Z{sym}", f"{m.avg_z_mm:.1f}"])
+        _grid_table(doc, z_rows)
+    else:
+        _formula(doc, f"Z{sym} = {m.zcg_mm:.0f} mm from ground"
+                      + (f"  ({m.z_note})" if m.z_note else ""), bold=True)
+    doc.add_paragraph()
+    # --- summary CG ---
+    _figure_placeholder(doc, fig_summary)
+    doc.add_paragraph(datum_note)
+    cg_rows = [
+        [summary_label, "Weight (kg)", "X (mm)", "Y (mm)", "Z (mm)"],
+        [m.name, f"{m.gw_kg:.0f}", f"{m.xcg_mm:.1f}", f"{m.ycg_mm:.1f}", f"{m.zcg_mm:.1f}"],
+    ]
+    _grid_table(doc, cg_rows)
+    _caption(doc, summary_caption)
+
+
+def appendix_b(doc, v: Vehicle, m: MeasurementData,
+               m_unladen: MeasurementData = None, shelter: PlatformCG = None):
+    doc.add_heading("Appendix B  Centre of Gravity, Weight Distribution and Axle Loadings", level=1)
+
+    # ---- B.1 Integrated Platform (laden) ----
+    doc.add_heading("B.1  Integrated Platform", level=2)
+    doc.add_heading("B.1.1  Integrated Platform Measured Wheel Load Readings", level=3)
+    _wheel_axle_tables(doc, m)
     doc.add_paragraph("Summary of the Axle Loadings:")
-    fa, ra = m.front_axle_kg, m.rear_axle_kg
     sum_rows = [
         ["State", "Front Axle (kg)", "Rear Axle (kg)", "Total Weight (kg)"],
         ["Laden",
-         f"{fa:.0f} < {v.front_axle_limit_kg:.0f}",
-         f"{ra:.0f} < {v.rear_axle_limit_kg:.0f}",
+         f"{m.front_axle_kg:.0f} < {v.front_axle_limit_kg:.0f}",
+         f"{m.rear_axle_kg:.0f} < {v.rear_axle_limit_kg:.0f}",
          f"{m.gw_kg:.0f} < {v.gvw_limit_kg:.0f}"],
     ]
     _grid_table(doc, sum_rows)
     _caption(doc, "Table B-1: Summary of the Measured Integrated Platform Weight and Axle Loadings")
-
-    # B.1.2 CG determination
     doc.add_heading("B.1.2  Determine Centre of Gravity of Integrated Platform", level=3)
+    _cg_derivation(doc, m, sym="cg",
+                   fig_x="Figure B-1: Measured Xcg", fig_y="Figure B-2: Measured Ycg",
+                   fig_z="Figure B-3: Z-axis Measurement by Lifting Front Axle",
+                   fig_summary="Figure B-4: Integrated Platform Centre of Gravity",
+                   summary_label="Overall CG of Laden Vehicle",
+                   summary_caption="Table B-2: Integrated Platform Summary CG Table",
+                   datum_note="Note: Datum at X: Vehicle front axle, Y: Centre Axis Right (+), "
+                              "Z: Ground level")
 
-    # --- Xcg ---
-    doc.add_paragraph().add_run("Measured Xcg").bold = True
-    _figure_placeholder(doc, "Figure B-1: Measured Xcg")
-    doc.add_paragraph("Taking moments about front axle, distance between centre of gravity "
-                      "and front axle, Xcg:")
-    _formula(doc, "Xcg = (RA / GW) x WB")
-    _formula(doc, f"    = ({m.rear_axle_kg:.0f} / {m.gw_kg:.0f}) x {v.wheelbase_mm:.0f}")
-    _formula(doc, f"    = {v.xcg_mm:.1f} mm", bold=True)
+    # ---- B.2 Unladen AFE Transporter L1 ----
+    if m_unladen is not None:
+        doc.add_heading("B.2  Unladen AFE Transporter L1", level=2)
+        doc.add_heading("B.2.1  Unladen AFE Transporter L1 Measured Wheel Load Readings", level=3)
+        _wheel_axle_tables(doc, m_unladen)
+        _cg_derivation(doc, m_unladen, sym="CW",
+                       fig_x="Figure B-5: Measured XCW", fig_y="Figure B-6: Measured YCW",
+                       fig_z="", fig_summary="Figure B-7: Unladen Transporter Centre of Gravity",
+                       summary_label="Overall CG of Unladen Transporter L1",
+                       summary_caption="Table B-3: Overall Weight and CG of Unladen AFE Transporter L1",
+                       datum_note="Note: Datum at X: Centre of Front Axle, Y: Centre Axis "
+                                  "Right (+), Z: Ground Level")
 
-    # --- Ycg ---
-    doc.add_paragraph().add_run("Measured Ycg").bold = True
-    _figure_placeholder(doc, "Figure B-2: Measured Ycg")
-    ly_kerb = v.track_mm / 2 + v.ycg_mm
-    doc.add_paragraph("Taking moments about centre of kerbside tyre, position of Ycg from "
-                      "kerbside tyre, Ly:")
-    _formula(doc, "Ly = (RGA / GW) x TW")
-    _formula(doc, f"   = ({m.driver_kg:.0f} / {m.gw_kg:.0f}) x {v.track_mm:.0f}")
-    _formula(doc, f"   = {ly_kerb:.1f} mm  (from kerbside tyre)")
-    _formula(doc, f"Ycg (from centreline, right +) = {v.ycg_mm:.1f} mm", bold=True)
-
-    # --- Zcg ---
-    doc.add_paragraph().add_run("Measured Zcg").bold = True
-    doc.add_paragraph("The Z-axis is determined by lifting the vehicle from the front at "
-                      "several inclination angles and reading the rear-axle load.")
-    _figure_placeholder(doc, "Figure B-3: Z-axis Measurement by Lifting Front Axle")
-    _formula(doc, "Z = [(FI - FL) x WB] / (GW x tan a) + Rstat")
-    z_rows = [["Test", "Inclined angle (deg)", "Radius of Wheel (mm)",
-               "Reading, FI (kg)", "Z-Axis (mm)"]]
-    for t in m.tilt_tests:
-        z_rows.append([f"{t.case}", f"{t.angle_deg:.1f}", f"{t.radius_mm:.0f}",
-                       f"{t.fi_kg:.0f}", f"{t.z_mm:.1f}"])
-    z_rows.append(["", "", "", "Average Zcg", f"{m.avg_z_mm:.1f}"])
-    _grid_table(doc, z_rows)
-    doc.add_paragraph()
-
-    # Summary CG table B-2
-    _figure_placeholder(doc, "Figure B-4: Integrated Platform Centre of Gravity")
-    doc.add_paragraph("Note: Datum at X: Vehicle front axle, Y: Centre Axis Right (+), Z: Ground level")
-    cg_rows = [
-        ["Overall CG of Laden Vehicle", "Weight (kg)", "X (mm)", "Y (mm)", "Z (mm)"],
-        ["Integrated Platform", f"{v.gw_kg:.0f}", f"{v.xcg_mm:.1f}",
-         f"{v.ycg_mm:.1f}", f"{v.zcg_mm:.1f}"],
-    ]
-    _grid_table(doc, cg_rows)
-    _caption(doc, "Table B-2: Integrated Platform Summary CG Table")
+    # ---- B.3 Laden E2 Shelter (derived) ----
+    if shelter is not None:
+        doc.add_heading("B.3  Determination of Weight and Centre of Gravity of Laden E2 Shelter", level=2)
+        doc.add_paragraph(
+            "The laden E2 shelter weight and CG are obtained by subtracting the unladen "
+            "transporter (CW) from the integrated platform (GW): PL = GW - CW, and "
+            "moment balance GW x CGgw = CW x CGcw + PL x CGpl on each axis.")
+        cg_rows = [
+            ["Overall CG of Laden Shelter", "Weight (kg)", "X (mm)", "Y (mm)", "Z (mm)"],
+            [shelter.name, f"{shelter.weight_kg:.0f}", f"{shelter.xcg_mm:.1f}",
+             f"{shelter.ycg_mm:.1f}", f"{shelter.zcg_mm:.1f}"],
+        ]
+        _grid_table(doc, cg_rows)
+        doc.add_paragraph("Note: Datum at X: Centre of Front Axle, Y: Centre Axis Right (+), "
+                          "Z: Ground Level")
+        _caption(doc, "Table B-4: Overall Weight and CG of Laden E2 Shelter")
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +371,8 @@ def generate_sar_appendices(
     m: MeasurementData,
     aero: Optional[Aero] = None,
     *,
+    m_unladen: Optional[MeasurementData] = None,
+    shelter: Optional[PlatformCG] = None,
     project: str = "Project Spinel",
     variant: str = "Variant E-2",
     out_path: Optional[str] = None,
@@ -335,7 +380,11 @@ def generate_sar_appendices(
     radius_m: float = 11.0,
     wind_kmh: float = 60.0,
 ) -> Document:
-    """Build a .docx containing Appendices B, C, D, E. Saves if out_path given."""
+    """Build a .docx containing Appendices B, C, D, E. Saves if out_path given.
+
+    m_unladen / shelter are optional: pass them to include B.2 (unladen
+    transporter) and B.3 (laden shelter). Omit for B.1 only.
+    """
     aero = aero or Aero()
     doc = Document()
 
@@ -346,7 +395,7 @@ def generate_sar_appendices(
     )
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    appendix_b(doc, v, m)
+    appendix_b(doc, v, m, m_unladen=m_unladen, shelter=shelter)
     doc.add_page_break()
     appendix_c(doc, v)
     doc.add_page_break()
@@ -360,9 +409,13 @@ def generate_sar_appendices(
 
 
 if __name__ == "__main__":
-    from mobility_import import vehicle_measured, measurement_measured
+    from mobility_import import (
+        vehicle_measured, measurement_measured, measurement_unladen, shelter_cg,
+    )
     v = vehicle_measured()
     m = measurement_measured()
+    mu = measurement_unladen()
+    sh = shelter_cg()
     out = "Appendix_BCDE_demo.docx"
-    generate_sar_appendices(v, m, out_path=out)
-    print(f"[OK] wrote {out}")
+    generate_sar_appendices(v, m, m_unladen=mu, shelter=sh, out_path=out)
+    print(f"[OK] wrote {out} (B.1 + B.2 + B.3 + C + D + E)")
