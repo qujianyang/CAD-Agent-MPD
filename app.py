@@ -30,6 +30,8 @@ from catalog import (
 from tiedown_engine import MountFace, Item, analyze_item, run_tiedown_analysis
 from fastener_catalog import make_fastener, size_fasteners, BOLT_CLASSES, BOLT_SIZES, NON_BOLTS
 from tiedown_import import import_workbook, WB_DEFAULT
+from mobility_engine import Vehicle, Aero, run_mobility_analysis, format_mobility_report, format_slope_table
+from mobility_import import vehicle_measured, vehicle_theory, approach_departure_angles, WB_DEFAULT as MB_DEFAULT
 
 
 # ----------------------------------------------------------------------------
@@ -83,6 +85,8 @@ def _init_state():
         "chat_history": [],   # list of {"role": "user"|"assistant", "content": str}
         "tiedown_agent": None,
         "tiedown_chat_history": [],
+        "mobility_agent": None,
+        "mobility_chat_history": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -403,10 +407,11 @@ if not API_KEY:
 # ----------------------------------------------------------------------------
 # Tabs
 # ----------------------------------------------------------------------------
-tab_quick, tab_cad, tab_tiedown, tab_agent = st.tabs([
+tab_quick, tab_cad, tab_tiedown, tab_mobility, tab_agent = st.tabs([
     "📐 Quick Selector",
     "🔌 CAD + Shock",
     "🔗 Tie-Down",
+    "🚗 Mobility",
     "🤖 Agent Chat",
 ])
 
@@ -1006,6 +1011,238 @@ with tab_tiedown:
 
         if st.button("🧹 Clear tie-down chat", key="td_clear"):
             st.session_state.tiedown_chat_history = []
+            st.rerun()
+
+
+# =============================================================================
+# TAB — Mobility and Stability Analysis (Appendix H)
+# =============================================================================
+with tab_mobility:
+    st.subheader("Mobility & Stability Analysis")
+    st.caption("Source: Spinel-E2 Measured CG workbook. All SFs from validated engine (22/22).")
+
+    mb_path = st.text_input(
+        "Workbook path (.xls)",
+        value=MB_DEFAULT,
+        help="Spinel-E2 Measured CG workbook. Override via MOBILITY_XLS env var.",
+        key="mb_wb_path",
+    )
+    mb_variant = st.radio(
+        "CG variant", ["measured", "theory"], horizontal=True, key="mb_variant",
+        help="Measured = from physical tilt tests. Theory = from component mass budget.",
+    )
+
+    st.divider()
+
+    # ---- Section 1: Full mobility analysis ----
+    st.markdown("### 1. Full Mobility Analysis")
+    st.markdown("Runs all 5 modules: axle loads, steerability, slope stability (4 grades × 4 directions), cornering.")
+    if st.button("Run Analysis", key="mb_run"):
+        try:
+            v = vehicle_measured(mb_path) if mb_variant == "measured" else vehicle_theory(mb_path)
+            try:
+                app_deg, dep_deg = approach_departure_angles(mb_path, mb_variant)
+            except Exception:
+                app_deg = dep_deg = None
+            report = run_mobility_analysis(v, approach_deg=app_deg, departure_deg=dep_deg)
+
+            gov = report.governing_slope()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Governing SF", f"{gov.SF:.4f}" if gov else "—",
+                      f"{gov.direction} {gov.grade_pct:.0f}%" if gov else "")
+            c2.metric("Front axle", f"{report.axle.front_kg:,.0f} kg",
+                      f"{report.axle.front_pct:.1f}% {'✓' if report.axle.steer_ok else '✗ <25%'}")
+            c3.metric("Overall", "ALL PASS ✓" if report.all_passed else "CASES FAIL ✗")
+
+            with st.expander("Console-style full report", expanded=True):
+                st.code(format_mobility_report(report), language="text")
+            with st.expander("Slope SF grid"):
+                st.code(format_slope_table(report), language="text")
+            if report.corner:
+                c = report.corner
+                st.markdown(
+                    f"**Cornering** @{c.speed_kmh:.0f} km/h, R={c.radius_m:.0f} m, "
+                    f"wind {c.wind_kmh:.0f} km/h: "
+                    f"SF = **{c.SF:.3f}** | max safe speed = **{c.max_safe_speed_kmh:.1f} km/h**"
+                )
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    st.divider()
+
+    # ---- Section 2: Slope stability calculator (manual CG) ----
+    st.markdown("### 2. Slope Stability — Custom CG")
+    st.caption("Enter CG values to compute slope SFs without loading the workbook.")
+    cc1, cc2, cc3, cc4, cc5, cc6 = st.columns(6)
+    mb2_gw  = cc1.number_input("GW (kg)",    value=17850.0, key="mb2_gw")
+    mb2_xcg = cc2.number_input("Xcg (mm)",   value=2655.5,  key="mb2_xcg")
+    mb2_ycg = cc3.number_input("Ycg (mm)",   value=20.5,    key="mb2_ycg")
+    mb2_zcg = cc4.number_input("Zcg (mm)",   value=1617.8,  key="mb2_zcg")
+    mb2_wb  = cc5.number_input("WB (mm)",    value=4800.0,  key="mb2_wb")
+    mb2_tr  = cc6.number_input("Track (mm)", value=2088.0,  key="mb2_tr")
+
+    if st.button("Calculate Slope SFs", key="mb2_run"):
+        try:
+            v2 = Vehicle("custom", mb2_gw, mb2_xcg, mb2_ycg, mb2_zcg, mb2_wb, mb2_tr)
+            report2 = run_mobility_analysis(v2)
+            st.code(format_slope_table(report2), language="text")
+            gov2 = report2.governing_slope()
+            if gov2:
+                st.info(f"Governing case: {gov2.direction} {gov2.grade_pct:.0f}% — SF = {gov2.SF:.4f}, "
+                        f"critical tip angle = {gov2.crit_angle_deg:.1f}°")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    st.divider()
+
+    # ---- Section 3: Cornering calculator ----
+    st.markdown("### 3. Cornering Stability Calculator")
+    cb1, cb2, cb3 = st.columns(3)
+    mb3_spd = cb1.slider("Speed (km/h)", 5, 60, 15, key="mb3_spd")
+    mb3_rad = cb2.slider("Radius (m)",   5, 50, 11, key="mb3_rad")
+    mb3_wnd = cb3.slider("Wind (km/h)",  0, 100, 60, key="mb3_wnd")
+
+    if st.button("Calculate Cornering SF", key="mb3_run"):
+        try:
+            v3 = vehicle_measured(mb_path) if mb_variant == "measured" else vehicle_theory(mb_path)
+            from mobility_engine import cornering_stability
+            c3 = cornering_stability(v3, Aero(), mb3_spd, mb3_rad, mb3_wnd)
+            verdict = "PASS ✓" if c3.SF >= 1.0 else "FAIL ✗"
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("SF", f"{c3.SF:.3f}", verdict)
+            mc2.metric("Max safe speed", f"{c3.max_safe_speed_kmh:.1f} km/h")
+            mc3.metric("Fc", f"{c3.Fc_N:,.0f} N")
+            st.caption(
+                f"Overturning: Fc×Zcg = {c3.over_fc_Nm:,.0f} Nm + "
+                f"Fw×h = {c3.over_wind_Nm:,.0f} Nm = {c3.over_total_Nm:,.0f} Nm total  |  "
+                f"Resist = {c3.resist_Nm:,.0f} Nm  (Y' = {c3.yprime_mm:.0f} mm)"
+            )
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    st.divider()
+
+    # ---- Section 4: Generate Appendix H ----
+    st.markdown("### 4. Generate Appendix H (Mobility Chapter)")
+    mb4_project  = st.text_input("Project", value="Project Spinel",   key="mb4_proj")
+    mb4_variant_lbl = st.text_input("Variant", value="Variant E-2",   key="mb4_var")
+    mb4_standard = st.text_input("Standard", value="AVTP / Def Stan", key="mb4_std")
+
+    if st.button("Generate Appendix H", key="mb4_gen"):
+        try:
+            v4 = vehicle_measured(mb_path) if mb_variant == "measured" else vehicle_theory(mb_path)
+            try:
+                app_deg4, dep_deg4 = approach_departure_angles(mb_path, mb_variant)
+            except Exception:
+                app_deg4 = dep_deg4 = None
+            report4 = run_mobility_analysis(v4, approach_deg=app_deg4, departure_deg=dep_deg4)
+            from mobility_report import generate_mobility_chapter
+            chapter = generate_mobility_chapter(
+                report4,
+                project=mb4_project,
+                variant=mb4_variant_lbl,
+                standard=mb4_standard,
+            )
+            with st.expander("Preview Appendix H", expanded=True):
+                st.markdown(chapter)
+            import datetime
+            _ts4 = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+            dl1, dl2 = st.columns(2)
+            dl1.download_button("Download .md", data=chapter,
+                                file_name=f"Appendix_H_{_ts4}.md",
+                                mime="text/markdown", key="mb4_dl_md")
+            dl2.download_button("Download .txt", data=chapter,
+                                file_name=f"Appendix_H_{_ts4}.txt",
+                                mime="text/plain", key="mb4_dl_txt")
+        except Exception as e:
+            st.error(f"Error generating chapter: {e}")
+
+    st.divider()
+
+    # ---- Section 5: Mobility assistant chat ----
+    st.markdown("### 5. Ask the mobility assistant")
+    if not API_KEY:
+        st.info("Set `NVIDIA_API_KEY` in `.env` to enable the chat. Sections 1-4 work without it.")
+    else:
+        @st.cache_resource
+        def _get_mobility_agent(key: str):
+            from agent import build_agent
+            return build_agent("mobility", key)
+
+        if st.session_state.mobility_agent is None:
+            with st.spinner("Initializing mobility agent..."):
+                try:
+                    st.session_state.mobility_agent = _get_mobility_agent(API_KEY)
+                except Exception as e:
+                    st.error(f"Failed to initialize mobility agent: {e}")
+
+        def _mb_render_trace(events: list[dict]):
+            if not events:
+                return
+            with st.expander(f"🔎 Show {len(events)} agent steps", expanded=False):
+                for i, ev in enumerate(events, 1):
+                    if ev["type"] == "reasoning":
+                        st.markdown(f"**{i}. 💭 Reasoning**")
+                        st.markdown(f"> {ev['content']}")
+                    elif ev["type"] == "tool_call":
+                        args_lines = [f"  {k} = {v!r}" for k, v in ev["args"].items()]
+                        st.markdown(f"**{i}. 🔧 Calling `{ev['name']}`**")
+                        st.code("\n".join(args_lines) or "(no args)", language="python")
+                    elif ev["type"] == "tool_result":
+                        prev = ev["content"]
+                        if len(prev) > 800:
+                            prev = prev[:800] + f"\n... ({len(ev['content'])-800} more chars)"
+                        st.markdown(f"**{i}. ✅ Result from `{ev['name']}`**")
+                        st.code(prev, language="text")
+
+        for msg in st.session_state.mobility_chat_history:
+            with st.chat_message(msg["role"]):
+                if msg.get("events"):
+                    _mb_render_trace(msg["events"])
+                st.markdown(msg["content"])
+
+        mb_q = st.chat_input("e.g. 'Is the Spinel E2 stable on a 60% slope?'",
+                             key="mb_chat_input")
+        if mb_q and st.session_state.mobility_agent is not None:
+            st.session_state.mobility_chat_history.append({"role": "user", "content": mb_q})
+            with st.chat_message("user"):
+                st.markdown(mb_q)
+            hist = [("human" if m["role"] == "user" else "ai", m["content"])
+                    for m in st.session_state.mobility_chat_history[:-1]]
+            with st.chat_message("assistant"):
+                collected: list[dict] = []
+                final_text = ""
+                with st.status("Working...", expanded=True) as status:
+                    try:
+                        for ev in st.session_state.mobility_agent.stream(mb_q, chat_history=hist or None):
+                            if ev["type"] == "reasoning":
+                                st.markdown(f"💭 *{ev['content']}*"); collected.append(ev)
+                            elif ev["type"] == "tool_call":
+                                ap = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
+                                if len(ap) > 120:
+                                    ap = ap[:120] + "…"
+                                st.markdown(f"🔧 Calling **`{ev['name']}`**({ap})"); collected.append(ev)
+                            elif ev["type"] == "tool_result":
+                                prev = ev["content"]
+                                if len(prev) > 400:
+                                    prev = prev[:400] + f"… ({len(ev['content'])-400} more chars)"
+                                st.markdown(f"✅ `{ev['name']}` returned:"); st.code(prev, language="text")
+                                collected.append(ev)
+                            elif ev["type"] == "final":
+                                final_text = ev["content"]
+                        status.update(
+                            label=f"Done — {len([e for e in collected if e['type']=='tool_call'])} tool call(s)",
+                            state="complete", expanded=False)
+                    except Exception as e:
+                        final_text = f"Agent error: {e}"
+                        status.update(label="Failed", state="error", expanded=True)
+                if final_text:
+                    st.markdown(final_text)
+            st.session_state.mobility_chat_history.append(
+                {"role": "assistant", "content": final_text, "events": collected})
+
+        if st.button("🧹 Clear mobility chat", key="mb_clear"):
+            st.session_state.mobility_chat_history = []
             st.rerun()
 
 

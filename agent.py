@@ -22,6 +22,10 @@ from cad_compliance_checker import extract_cad_data as _extract_cad_data_raw
 from tiedown_tools import (
     run_tiedown_check, recommend_fasteners, flag_critical_items, _TIEDOWN_PROMPT,
 )
+from mobility_tools import (
+    run_mobility_check, slope_limit, cornering_check, flag_unstable,
+    _MOBILITY_PROMPT, _MOBILITY_TOOLS,
+)
 
 # Module-level state — set by ShockMountAgent.__init__ before tools are called
 _api_key: Optional[str] = None
@@ -795,8 +799,9 @@ _TIEDOWN_TOOLS = [
 ]
 
 DOMAINS = {
-    "shock_mount": {"prompt": _SYSTEM_PROMPT,  "tools": _SHOCK_TOOLS},
-    "tiedown":     {"prompt": _TIEDOWN_PROMPT, "tools": _TIEDOWN_TOOLS},
+    "shock_mount": {"prompt": _SYSTEM_PROMPT,   "tools": _SHOCK_TOOLS},
+    "tiedown":     {"prompt": _TIEDOWN_PROMPT,  "tools": _TIEDOWN_TOOLS},
+    "mobility":    {"prompt": _MOBILITY_PROMPT, "tools": _MOBILITY_TOOLS},
 }
 
 
