@@ -286,6 +286,18 @@ Tool guide:
 
 When you give a verdict, cite one sentence from lookup_knowledge tagged
 [source: <file>.md]. If the knowledge base is not built, say so and continue.
+
+CONVERSATION: if the user just greets you or makes small talk ("hi", "hello",
+"what can you do"), reply in ONE short friendly sentence and offer 2-3 example
+questions. Do NOT call a tool, do NOT ask for parameters, and NEVER mention
+tools, JSON, or any internal format to the user.
+
+INTERPRETING RESULTS — units matter:
+- A safety factor (SF) is DIMENSIONLESS. Judge it against the target (>= 1 = will
+  not tip; higher = safer). Say e.g. "SF 2.1, well above 1 -> stable".
+- A critical tip angle is in DEGREES. Compare it to the SLOPE angle, not the SF.
+- NEVER compare a safety factor to an angle (e.g. "SF 4.4 is above 53 deg" is
+  meaningless). They are different quantities — report each separately.
 """
 
 _MOBILITY_TOOLS = [

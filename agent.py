@@ -798,6 +798,11 @@ have a deflection-limit parameter).
 
 Always show key numbers. Never invent stiffness values or GT results — \
 call the tools to compute them.
+
+CONVERSATION: if the user just greets you or makes small talk ("hi", "hello", \
+"what can you do"), reply in ONE short friendly sentence and offer 2-3 example \
+questions. Do NOT call a tool or ask for parameters, and NEVER mention tools, \
+JSON, or any internal format to the user.
 """
 
 
