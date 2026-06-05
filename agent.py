@@ -8,6 +8,11 @@ import os
 from glob import glob
 from typing import Optional
 
+import mlflow
+mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_experiment("CAD-Agent-MPD")
+mlflow.langchain.autolog(log_models=False, log_input_examples=False)
+
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
@@ -898,11 +903,13 @@ DOMAINS = {
 class DomainAgent:
     """LangChain tool-calling agent for one engineering domain (focused prompt + tools)."""
 
-    def __init__(self, api_key: str, system_prompt: str, tools: list):
+    def __init__(self, api_key: str, system_prompt: str, tools: list,
+                 domain: str = "unknown"):
         global _api_key
         _api_key = api_key
         self.system_prompt = system_prompt
         self.tools = tools
+        self._domain = domain
 
         llm = ChatNVIDIA(
             model=os.environ.get("NVIDIA_MODEL") or "meta/llama-3.1-70b-instruct",
@@ -917,7 +924,9 @@ class DomainAgent:
     def invoke(self, question: str, chat_history: list | None = None) -> str:
         messages = list(chat_history) if chat_history else []
         messages.append(("human", question))
-        result = self._agent.invoke({"messages": messages})
+        with mlflow.start_run(run_name=f"{self._domain}-invoke", nested=True):
+            mlflow.set_tags({"domain": self._domain, "question": question[:120]})
+            result = self._agent.invoke({"messages": messages})
         last = result["messages"][-1]
         return last.content if hasattr(last, "content") else str(last)
 
@@ -976,7 +985,7 @@ def build_agent(domain: str, api_key: str) -> DomainAgent:
     if domain not in DOMAINS:
         raise KeyError(f"Unknown domain {domain!r}. Available: {list(DOMAINS)}")
     cfg = DOMAINS[domain]
-    return DomainAgent(api_key, cfg["prompt"], cfg["tools"])
+    return DomainAgent(api_key, cfg["prompt"], cfg["tools"], domain=domain)
 
 
 class ShockMountAgent(DomainAgent):
