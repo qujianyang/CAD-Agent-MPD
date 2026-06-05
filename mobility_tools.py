@@ -73,38 +73,43 @@ def run_mobility_check(variant: str = "measured", workbook_path: str = "") -> st
 
 @tool
 def slope_limit(
-    gw_kg: float,
     xcg_mm: float,
-    ycg_mm: float,
     zcg_mm: float,
     wb_mm: float,
     track_mm: float,
+    ycg_mm: float = 0.0,
+    gw_kg: float = 0.0,
     direction: str = "ascending",
 ) -> str:
     """
-    CUSTOM / HYPOTHETICAL VEHICLES ONLY. Requires the user to give explicit CG
-    numbers in their message. For the Spinel E2 or any workbook vehicle, use
-    run_mobility_check instead -- NEVER invent CG values to call this tool.
+    CUSTOM / HYPOTHETICAL VEHICLES ONLY. For the Spinel E2 or any workbook
+    vehicle, use run_mobility_check instead -- NEVER invent CG values here.
 
     Computes slope stability SFs and the geometric critical tip angle for a
     vehicle with the given CG, across 60/50/40/30% grades.
 
+    NOTE: slope stability is INDEPENDENT of vehicle weight -- the mass cancels in
+    the moment balance. So gw_kg is OPTIONAL and not needed. Ycg only matters for
+    side slopes (kerbside/roadside); leave it at 0 for a symmetric vehicle.
+
     Args:
-        gw_kg    : REQUIRED. Gross weight in kg.
         xcg_mm   : REQUIRED. Longitudinal CG from front axle (mm).
-        ycg_mm   : REQUIRED. Lateral CG from centreline, +driverside (mm).
         zcg_mm   : REQUIRED. CG height above ground (mm).
         wb_mm    : REQUIRED. Wheelbase (mm).
         track_mm : REQUIRED. Track width (mm).
+        ycg_mm   : Lateral CG from centreline, +driverside (mm). Default 0 (symmetric).
+        gw_kg    : OPTIONAL — not used; slope SF is mass-independent. OMIT it.
         direction: "ascending" (default), "descending", "kerbside", or "roadside".
                    OMIT for ascending (most common question).
     """
-    v = _vehicle_from_params(gw_kg, xcg_mm, ycg_mm, zcg_mm, wb_mm, track_mm)
-    if gw_kg <= 0 or zcg_mm <= 0:
-        return "ERROR: gw_kg and zcg_mm must be positive."
+    if zcg_mm <= 0 or wb_mm <= 0 or track_mm <= 0:
+        return "ERROR: zcg_mm, wb_mm and track_mm must be positive."
+    # gw cancels in the slope moment balance — any positive placeholder works.
+    gw = gw_kg if (gw_kg and gw_kg > 0) else 1000.0
+    v = _vehicle_from_params(gw, xcg_mm, ycg_mm, zcg_mm, wb_mm, track_mm)
 
-    lines = [f"Slope stability — direction: {direction}",
-             f"Vehicle: GW={gw_kg} kg, Xcg={xcg_mm:.0f} mm, Ycg={ycg_mm:.0f} mm, "
+    lines = [f"Slope stability — direction: {direction}  (SF is mass-independent)",
+             f"Vehicle: Xcg={xcg_mm:.0f} mm, Ycg={ycg_mm:.0f} mm, "
              f"Zcg={zcg_mm:.0f} mm, WB={wb_mm:.0f} mm, track={track_mm:.0f} mm",
              ""]
 
@@ -141,37 +146,39 @@ def slope_limit(
 
 @tool
 def cornering_check(
-    gw_kg: float,
-    xcg_mm: float,
-    ycg_mm: float,
     zcg_mm: float,
     track_mm: float,
+    ycg_mm: float = 0.0,
+    gw_kg: float = 0.0,
     speed_kmh: float = 15.0,
     radius_m: float = 11.0,
     wind_kmh: float = 60.0,
 ) -> str:
     """
-    CUSTOM / HYPOTHETICAL VEHICLES ONLY. Requires the user to give explicit CG
-    numbers in their message. For the Spinel E2 / known vehicle, including its
-    "max safe cornering speed", use run_mobility_check instead -- it already
-    reports cornering. NEVER invent CG values to call this tool.
+    CUSTOM / HYPOTHETICAL VEHICLES ONLY. For the Spinel E2 / known vehicle,
+    including its "max safe cornering speed", use run_mobility_check instead --
+    it already reports cornering. NEVER invent CG values to call this tool.
 
-    Computes the cornering stability SF and the maximum safe cornering speed for
-    a vehicle with the given CG, speed, turning radius and wind speed.
+    Computes the cornering stability SF and the maximum safe cornering speed.
+    NOTE: the cornering SF is nearly mass-independent (weight cancels in the
+    centrifugal term); gw_kg only slightly affects the wind contribution, so it
+    is OPTIONAL. Ycg only matters for the lateral lever; 0 = symmetric.
 
     Args:
-        gw_kg    : REQUIRED. Gross weight in kg.
-        xcg_mm   : REQUIRED. Longitudinal CG from front axle (mm).
-        ycg_mm   : REQUIRED. Lateral CG from centreline, +driverside (mm).
         zcg_mm   : REQUIRED. CG height above ground (mm).
         track_mm : REQUIRED. Track width (mm).
+        ycg_mm   : Lateral CG from centreline, +driverside (mm). Default 0 (symmetric).
+        gw_kg    : OPTIONAL — affects only the wind term. OMIT if unknown.
         speed_kmh: Vehicle speed (km/h). Default 15.
         radius_m : Turning radius (m). Default 11.0 (Spinel E2 minimum).
         wind_kmh : Wind speed (km/h). Default 60 (operational assumption).
     """
+    if zcg_mm <= 0 or track_mm <= 0:
+        return "ERROR: zcg_mm and track_mm must be positive."
+    gw = gw_kg if (gw_kg and gw_kg > 0) else 5000.0   # only the wind term uses gw
     v = Vehicle(
         name="user-specified",
-        gw_kg=gw_kg, xcg_mm=xcg_mm, ycg_mm=ycg_mm, zcg_mm=zcg_mm,
+        gw_kg=gw, xcg_mm=0.0, ycg_mm=ycg_mm, zcg_mm=zcg_mm,
         wheelbase_mm=4800,  # not used in cornering, placeholder
         track_mm=track_mm,
     )

@@ -6,7 +6,7 @@ every number comes from those modules, never from the LLM.
 from langchain_core.tools import tool
 
 from tiedown_engine import MountFace, Item, analyze_item, run_tiedown_analysis, format_item_detail
-from fastener_catalog import make_fastener, size_fasteners as _size_fasteners
+from fastener_catalog import make_fastener, resolve_fastener, size_fasteners as _size_fasteners
 from tiedown_import import import_workbook, WB_DEFAULT
 
 _FACE_ALIASES = {
@@ -40,10 +40,13 @@ def run_tiedown_check(weight_kg: float, mount_face: str, fastener: str,
     Args:
         weight_kg     : REQUIRED. Item weight in kg.
         mount_face    : REQUIRED. front/rear wall, floor/ceiling/top/base, or side wall.
-        fastener      : REQUIRED. Bolt class ("8.8") OR a strap/latch name
-                        ('Camlock Strap (1")', 'Spring Latch', 'Ratchet (1")').
+        fastener      : REQUIRED. For a bolt give the grade and/or size in any
+                        form -- "8.8", "M10", "8.8 M10", even "M10 bolts" (grade
+                        defaults to 8.8 if unspecified). For a strap/latch give a
+                        name/keyword: "camlock", "ratchet", "spring latch".
         qty           : REQUIRED. Number of fasteners installed.
-        fastener_size : Bolt size ("M6".."M12", "1/4-20"). Required for bolts; leave empty for straps.
+        fastener_size : Optional bolt size ("M6".."M12"). May be left empty if the
+                        size is already in `fastener`.
         target_SF     : Pass threshold. Default 1.0. OMIT unless the user specifies.
     """
     notes = []
@@ -58,10 +61,10 @@ def run_tiedown_check(weight_kg: float, mount_face: str, fastener: str,
         notes.append(f"NOTE: target_SF was {target_SF!r} (invalid); substituted default 1.0")
         target_SF = 1.0
     try:
-        spec = make_fastener(fastener, fastener_size or None)
+        spec = resolve_fastener(fastener, fastener_size or None)
     except KeyError as e:
-        return (f"ERROR: unknown fastener {e}. Bolts need a class (e.g. 8.8) + size "
-                f"(e.g. M6); straps/latches use their name e.g. 'Camlock Strap (1\")'.")
+        return (f"ERROR: unknown fastener {e}. Bolts: give a class (e.g. 8.8) and/or "
+                f"size (e.g. M10); straps/latches use a name e.g. 'Camlock Strap (1\")'.")
     res = analyze_item(Item(spec.name, weight_kg, face, spec, int(qty)))
     verdict = "PASS" if res.min_SF >= target_SF else "FAIL"
     head = ("\n".join(notes) + "\n") if notes else ""

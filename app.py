@@ -46,6 +46,9 @@ st.set_page_config(
     layout="wide",
 )
 
+from streamlit_float import float_init, float_css_helper
+float_init()
+
 load_dotenv()
 API_KEY = (os.environ.get("NVIDIA_API_KEY") or "").strip()
 
@@ -402,20 +405,192 @@ st.caption("Wire rope isolator selection for chassis-mounted shelter equipment �
 if not API_KEY:
     st.warning(
         "⚠ `NVIDIA_API_KEY` not set in your environment / `.env` file. "
-        "The **Quick Selector** and **CAD + Shock** tabs work without it, "
-        "but the **Agent Chat** tab requires it."
+        "All calculators and report generators work without it; "
+        "only the in-tab **assistants** require it."
     )
+
+
+# ----------------------------------------------------------------------------
+# Per-tab scoped assistant (collapsible widget)
+# ----------------------------------------------------------------------------
+@st.cache_resource
+def _get_domain_agent(domain: str, key: str):
+    """One cached agent per domain (~4 tools each → reliable routing)."""
+    from agent import build_agent
+    return build_agent(domain, key)
+
+
+def render_domain_assistant(domain: str, title: str, placeholder: str,
+                            *, expanded: bool = False):
+    """
+    Collapsible, domain-scoped chat assistant embedded in a tab.
+    Each instance carries only its own domain's tools, so routing is far more
+    reliable than one 14-tool co-pilot. Uses per-domain session + widget keys.
+    """
+    hist_key = f"asst_{domain}_history"
+    if hist_key not in st.session_state:
+        st.session_state[hist_key] = []
+
+    with st.expander(title, expanded=expanded):
+        if not API_KEY:
+            st.info("Set `NVIDIA_API_KEY` in `.env` to enable the assistant.")
+            return
+        try:
+            agent_obj = _get_domain_agent(domain, API_KEY)
+        except Exception as e:
+            st.error(f"Failed to initialize assistant: {e}")
+            return
+
+        def _trace(events):
+            if not events:
+                return
+            with st.expander(f"🔎 {len(events)} agent steps", expanded=False):
+                for i, ev in enumerate(events, 1):
+                    if ev["type"] == "reasoning":
+                        st.markdown(f"**{i}. 💭 Reasoning**\n\n> {ev['content']}")
+                    elif ev["type"] == "tool_call":
+                        args = "\n".join(f"  {k} = {v!r}" for k, v in ev["args"].items())
+                        st.markdown(f"**{i}. 🔧 `{ev['name']}`**")
+                        st.code(args or "(no args)", language="python")
+                    elif ev["type"] == "tool_result":
+                        c = ev["content"]
+                        c = c if len(c) <= 800 else c[:800] + f"\n… ({len(ev['content'])-800} more)"
+                        st.markdown(f"**{i}. ✅ result from `{ev['name']}`**")
+                        st.code(c, language="text")
+
+        for msg in st.session_state[hist_key]:
+            with st.chat_message(msg["role"]):
+                if msg.get("events"):
+                    _trace(msg["events"])
+                st.markdown(msg["content"])
+
+        q = st.chat_input(placeholder, key=f"asst_{domain}_input")
+        if q:
+            st.session_state[hist_key].append({"role": "user", "content": q})
+            with st.chat_message("user"):
+                st.markdown(q)
+            hist = [("human" if m["role"] == "user" else "ai", m["content"])
+                    for m in st.session_state[hist_key][:-1]]
+            with st.chat_message("assistant"):
+                collected, final_text = [], ""
+                with st.status("Working…", expanded=True) as status:
+                    try:
+                        for ev in agent_obj.stream(q, chat_history=hist or None):
+                            if ev["type"] == "reasoning":
+                                st.markdown(f"💭 *{ev['content']}*"); collected.append(ev)
+                            elif ev["type"] == "tool_call":
+                                ap = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
+                                ap = ap if len(ap) <= 120 else ap[:120] + "…"
+                                st.markdown(f"🔧 **`{ev['name']}`**({ap})"); collected.append(ev)
+                            elif ev["type"] == "tool_result":
+                                c = ev["content"]
+                                c = c if len(c) <= 400 else c[:400] + f"… ({len(ev['content'])-400} more)"
+                                st.markdown(f"✅ `{ev['name']}` returned:"); st.code(c, language="text")
+                                collected.append(ev)
+                            elif ev["type"] == "final":
+                                final_text = ev["content"]
+                        status.update(
+                            label=f"Done — {len([e for e in collected if e['type']=='tool_call'])} tool call(s)",
+                            state="complete", expanded=False)
+                    except Exception as e:
+                        final_text = f"Agent error: {e}"
+                        status.update(label="Failed", state="error", expanded=True)
+                if final_text:
+                    st.markdown(final_text)
+            st.session_state[hist_key].append(
+                {"role": "assistant", "content": final_text, "events": collected})
+
+        if st.session_state[hist_key] and st.button("🧹 Clear", key=f"asst_{domain}_clear"):
+            st.session_state[hist_key] = []
+            st.rerun()
+
+
+def render_floating_assistant(domain: str, title: str, placeholder: str):
+    """
+    Floating corner chat bubble (Tidio-style) for one domain, via streamlit-float.
+    Collapsed = a 💬 button bottom-right; expanded = a chat panel.
+    Same domain-scoped agent as the expander version (~4 tools).
+    """
+    open_key = f"float_{domain}_open"
+    hist_key = f"asst_{domain}_history"
+    st.session_state.setdefault(open_key, False)
+    st.session_state.setdefault(hist_key, [])
+
+    box = st.container()
+    with box:
+        if not st.session_state[open_key]:
+            # collapsed → round button
+            if st.button("💬", key=f"float_{domain}_btn", help=title):
+                st.session_state[open_key] = True
+                st.rerun()
+            css = float_css_helper(
+                width="56px", height="56px", bottom="24px", right="24px",
+                css="border-radius:50%; box-shadow:0 4px 14px rgba(0,0,0,.4);",
+            )
+        else:
+            # expanded → chat panel
+            hc1, hc2 = st.columns([5, 1])
+            hc1.markdown(f"**{title}**")
+            if hc2.button("✖", key=f"float_{domain}_close"):
+                st.session_state[open_key] = False
+                st.rerun()
+
+            if not API_KEY:
+                st.info("Set `NVIDIA_API_KEY` in `.env` to enable.")
+            else:
+                try:
+                    agent_obj = _get_domain_agent(domain, API_KEY)
+                except Exception as e:
+                    st.error(f"Init failed: {e}")
+                    agent_obj = None
+
+                for msg in st.session_state[hist_key]:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+
+                q = st.chat_input(placeholder, key=f"float_{domain}_input") if agent_obj else None
+                if q:
+                    st.session_state[hist_key].append({"role": "user", "content": q})
+                    with st.chat_message("user"):
+                        st.markdown(q)
+                    hist = [("human" if m["role"] == "user" else "ai", m["content"])
+                            for m in st.session_state[hist_key][:-1]]
+                    with st.chat_message("assistant"):
+                        final_text = ""
+                        with st.status("Working…", expanded=False) as status:
+                            try:
+                                for ev in agent_obj.stream(q, chat_history=hist or None):
+                                    if ev["type"] == "tool_call":
+                                        st.markdown(f"🔧 `{ev['name']}`")
+                                    elif ev["type"] == "final":
+                                        final_text = ev["content"]
+                                status.update(label="Done", state="complete")
+                            except Exception as e:
+                                final_text = f"Agent error: {e}"
+                                status.update(label="Failed", state="error")
+                        if final_text:
+                            st.markdown(final_text)
+                    st.session_state[hist_key].append(
+                        {"role": "assistant", "content": final_text})
+                    st.rerun()
+            css = float_css_helper(
+                width="380px", height="540px", bottom="24px", right="24px",
+                css="padding:14px 16px; border-radius:14px; overflow-y:auto; "
+                    "background-color:var(--background-color); "
+                    "border:1px solid rgba(255,255,255,.15); "
+                    "box-shadow:0 6px 24px rgba(0,0,0,.45);",
+            )
+    box.float(css)
 
 
 # ----------------------------------------------------------------------------
 # Tabs
 # ----------------------------------------------------------------------------
-tab_quick, tab_cad, tab_tiedown, tab_mobility, tab_agent = st.tabs([
+tab_quick, tab_cad, tab_tiedown, tab_mobility = st.tabs([
     "📐 Quick Selector",
     "🔌 CAD + Shock",
     "🔗 Tie-Down",
     "🚗 Mobility",
-    "🤖 Co-Pilot",
 ])
 
 
@@ -511,6 +686,13 @@ with tab_quick:
                     clr_z_mm  = clr_z,
                 )
         _render_selection_result(report, candidates)
+
+    # ---- Shock-isolation assistant (FLOATING bubble — proof of concept) ----
+    render_floating_assistant(
+        "shock_mount",
+        "💬 Shock-isolation assistant",
+        "e.g. 'select an isolator for a 1500 kg rack, 6 bottom + 4 wall'",
+    )
 
 
 # =============================================================================
@@ -663,150 +845,6 @@ with tab_cad:
 
 
 # =============================================================================
-# TAB — Co-Pilot (unified LLM agent across all three domains)
-# =============================================================================
-with tab_agent:
-    st.subheader("Engineering Co-Pilot")
-    st.caption("One assistant across all three domains — shock isolation, tie-down, and "
-               "mobility/stability. Ask in plain English; it picks the right tool, asks when "
-               "unsure, and every number comes from the validated engines.")
-    with st.expander("What can I ask?"):
-        st.markdown(
-            "- *Select an isolator for a 1500 kg rack, 6 bottom + 4 wall.*\n"
-            "- *How many M12 bolts to floor-mount a 1269 kg generator at SF 2?*\n"
-            "- *Is the Spinel E2 stable on a 60% slope? What's the max safe cornering speed?*\n"
-            "- *Which tie-down items fall below SF 2 in the workbook?*\n"
-            "- *What's the heaviest mass a CB1400-30 can support?*\n\n"
-            "It remembers context across the chat (mass, CG, variant), and shows every tool "
-            "call + arguments so you can verify what it ran."
-        )
-
-    if not API_KEY:
-        st.error("The Co-Pilot requires `NVIDIA_API_KEY` in `.env`. "
-                 "The calculator tabs above don't need it.")
-    else:
-        # Cache the agent object at the process level so the NVIDIA endpoint
-        # handshake and LangChain tool registration only happen once, regardless
-        # of how many Streamlit reruns occur. Each stream() call is still a fresh
-        # LLM request — only the constructor is cached, not any answers.
-        # Caveat: if API_KEY changes or agent.py is edited, restart the app.
-        @st.cache_resource
-        def _get_agent(key: str):
-            from agent import build_agent
-            return build_agent("unified", key)
-
-        if st.session_state.agent is None:
-            with st.spinner("Initializing co-pilot (Llama 3.1 70B + 14 tools across 3 domains)..."):
-                try:
-                    st.session_state.agent = _get_agent(API_KEY)
-                except Exception as e:
-                    st.error(f"Failed to initialize agent: {e}")
-
-        # ----- helper: render the tool-call trace for one assistant turn -----
-        def _render_trace(events: list[dict]):
-            """Render a list of streaming events from the agent inside an expander."""
-            if not events:
-                return
-            with st.expander(f"🔎 Show {len(events)} agent steps", expanded=False):
-                for i, ev in enumerate(events, 1):
-                    if ev["type"] == "reasoning":
-                        st.markdown(f"**{i}. 💭 Reasoning**")
-                        st.markdown(f"> {ev['content']}")
-                    elif ev["type"] == "tool_call":
-                        args_lines = [f"  {k} = {v!r}" for k, v in ev["args"].items()]
-                        st.markdown(f"**{i}. 🔧 Calling `{ev['name']}`**")
-                        st.code("\n".join(args_lines) or "(no args)", language="python")
-                    elif ev["type"] == "tool_result":
-                        preview = ev["content"]
-                        if len(preview) > 800:
-                            preview = preview[:800] + f"\n... ({len(ev['content'])-800} more chars)"
-                        st.markdown(f"**{i}. ✅ Result from `{ev['name']}`**")
-                        st.code(preview, language="text")
-
-        # ----- render conversation history (including past tool traces) -----
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                if msg.get("events"):
-                    _render_trace(msg["events"])
-                st.markdown(msg["content"])
-
-        # ----- new user input -----
-        user_q = st.chat_input("Ask anything across shock / tie-down / mobility "
-                                "(e.g. 'is the Spinel stable on a 60% slope?')")
-        if user_q and st.session_state.agent is not None:
-            st.session_state.chat_history.append({"role": "user", "content": user_q})
-            with st.chat_message("user"):
-                st.markdown(user_q)
-
-            # Build LangChain-style chat history from prior turns
-            hist = []
-            for m in st.session_state.chat_history[:-1]:
-                hist.append(("human" if m["role"] == "user" else "ai", m["content"]))
-
-            # Stream the agent's run live — show each tool call + result inside a
-            # collapsible status block, then the final answer below.
-            with st.chat_message("assistant"):
-                collected_events: list[dict] = []
-                final_text = ""
-                with st.status("Working...", expanded=True) as status:
-                    try:
-                        for ev in st.session_state.agent.stream(user_q, chat_history=hist or None):
-                            if ev["type"] == "reasoning":
-                                st.markdown(f"💭 *{ev['content']}*")
-                                collected_events.append(ev)
-                            elif ev["type"] == "tool_call":
-                                args_preview = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
-                                if len(args_preview) > 120:
-                                    args_preview = args_preview[:120] + "…"
-                                st.markdown(f"🔧 Calling **`{ev['name']}`**({args_preview})")
-                                collected_events.append(ev)
-                            elif ev["type"] == "tool_result":
-                                preview = ev["content"]
-                                if len(preview) > 400:
-                                    preview = preview[:400] + f"… ({len(ev['content'])-400} more chars)"
-                                st.markdown(f"✅ `{ev['name']}` returned:")
-                                st.code(preview, language="text")
-                                collected_events.append(ev)
-                            elif ev["type"] == "final":
-                                final_text = ev["content"]
-                        status.update(label=f"Done — {len([e for e in collected_events if e['type']=='tool_call'])} tool call(s)",
-                                      state="complete", expanded=False)
-                    except Exception as e:
-                        final_text = f"Agent error: {e}"
-                        status.update(label="Failed", state="error", expanded=True)
-
-                if final_text:
-                    st.markdown(final_text)
-
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": final_text,
-                "events": collected_events,
-            })
-
-        col_clear, col_exp_md, col_exp_txt, col_exp_html, _ = st.columns([1, 1, 1, 1, 2])
-        if col_clear.button("🧹 Clear chat"):
-            st.session_state.chat_history = []
-            st.rerun()
-
-        if st.session_state.chat_history:
-            from datetime import datetime
-            _ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            col_exp_md.download_button(
-                "⬇ Markdown", data=_export_markdown(st.session_state.chat_history),
-                file_name=f"chat_{_ts}.md", mime="text/markdown",
-            )
-            col_exp_txt.download_button(
-                "⬇ Text", data=_export_text(st.session_state.chat_history),
-                file_name=f"chat_{_ts}.txt", mime="text/plain",
-            )
-            col_exp_html.download_button(
-                "⬇ HTML", data=_export_html(st.session_state.chat_history),
-                file_name=f"chat_{_ts}.html", mime="text/html",
-            )
-
-
-# =============================================================================
 # TAB — Tie-Down Provision (Appendix G / Chapter 4 of the Safety Assessment Report)
 # =============================================================================
 with tab_tiedown:
@@ -942,91 +980,12 @@ with tab_tiedown:
                             mime="text/plain", key="td_rg_dl_txt")
 
     st.divider()
-    # ---- Section 5: tie-down assistant chat ----
-    st.markdown("### 5. Ask the tie-down assistant")
-    if not API_KEY:
-        st.info("Set `NVIDIA_API_KEY` in `.env` to enable the chat. Sections 1-4 work without it.")
-    else:
-        @st.cache_resource
-        def _get_tiedown_agent(key: str):
-            from agent import build_agent
-            return build_agent("tiedown", key)
-
-        if st.session_state.tiedown_agent is None:
-            with st.spinner("Initializing tie-down agent..."):
-                try:
-                    st.session_state.tiedown_agent = _get_tiedown_agent(API_KEY)
-                except Exception as e:
-                    st.error(f"Failed to initialize tie-down agent: {e}")
-
-        def _td_render_trace(events: list[dict]):
-            if not events:
-                return
-            with st.expander(f"🔎 Show {len(events)} agent steps", expanded=False):
-                for i, ev in enumerate(events, 1):
-                    if ev["type"] == "reasoning":
-                        st.markdown(f"**{i}. 💭 Reasoning**")
-                        st.markdown(f"> {ev['content']}")
-                    elif ev["type"] == "tool_call":
-                        args_lines = [f"  {k} = {v!r}" for k, v in ev["args"].items()]
-                        st.markdown(f"**{i}. 🔧 Calling `{ev['name']}`**")
-                        st.code("\n".join(args_lines) or "(no args)", language="python")
-                    elif ev["type"] == "tool_result":
-                        prev = ev["content"]
-                        if len(prev) > 800:
-                            prev = prev[:800] + f"\n... ({len(ev['content'])-800} more chars)"
-                        st.markdown(f"**{i}. ✅ Result from `{ev['name']}`**")
-                        st.code(prev, language="text")
-
-        for msg in st.session_state.tiedown_chat_history:
-            with st.chat_message(msg["role"]):
-                if msg.get("events"):
-                    _td_render_trace(msg["events"])
-                st.markdown(msg["content"])
-
-        td_q = st.chat_input("e.g. 'how many M12 bolts to floor-mount a 1269 kg generator at SF 2?'",
-                             key="td_chat_input")
-        if td_q and st.session_state.tiedown_agent is not None:
-            st.session_state.tiedown_chat_history.append({"role": "user", "content": td_q})
-            with st.chat_message("user"):
-                st.markdown(td_q)
-            hist = [("human" if m["role"] == "user" else "ai", m["content"])
-                    for m in st.session_state.tiedown_chat_history[:-1]]
-            with st.chat_message("assistant"):
-                collected: list[dict] = []
-                final_text = ""
-                with st.status("Working...", expanded=True) as status:
-                    try:
-                        for ev in st.session_state.tiedown_agent.stream(td_q, chat_history=hist or None):
-                            if ev["type"] == "reasoning":
-                                st.markdown(f"💭 *{ev['content']}*"); collected.append(ev)
-                            elif ev["type"] == "tool_call":
-                                ap = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
-                                if len(ap) > 120:
-                                    ap = ap[:120] + "…"
-                                st.markdown(f"🔧 Calling **`{ev['name']}`**({ap})"); collected.append(ev)
-                            elif ev["type"] == "tool_result":
-                                prev = ev["content"]
-                                if len(prev) > 400:
-                                    prev = prev[:400] + f"… ({len(ev['content'])-400} more chars)"
-                                st.markdown(f"✅ `{ev['name']}` returned:"); st.code(prev, language="text")
-                                collected.append(ev)
-                            elif ev["type"] == "final":
-                                final_text = ev["content"]
-                        status.update(
-                            label=f"Done — {len([e for e in collected if e['type']=='tool_call'])} tool call(s)",
-                            state="complete", expanded=False)
-                    except Exception as e:
-                        final_text = f"Agent error: {e}"
-                        status.update(label="Failed", state="error", expanded=True)
-                if final_text:
-                    st.markdown(final_text)
-            st.session_state.tiedown_chat_history.append(
-                {"role": "assistant", "content": final_text, "events": collected})
-
-        if st.button("🧹 Clear tie-down chat", key="td_clear"):
-            st.session_state.tiedown_chat_history = []
-            st.rerun()
+    # ---- Section 5: tie-down assistant (collapsible) ----
+    render_domain_assistant(
+        "tiedown",
+        "💬 Ask the tie-down assistant",
+        "e.g. 'how many M12 bolts to floor-mount a 1269 kg generator at SF 2?'",
+    )
 
 
 # =============================================================================
@@ -1196,91 +1155,12 @@ with tab_mobility:
 
     st.divider()
 
-    # ---- Section 5: Mobility assistant chat ----
-    st.markdown("### 5. Ask the mobility assistant")
-    if not API_KEY:
-        st.info("Set `NVIDIA_API_KEY` in `.env` to enable the chat. Sections 1-4 work without it.")
-    else:
-        @st.cache_resource
-        def _get_mobility_agent(key: str):
-            from agent import build_agent
-            return build_agent("mobility", key)
-
-        if st.session_state.mobility_agent is None:
-            with st.spinner("Initializing mobility agent..."):
-                try:
-                    st.session_state.mobility_agent = _get_mobility_agent(API_KEY)
-                except Exception as e:
-                    st.error(f"Failed to initialize mobility agent: {e}")
-
-        def _mb_render_trace(events: list[dict]):
-            if not events:
-                return
-            with st.expander(f"🔎 Show {len(events)} agent steps", expanded=False):
-                for i, ev in enumerate(events, 1):
-                    if ev["type"] == "reasoning":
-                        st.markdown(f"**{i}. 💭 Reasoning**")
-                        st.markdown(f"> {ev['content']}")
-                    elif ev["type"] == "tool_call":
-                        args_lines = [f"  {k} = {v!r}" for k, v in ev["args"].items()]
-                        st.markdown(f"**{i}. 🔧 Calling `{ev['name']}`**")
-                        st.code("\n".join(args_lines) or "(no args)", language="python")
-                    elif ev["type"] == "tool_result":
-                        prev = ev["content"]
-                        if len(prev) > 800:
-                            prev = prev[:800] + f"\n... ({len(ev['content'])-800} more chars)"
-                        st.markdown(f"**{i}. ✅ Result from `{ev['name']}`**")
-                        st.code(prev, language="text")
-
-        for msg in st.session_state.mobility_chat_history:
-            with st.chat_message(msg["role"]):
-                if msg.get("events"):
-                    _mb_render_trace(msg["events"])
-                st.markdown(msg["content"])
-
-        mb_q = st.chat_input("e.g. 'Is the Spinel E2 stable on a 60% slope?'",
-                             key="mb_chat_input")
-        if mb_q and st.session_state.mobility_agent is not None:
-            st.session_state.mobility_chat_history.append({"role": "user", "content": mb_q})
-            with st.chat_message("user"):
-                st.markdown(mb_q)
-            hist = [("human" if m["role"] == "user" else "ai", m["content"])
-                    for m in st.session_state.mobility_chat_history[:-1]]
-            with st.chat_message("assistant"):
-                collected: list[dict] = []
-                final_text = ""
-                with st.status("Working...", expanded=True) as status:
-                    try:
-                        for ev in st.session_state.mobility_agent.stream(mb_q, chat_history=hist or None):
-                            if ev["type"] == "reasoning":
-                                st.markdown(f"💭 *{ev['content']}*"); collected.append(ev)
-                            elif ev["type"] == "tool_call":
-                                ap = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
-                                if len(ap) > 120:
-                                    ap = ap[:120] + "…"
-                                st.markdown(f"🔧 Calling **`{ev['name']}`**({ap})"); collected.append(ev)
-                            elif ev["type"] == "tool_result":
-                                prev = ev["content"]
-                                if len(prev) > 400:
-                                    prev = prev[:400] + f"… ({len(ev['content'])-400} more chars)"
-                                st.markdown(f"✅ `{ev['name']}` returned:"); st.code(prev, language="text")
-                                collected.append(ev)
-                            elif ev["type"] == "final":
-                                final_text = ev["content"]
-                        status.update(
-                            label=f"Done — {len([e for e in collected if e['type']=='tool_call'])} tool call(s)",
-                            state="complete", expanded=False)
-                    except Exception as e:
-                        final_text = f"Agent error: {e}"
-                        status.update(label="Failed", state="error", expanded=True)
-                if final_text:
-                    st.markdown(final_text)
-            st.session_state.mobility_chat_history.append(
-                {"role": "assistant", "content": final_text, "events": collected})
-
-        if st.button("🧹 Clear mobility chat", key="mb_clear"):
-            st.session_state.mobility_chat_history = []
-            st.rerun()
+    # ---- Section 5: mobility assistant (collapsible) ----
+    render_domain_assistant(
+        "mobility",
+        "💬 Ask the mobility assistant",
+        "e.g. 'is the Spinel E2 stable on a 60% slope?'",
+    )
 
 
 # ----------------------------------------------------------------------------

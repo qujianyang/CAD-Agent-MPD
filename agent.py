@@ -8,10 +8,29 @@ import os
 from glob import glob
 from typing import Optional
 
-import mlflow
-mlflow.set_tracking_uri("http://localhost:5000")
-mlflow.set_experiment("CAD-Agent-MPD")
-mlflow.langchain.autolog(log_models=False, log_input_examples=False)
+# MLflow tracing is OPT-IN and fully decoupled. The agent never touches MLflow
+# unless you explicitly call enable_mlflow_tracing(). By default there is zero
+# MLflow involvement (no import, no server connection, no startup cost).
+_MLFLOW_ON = False
+
+
+def enable_mlflow_tracing(uri: str = "http://localhost:5000",
+                          experiment: str = "CAD-Agent-MPD") -> bool:
+    """Manually turn on MLflow autologging. Call this yourself when you want to
+    trace; otherwise the agent runs with no MLflow at all. Returns True if on."""
+    global _MLFLOW_ON
+    try:
+        import mlflow
+        mlflow.set_tracking_uri(uri)
+        mlflow.set_experiment(experiment)
+        mlflow.langchain.autolog()
+        _MLFLOW_ON = True
+        print(f"[agent] MLflow tracing enabled → {uri}")
+    except Exception as e:
+        _MLFLOW_ON = False
+        print(f"[agent] could not enable MLflow tracing: {e}")
+    return _MLFLOW_ON
+
 
 from langchain.agents import create_agent
 from langchain_core.tools import tool
@@ -924,8 +943,12 @@ class DomainAgent:
     def invoke(self, question: str, chat_history: list | None = None) -> str:
         messages = list(chat_history) if chat_history else []
         messages.append(("human", question))
-        with mlflow.start_run(run_name=f"{self._domain}-invoke", nested=True):
-            mlflow.set_tags({"domain": self._domain, "question": question[:120]})
+        if _MLFLOW_ON:
+            import mlflow  # only imported once tracing was explicitly enabled
+            with mlflow.start_run(run_name=f"{self._domain}-invoke", nested=True):
+                mlflow.set_tags({"domain": self._domain, "question": question[:120]})
+                result = self._agent.invoke({"messages": messages})
+        else:
             result = self._agent.invoke({"messages": messages})
         last = result["messages"][-1]
         return last.content if hasattr(last, "content") else str(last)

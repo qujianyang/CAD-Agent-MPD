@@ -7,6 +7,7 @@ Bolts: sigma_s = sigma_t / 2.  Straps/ratchets: sigma_s = sigma_t, area = 1
 (the value is a rated load in N).  Spring latch / locking pin: real area, sigma_s = sigma_t/2.
 """
 import math
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -56,6 +57,69 @@ def make_fastener(class_or_name: str, size: Optional[str] = None) -> FastenerSpe
     if class_or_name in NON_BOLTS:
         return non_bolt(class_or_name)
     raise KeyError(f"Unknown fastener: class_or_name={class_or_name!r} size={size!r}")
+
+
+# --- forgiving resolver: tolerate messy LLM/user input ----------------------
+_CLASS_RE = re.compile(r"(?<!\d)(\d{1,2}\.\d)(?!\d)")     # 8.8, 10.9, 4.6, 12.9
+_SIZE_RE  = re.compile(r"\bM\s?(\d+(?:\.\d+)?)\b", re.I)  # M10, M 10, M2.5
+
+# distinctive keyword -> NON_BOLTS key resolver
+_STRAP_KW = [
+    ("camlock",      lambda s: 'Camlock Strap (1.5")' if "1.5" in s else 'Camlock Strap (1")'),
+    ("ratchet",      lambda s: 'Ratchet (1.5")' if "1.5" in s else 'Ratchet (1")'),
+    ("spring latch", lambda s: "Spring Latch"),
+    ("locking pin",  lambda s: "Locking Pin"),
+    ("d-ring",       lambda s: "DRing"),
+    ("dring",        lambda s: "DRing"),
+    ("net",          lambda s: "Strap (Net)"),
+    ("strap",        lambda s: "Strap (Net)"),     # generic strap fallback
+]
+
+
+def resolve_fastener(fastener: str, size: Optional[str] = None) -> FastenerSpec:
+    """
+    Tolerant fastener lookup. Accepts messy inputs and extracts the right spec:
+      "8.8", "M10"          -> 8.8 M10 bolt
+      "M10 8.8" / "8.8 M10" -> 8.8 M10 bolt (order-independent)
+      "8x M10 bolts"        -> 8.8 M10 bolt (class defaults to 8.8 if unspecified)
+      "camlock 1 inch"      -> Camlock Strap (1")
+      "spring latch"        -> Spring Latch
+    Raises KeyError only when nothing recognisable is present.
+    """
+    blob = f"{fastener or ''} {size or ''}".strip()
+    low = blob.lower()
+
+    # fast path: already-exact inputs
+    if fastener in NON_BOLTS:
+        return non_bolt(fastener)
+    if fastener in BOLT_CLASSES and size in BOLT_SIZES:
+        return bolt(fastener, size)
+
+    # bolt class + size from anywhere in the text
+    cls = "A2-70" if ("a2-70" in low or "a2 70" in low) else None
+    if cls is None:
+        m = _CLASS_RE.search(blob)
+        if m and m.group(1) in BOLT_CLASSES:
+            cls = m.group(1)
+    sz = None
+    ms = _SIZE_RE.search(blob)
+    if ms:
+        cand = "M" + ms.group(1)
+        if cand in BOLT_SIZES:
+            sz = cand
+    if sz and not cls:
+        cls = "8.8"            # most common structural grade when unspecified
+    if cls and sz:
+        return bolt(cls, sz)
+
+    # strap / latch by keyword
+    for kw, resolver in _STRAP_KW:
+        if kw in low:
+            name = resolver(low)
+            if name in NON_BOLTS:
+                return non_bolt(name)
+
+    raise KeyError(f"could not resolve a fastener from {fastener!r} (size {size!r})")
 
 
 @dataclass
