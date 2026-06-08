@@ -57,7 +57,7 @@ _rag: Optional[object] = None
 _knowledge_embedder: Optional[object] = None
 _knowledge_store: Optional[object] = None
 
-KNOWLEDGE_STORE_PATH = "knowledge_embeddings.json"
+KNOWLEDGE_STORE_PATH = "artifacts/knowledge_embeddings.json"
 
 
 def _get_rag():

@@ -124,7 +124,7 @@ class NVIDIAEmbedder:
 
 
 class JSONVectorStore:
-    def __init__(self, store_path: str = "mil_std_embeddings.json"):
+    def __init__(self, store_path: str = "artifacts/mil_std_embeddings.json"):
         self.store_path = Path(store_path)
 
     def save(self, doc_metadata: Dict[str, Any], embedded_chunks: List[Dict[str, Any]]):

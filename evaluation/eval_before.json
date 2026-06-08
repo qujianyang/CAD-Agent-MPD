@@ -1,0 +1,151 @@
+{
+  "summary": {
+    "routing": "8/10",
+    "clean": "9/10",
+    "avg_calls": 1.2,
+    "avg_latency_s": 77.88
+  },
+  "cases": [
+    {
+      "id": "shock-select",
+      "domain": "shock_mount",
+      "question": "Select an isolator for a 1500 kg rack with 6 bottom and 4 wall mounts.",
+      "expected": "select_isolator",
+      "tools_called": [
+        "select_isolator",
+        "lookup_knowledge"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 2,
+      "latency_s": 281.76,
+      "answer": "**Recommendation:** CB61400-50 in 6 bottom + 4 wall configuration\n\n**Why this part:** CB61400-50 is the softest valid part that passes all 4 load cases (compression vertical, lateral, shear) with a GT limit of 10.0G. It has the lowest K_compression among all valid candidates, which means it provides"
+    },
+    {
+      "id": "shock-capacity",
+      "domain": "shock_mount",
+      "question": "What's the heaviest mass a CB1400-30 can support?",
+      "expected": "find_capacity_limit",
+      "tools_called": [
+        "find_capacity_limit"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 27.45,
+      "answer": "The heaviest mass a CB1400-30 can support is 1877 kg."
+    },
+    {
+      "id": "shock-clearance",
+      "domain": "shock_mount",
+      "question": "Which isolator keeps deflection under 30 mm for a 1000 kg rack?",
+      "expected": "filter_by_deflection",
+      "tools_called": [
+        "filter_by_deflection"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 7.78,
+      "answer": "The recommended isolator that keeps deflection under 30 mm for a 1000 kg rack is CB1500-20."
+    },
+    {
+      "id": "td-flag",
+      "domain": "tiedown",
+      "question": "Which secured items fall below a safety factor of 2 in the workbook?",
+      "expected": "flag_critical_items",
+      "tools_called": [
+        "flag_critical_items"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 15.86,
+      "answer": "This function call will list the items in the workbook that have a minimum safety factor less than 2.0. The output shows that 1 out of 59 items is below the target safety factor, which is the \"Water Jerry Cans (3x)\" item with a minimum safety factor of 1.062 in the longitudinal direction."
+    },
+    {
+      "id": "td-check",
+      "domain": "tiedown",
+      "question": "Check a 60 kg item on the front wall held by four 8.8 M8 bolts at SF 2.",
+      "expected": "run_tiedown_check",
+      "tools_called": [
+        "run_tiedown_check",
+        "lookup_knowledge"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 2,
+      "latency_s": 101.38,
+      "answer": "The design loads for tie-down are as follows:\n\n* Longitudinal (X): 4 G (fore / aft)\n* Vertical (Z): 2 G (up / down)\n* Lateral (Y): 1.5 G (side)\n\nThe design force per axis is calculated as F_axis = weight_kg * G_axis * g, where g = 9.81 m/s^2.\n\nThe safety factor (SF) is calculated as SF = yield_force"
+    },
+    {
+      "id": "td-size",
+      "domain": "tiedown",
+      "question": "How many M12 8.8 bolts to floor-mount a 1269 kg generator at SF 2?",
+      "expected": "recommend_fasteners",
+      "tools_called": [
+        "run_tiedown_check",
+        "lookup_knowledge"
+      ],
+      "routed": false,
+      "had_error": false,
+      "n_calls": 2,
+      "latency_s": 99.64,
+      "answer": "The design loads for tie-down are as follows:\n\n* Longitudinal (X): 4 G, applied as multiples of the item's weight\n* Vertical (Z): 2 G, applied as multiples of the item's weight\n* Lateral (Y): 1.5 G, applied as multiples of the item's weight\n\nThe design force per axis is calculated as `F_axis = weigh"
+    },
+    {
+      "id": "mob-slope",
+      "domain": "mobility",
+      "question": "Is the Spinel E2 stable on a 60% slope?",
+      "expected": "run_mobility_check",
+      "tools_called": [
+        "run_mobility_check"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 70.34,
+      "answer": "According to the mobility analysis, the Spinel E2 is stable on a 60% slope, with a safety factor of 2.2093 for ascending and 2.7356 for descending. The critical tip angle is 52.97\u00b0 for ascending and 58.65\u00b0 for descending. The vehicle passes all the stability checks, including cornering, with a maxim"
+    },
+    {
+      "id": "mob-corner",
+      "domain": "mobility",
+      "question": "What's the max safe cornering speed for the Spinel?",
+      "expected": "run_mobility_check",
+      "tools_called": [
+        "run_mobility_check"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 167.41,
+      "answer": "The maximum safe cornering speed for the Spinel is 28.7 km/h (at SF=1)."
+    },
+    {
+      "id": "mob-axle",
+      "domain": "mobility",
+      "question": "Give me the Spinel's axle loadings \u2014 are they within limits?",
+      "expected": "run_mobility_check",
+      "tools_called": [
+        "run_mobility_check"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 6.97,
+      "answer": "The Spinel's axle loadings are within limits, with the front axle carrying 44.68% of the gross weight and the rear axle carrying the remaining 55.32%. The steerability is also within limits, with the front axle carrying at least 25% of the gross weight."
+    },
+    {
+      "id": "mob-custom",
+      "domain": "mobility",
+      "question": "A truck with Zcg 1500 mm, Xcg 2000 mm, wheelbase 4000 mm, track 1800 mm, GW 3000 kg \u2014 is it stable ascending a 30% slope?",
+      "expected": "slope_limit",
+      "tools_called": [],
+      "routed": false,
+      "had_error": true,
+      "n_calls": 0,
+      "latency_s": 0.24,
+      "answer": "<exception: [429] Too Many Requests\n{'status': 429, 'title': 'Too Many Requests'}>"
+    }
+  ]
+}

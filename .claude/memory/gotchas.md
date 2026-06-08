@@ -1,5 +1,14 @@
 # Gotchas
 
+## Repo layout after the 2026-06-08 declutter
+
+- Source `.py` modules are still **flat at root** (imports unchanged). Only data/docs/tests/scripts moved.
+- `data/` = committed source inputs (workbooks, `iso_select[1].pdf`). `artifacts/` = **gitignored**, regenerable embeddings + demo `.docx`.
+- Embedding stores now live in `artifacts/` (`artifacts/knowledge_embeddings.json`, `artifacts/mil_std_embeddings.json`). These paths are **cwd-relative** → **always run from the repo root** or they won't resolve.
+- `tests/` holds the pytest suite (`pytest.ini` sets `testpaths=tests`; `tests/conftest.py` puts root on `sys.path`). Run: `.\mpd\Scripts\python.exe -m pytest`.
+- **`test_assembly.py` stays at root** — it's the SolidWorks COM runtime script (subprocess-launched by `cad_compliance_checker.py` + `app.py`), NOT a pytest test. `scripts/test_part.py` and `scripts/test_api.py` are also manual diagnostics, not pytest.
+- `WB_DEFAULT` in `tiedown_import.py` / `mobility_import.py` now defaults to the committed `data/` copies (anchored via `__file__`, so cwd-independent), keeping the repo self-contained. Override with env vars `TIEDOWN_XLSX` / `MOBILITY_XLS` to point at a newer/local revision. Heads-up: the `data/` tie-down workbook is the **validated 14 kg snapshot** the engine + tests are pinned to; a newer Downloads revision had Air-Con at 20 kg / 7 bolts. If you adopt the newer numbers, refresh `data/` AND update `tests/test_tiedown_import.py` expectations.
+
 ## SolidWorks Education Edition blocks API methods
 
 **Symptom:** `CreateMassProperty`, `GetCoordinateSystemTransformByName2`, and other `IModelDocExtension` methods return `"Member not found"` via late-binding dispatch — even with `gencache.EnsureDispatch`.

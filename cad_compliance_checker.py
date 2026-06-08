@@ -143,7 +143,7 @@ if __name__ == "__main__":
         print("ERROR: NVIDIA_API_KEY not set. Add it to your .env file.")
         raise SystemExit(1)
 
-    if not Path("mil_std_embeddings.json").exists():
+    if not Path("artifacts/mil_std_embeddings.json").exists():
         print("ERROR: Vector store not found. Run: python setup_rag.py")
         raise SystemExit(1)
 

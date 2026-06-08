@@ -13,7 +13,7 @@ from mil_std_chunker import DocumentChunker
 from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
 
 
-def setup_rag_pipeline(pdf_path: str, api_key: str, output_store: str = "mil_std_embeddings.json", use_local: bool = False):
+def setup_rag_pipeline(pdf_path: str, api_key: str, output_store: str = "artifacts/mil_std_embeddings.json", use_local: bool = False):
     """
     Complete pipeline: ingest PDF -> chunk -> embed -> store.
     
@@ -95,7 +95,7 @@ if __name__ == "__main__":
         print("ERROR: NVIDIA_API_KEY not set. Run with --local or add it to your .env file.")
         sys.exit(1)
 
-    PDF_PATH = r"C:\Users\qujia\QuantumKeyDistribution\CAD-Agent-MPD\iso_select[1].pdf"
+    PDF_PATH = r"C:\Users\qujia\QuantumKeyDistribution\CAD-Agent-MPD\data\iso_select[1].pdf"
     if not Path(PDF_PATH).exists():
         print(f"ERROR: PDF not found at {PDF_PATH}")
         sys.exit(1)

@@ -58,3 +58,10 @@ __pycache__/nvidia_embedder.cpython-310.pyc
 # generated SAR appendix artifacts (contain confidential data)
 Appendix_*.docx
 Appendix_BCDE_demo.docx
+
+# ==========================================
+# Generated artifacts (regenerable via setup_knowledge.py / setup_rag.py)
+# ==========================================
+artifacts/
+mlflow.db
+mlartifacts/

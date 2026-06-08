@@ -16,7 +16,8 @@ import xlrd
 
 from mobility_engine import Vehicle, Aero
 
-WB_DEFAULT = r"C:\Users\qujia\Downloads\Spinel -E2 Measured CG in FIT_13-5-2026_Turning Radius R_Final 1.xls"
+WB_DEFAULT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
+                          "Spinel -E2 Measured CG in FIT_13-5-2026_Turning Radius R_Final 1.xls")
 
 
 # ---------------------------------------------------------------------------

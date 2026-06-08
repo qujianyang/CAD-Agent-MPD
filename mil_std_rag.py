@@ -9,7 +9,7 @@ from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
 
 
 class MILStandardRAG:
-    def __init__(self, api_key: str, vector_store_path: str = "mil_std_embeddings.json"):
+    def __init__(self, api_key: str, vector_store_path: str = "artifacts/mil_std_embeddings.json"):
         self.api_key = api_key
         self.embedder = NVIDIAEmbedder(api_key)
         self.vector_store = JSONVectorStore(vector_store_path)

@@ -36,7 +36,7 @@ from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
 
 # Where the source markdown lives, and where the vector store goes
 KNOWLEDGE_DIR  = Path(__file__).parent / "knowledge"
-STORE_PATH     = Path(__file__).parent / "knowledge_embeddings.json"
+STORE_PATH     = Path(__file__).parent / "artifacts" / "knowledge_embeddings.json"
 
 
 def _extract_title(md_text: str, fallback: str) -> str:

@@ -2,8 +2,9 @@
 Import the MCDLL Tie-Down Provision 'Workings' sheet into Item objects.
 Reads sigma/area straight from the sheet cells (cols 10/11/12) for exact replication.
 
-NOTE: the reference workbook is sensitive defence data and is NOT committed.
-Keep it local; override the path with the TIEDOWN_XLSX env var if needed.
+NOTE: the validated reference workbook is committed under data/ so the repo is
+self-contained and reproducible. Override the path with the TIEDOWN_XLSX env var
+to point at a newer/local revision (e.g. one in Downloads).
 """
 import os
 import pandas as pd
@@ -13,7 +14,8 @@ from tiedown_engine import Item, MountFace, FastenerSpec
 WORKINGS_SHEET = "Tie-Down Provision Workings"
 WB_DEFAULT = os.environ.get(
     "TIEDOWN_XLSX",
-    r"C:\Users\qujia\Downloads\MCDLL Tie-Down Provision_20-8-2023.xlsx",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data",
+                 "MCDLL Tie-Down Provision_20-8-2023.xlsx"),
 )
 FIRST_ROW, LAST_ROW = 9, 67   # 0-based row indices for items 1..59 (inclusive)
 _G = 9.81

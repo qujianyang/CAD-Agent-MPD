@@ -24,7 +24,7 @@ from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
 
 # ---------- config ----------
 QRELS_PATH    = Path(__file__).parent / "retrieval_qrels.jsonl"
-STORE_PATH    = "knowledge_embeddings.json"          # matches agent.py
+STORE_PATH    = "artifacts/knowledge_embeddings.json"          # matches agent.py
 TOP_K_VALUES  = [1, 3, 5]
 RESULTS_DIR   = Path(__file__).parent / "results"
 

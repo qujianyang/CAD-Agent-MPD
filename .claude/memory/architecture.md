@@ -1,5 +1,15 @@
 # Architecture
 
+## Repo layout (post 2026-06-08 declutter)
+
+Source `.py` stays flat at root (imports unchanged). Supporting files are foldered:
+`data/` (committed source workbooks + PDF), `artifacts/` (gitignored, regenerable
+embeddings + demo `.docx`), `tests/` (pytest suite + `conftest.py`; `pytest.ini`
+scopes collection here), `scripts/` (manual diagnostics: `test_api.py`,
+`test_part.py`, `validate_*.py`), `docs/`, `evaluation/`. **Always run from repo
+root** — embedding paths are cwd-relative. `test_assembly.py` stays at root (COM
+runtime script, not a test).
+
 ## File map
 
 | File | Responsibility |
@@ -11,7 +21,7 @@
 | `test_assembly.py` | SolidWorks COM script. Accepts `--file` arg. Extracts mass, CG (raw + base-relative), bbox, coord-sys-used. |
 | `cad_compliance_checker.py` | Bridge: subprocess `test_assembly.py`, parse stdout into a dict. |
 | `nvidia_embedder.py` | `JSONVectorStore` with cosine similarity + `parent_topic` filter. |
-| `setup_knowledge.py` | Walks `knowledge/` folder, makes one chunk per `.md`, writes `knowledge_embeddings.json`. |
+| `setup_knowledge.py` | Walks `knowledge/` folder, makes one chunk per `.md`, writes `artifacts/knowledge_embeddings.json`. |
 | `mil_std_rag.py` | (Older) MIL-STD-810H RAG. Still used for the larger corpus. |
 | `mil_std_chunker.py`, `setup_rag.py` | MIL-STD chunking + embedding setup. |
 
