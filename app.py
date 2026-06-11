@@ -40,7 +40,7 @@ from mobility_scenarios import (
     MassChange, apply_mass_changes, baseline_delta,
     sf_verdict, margin_for_direction, ZCG_SOURCES,
     OEM_MARGIN_LONGITUDINAL, OEM_MARGIN_LATERAL, OEM_MARGIN_CORNERING,
-    VERDICT_UNSTABLE, VERDICT_BELOW, VERDICT_MEETS,
+    VERDICT_UNSTABLE, VERDICT_BELOW, VERDICT_MEETS, VERDICT_STRUCTURAL,
     DEFAULT_FRONT_AXLE_LIMIT_KG, DEFAULT_REAR_AXLE_LIMIT_KG, DEFAULT_GVW_LIMIT_KG,
 )
 
@@ -1022,7 +1022,8 @@ with tab_mobility:
     st.caption(
         "Workflow: select/derive vehicle state -> review CG source -> set analysis "
         "conditions -> run full analysis -> compare against structural and OEM limits. "
-        "All SFs from the validated engine (22/22 vs workbook)."
+        "All SFs from the validated engine (22/22 vs workbook within 0.3% -- "
+        "exact grade angles vs Excel's rounded angles)."
     )
 
     def _mb_set_vehicle(v, prov, approach=None, base=None):
@@ -1334,7 +1335,19 @@ with tab_mobility:
         corner_verdict = (sf_verdict(mb_rep.corner.SF, mb_m_corner)
                           if mb_rep.corner else None)
         all_verdicts = slope_verdicts + ([corner_verdict] if corner_verdict else [])
-        if VERDICT_UNSTABLE in all_verdicts:
+        # Compliance precedence, worst first: a structural failure (axle / GVW /
+        # steerability) outranks every stability verdict (engine: AxleResult.all_ok).
+        ax = mb_rep.axle
+        if not ax.all_ok:
+            overall = VERDICT_STRUCTURAL
+            failed = [name for name, ok in [
+                ("front axle", ax.front_ok), ("rear axle", ax.rear_ok),
+                ("GVW", ax.gvw_ok), ("steerability (front < 25% GW)", ax.steer_ok),
+            ] if not ok]
+            st.error(f"Structural limit exceeded: {', '.join(failed)}. "
+                     "See the axle table below — stability SFs alone do not make "
+                     "this configuration compliant.")
+        elif VERDICT_UNSTABLE in all_verdicts:
             overall = VERDICT_UNSTABLE
         elif VERDICT_BELOW in all_verdicts:
             overall = VERDICT_BELOW
@@ -1352,25 +1365,28 @@ with tab_mobility:
         h3.metric("Overall verdict", overall)
 
         # Axle loads, structural limits and margins
-        ax = mb_rep.axle
         st.markdown("**Axle loads vs structural / OEM limits**")
         st.dataframe(
             [
-                {"Check": "Front axle", "Load (kg)": round(ax.front_kg, 1),
-                 "Limit (kg)": mb_v.front_axle_limit_kg,
-                 "Margin (kg)": round(mb_v.front_axle_limit_kg - ax.front_kg, 1),
+                {"Check": "Front axle", "Load": round(ax.front_kg, 1),
+                 "Limit": mb_v.front_axle_limit_kg,
+                 "Margin": round(mb_v.front_axle_limit_kg - ax.front_kg, 1),
+                 "Unit": "kg",
                  "Status": "[OK]" if ax.front_ok else "[OVER LIMIT]"},
-                {"Check": "Rear axle", "Load (kg)": round(ax.rear_kg, 1),
-                 "Limit (kg)": mb_v.rear_axle_limit_kg,
-                 "Margin (kg)": round(mb_v.rear_axle_limit_kg - ax.rear_kg, 1),
+                {"Check": "Rear axle", "Load": round(ax.rear_kg, 1),
+                 "Limit": mb_v.rear_axle_limit_kg,
+                 "Margin": round(mb_v.rear_axle_limit_kg - ax.rear_kg, 1),
+                 "Unit": "kg",
                  "Status": "[OK]" if ax.rear_ok else "[OVER LIMIT]"},
-                {"Check": "GVW", "Load (kg)": round(mb_v.gw_kg, 1),
-                 "Limit (kg)": mb_v.gvw_limit_kg,
-                 "Margin (kg)": round(mb_v.gvw_limit_kg - mb_v.gw_kg, 1),
+                {"Check": "GVW", "Load": round(mb_v.gw_kg, 1),
+                 "Limit": mb_v.gvw_limit_kg,
+                 "Margin": round(mb_v.gvw_limit_kg - mb_v.gw_kg, 1),
+                 "Unit": "kg",
                  "Status": "[OK]" if ax.gvw_ok else "[OVER LIMIT]"},
                 {"Check": "Steerability (front >= 25% GW)",
-                 "Load (kg)": round(ax.front_pct, 1), "Limit (kg)": 25.0,
-                 "Margin (kg)": round(ax.front_pct - 25.0, 1),
+                 "Load": round(ax.front_pct, 1), "Limit": 25.0,
+                 "Margin": round(ax.front_pct - 25.0, 1),
+                 "Unit": "%",
                  "Status": "[OK]" if ax.steer_ok else "[FAIL]"},
             ],
             hide_index=True, use_container_width=True,

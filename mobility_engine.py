@@ -346,17 +346,19 @@ def format_mobility_report(report: MobilityReport) -> str:
         f"  Steer : {ax.front_pct:.2f}% front  {'OK' if ax.steer_ok else 'FAIL (< 25%)'}",
         "-" * 70,
         "SLOPE STABILITY",
-        f"  {'Grade':>8}  {'Direction':<12}  {'theta':>7}  {'Lever mm':>9}  {'SF':>8}  {'Crit deg':>9}  {'Verdict':>7}",
+        f"  (STRUCT PASS = SF >= {report.target_SF:g}, will not tip; OEM recommended "
+        "margins are judged separately in the app)",
+        f"  {'Grade':>8}  {'Direction':<12}  {'theta':>7}  {'Lever mm':>9}  {'SF':>8}  {'Crit deg':>9}  {'Struct.':>12}",
     ]
     for r in report.slope_results:
-        verdict = "PASS" if r.SF >= report.target_SF else "FAIL"
+        verdict = "STRUCT PASS" if r.SF >= report.target_SF else "STRUCT FAIL"
         lines.append(
             f"  {r.grade_pct:>7.0f}%  {r.direction:<12}  {r.theta_deg:>6.2f}°  "
-            f"{r.lever_mm:>9.1f}  {r.SF:>8.4f}  {r.crit_angle_deg:>8.2f}°  {verdict:>7}"
+            f"{r.lever_mm:>9.1f}  {r.SF:>8.4f}  {r.crit_angle_deg:>8.2f}°  {verdict:>12}"
         )
     if report.corner:
         c = report.corner
-        verdict = "PASS" if c.SF >= report.target_SF else "FAIL"
+        verdict = "STRUCT PASS" if c.SF >= report.target_SF else "STRUCT FAIL"
         lines += [
             "-" * 70,
             "CORNERING",
@@ -371,9 +373,10 @@ def format_mobility_report(report: MobilityReport) -> str:
     lines += [
         "=" * 70,
         "OVERALL: " + (
-            f"ALL PASS (governing: {gov.direction} {gov.grade_pct:.0f}%, SF={gov.SF:.4f})"
+            f"ALL STRUCTURALLY STABLE (governing: {gov.direction} {gov.grade_pct:.0f}%, SF={gov.SF:.4f})"
             if report.all_passed else
             f"{len(crit_cases)} case(s) below target SF {report.target_SF}"
+            + ("" if report.axle.all_ok else " / axle-GVW-steer limits EXCEEDED")
         ),
         "=" * 70,
     ]
