@@ -5,13 +5,17 @@ All numbers come from mobility_engine / mobility_import; never from the LLM.
 from langchain_core.tools import tool
 
 from mobility_engine import (
-    Vehicle, Aero, run_mobility_analysis,
+    Vehicle, Aero, run_mobility_analysis, axle_loads,
     slope_stability, side_slope_stability, cornering_stability,
     format_mobility_report, format_slope_table,
 )
 from mobility_import import (
     vehicle_measured, vehicle_theory, stored_sf_map,
-    approach_departure_angles, WB_DEFAULT,
+    approach_departure_angles, WB_DEFAULT, shelter_cg,
+)
+from mobility_scenarios import (
+    MassChange, apply_mass_changes, baseline_delta,
+    vehicle_from_wheel_loads, check_cg_plausibility,
 )
 
 _DEFAULT_AERO = Aero()
@@ -31,12 +35,14 @@ def run_mobility_check(variant: str = "measured", workbook_path: str = "") -> st
     THE DEFAULT MOBILITY TOOL for the Spinel E2 / "the vehicle" / any workbook
     question. Reads the REAL CG from the workbook -- takes NO CG inputs.
 
-    Use this for ALL questions about the known vehicle, including:
+    Use this for STABILITY questions about the known vehicle, including:
       - "is it stable on a 60% slope?"
       - "what is the max safe CORNERING speed?"   (cornering is included here)
-      - "what are the axle loads / is it steerable?"
     It returns axle loadings, the full slope stability grid, AND cornering
     stability (centrifugal + wind, with max safe speed), plus the governing case.
+
+    For pure DATA questions (GW / CG / axle loads / limits, no slope or
+    cornering needed) use get_vehicle_baseline instead -- it is faster.
 
     Do NOT use slope_limit or cornering_check for the Spinel -- those need CG
     typed in by hand and must never be fed invented numbers.
@@ -256,6 +262,292 @@ def flag_unstable(
     return "\n".join(lines)
 
 
+def _vehicle_lines(v: Vehicle) -> list:
+    """Compact data block for one vehicle: identity, CG, geometry, axles vs limits."""
+    ax = axle_loads(v)
+    return [
+        f"  GW        : {v.gw_kg:,.0f} kg   (GVW limit {v.gvw_limit_kg:,.0f} kg  "
+        f"{'[OK]' if ax.gvw_ok else '[OVER]'})",
+        f"  Xcg       : {v.xcg_mm:,.1f} mm from front axle",
+        f"  Ycg       : {v.ycg_mm:,.1f} mm from centreline (+right)",
+        f"  Zcg       : {v.zcg_mm:,.1f} mm above ground",
+        f"  Wheelbase : {v.wheelbase_mm:,.0f} mm   Track: {v.track_mm:,.0f} mm",
+        f"  Front axle: {ax.front_kg:,.1f} kg ({ax.front_pct:.2f}% of GW)  "
+        f"limit {v.front_axle_limit_kg:,.0f} kg  {'[OK]' if ax.front_ok else '[OVER]'}",
+        f"  Rear axle : {ax.rear_kg:,.1f} kg  "
+        f"limit {v.rear_axle_limit_kg:,.0f} kg  {'[OK]' if ax.rear_ok else '[OVER]'}",
+        f"  Steer     : front {ax.front_pct:.2f}% of GW (needs >= 25%)  "
+        f"{'[OK]' if ax.steer_ok else '[FAIL]'}",
+    ]
+
+
+@tool
+def get_vehicle_baseline(variant: str = "", workbook_path: str = "") -> str:
+    """
+    DATA LOOKUP for the known Spinel E2 / workbook vehicle. Use this for:
+      - "what is the GW / Xcg / Ycg / Zcg / wheelbase / track of the E2?"
+      - "what are the axle loads / axle limits / GVW limit?"
+      - "what is the difference between the measured and theory CG?"
+
+    Returns the vehicle data and axle loadings ONLY -- no slope or cornering
+    results. For stability questions ("is it stable on a 60% slope?") use
+    run_mobility_check instead.
+
+    OMIT variant to get BOTH variants side by side (best for comparisons).
+
+    Args:
+        variant:       "measured" or "theory". OMIT for both.
+        workbook_path: Full path to the .xls workbook. OMIT to use the project default.
+    """
+    path = workbook_path or None
+    want = [variant] if variant in ("measured", "theory") else ["measured", "theory"]
+    vehicles = {}
+    for w in want:
+        try:
+            vehicles[w] = vehicle_measured(path) if w == "measured" else vehicle_theory(path)
+        except Exception as e:
+            return f"ERROR: could not read workbook ({w}): {e}"
+
+    lines = ["=== SPINEL E2 BASELINE (workbook) ==="]
+    for w, v in vehicles.items():
+        lines.append(f"\n[{w.upper()} CG]  ({v.name})")
+        lines.extend(_vehicle_lines(v))
+
+    if len(vehicles) == 2:
+        m, t = vehicles["measured"], vehicles["theory"]
+        lines.append(
+            f"\nDelta (theory - measured): GW {t.gw_kg - m.gw_kg:+,.0f} kg, "
+            f"Xcg {t.xcg_mm - m.xcg_mm:+,.1f} mm, Ycg {t.ycg_mm - m.ycg_mm:+,.1f} mm, "
+            f"Zcg {t.zcg_mm - m.zcg_mm:+,.1f} mm"
+        )
+
+    try:
+        sc = shelter_cg(path)
+        lines.append(
+            f"\nShelter (payload) CG: weight {sc.weight_kg:,.0f} kg, "
+            f"X {sc.xcg_mm:,.1f} / Y {sc.ycg_mm:,.1f} / Z {sc.zcg_mm:,.1f} mm"
+        )
+    except Exception:
+        pass
+
+    return "\n".join(lines)
+
+
+@tool
+def derive_cg_from_wheel_loads(
+    fl_kg: float,
+    fr_kg: float,
+    rl_kg: float,
+    rr_kg: float,
+    zcg_mm: float = 0.0,
+    zcg_source: str = "",
+    wheelbase_mm: float = 0.0,
+    track_mm: float = 0.0,
+) -> str:
+    """
+    USE ONLY when the user gives FOUR wheel / weighbridge readings. Derives the
+    gross weight, Xcg and Ycg via the SAR Appendix B moment balance:
+      GW = FL+FR+RL+RR,  Xcg = WB*(RL+RR)/GW,  Ycg = Track*((FR+RR)/GW - 0.5)
+
+    Zcg (CG height) CANNOT be derived from static wheel loads. OMIT zcg_mm
+    unless the user supplies a VERIFIED value together with its source
+    (tilt test / CAD model / certified report) -- never invent one.
+
+    OMIT wheelbase_mm and track_mm to use the Spinel E2 geometry.
+
+    Args:
+        fl_kg, fr_kg, rl_kg, rr_kg: REQUIRED. The four wheel loads (kg).
+        zcg_mm:       OPTIONAL verified CG height (mm). OMIT if the user gave none.
+        zcg_source:   Where zcg_mm came from ("tilt test", "CAD model",
+                      "certified report"). REQUIRED whenever zcg_mm is passed.
+        wheelbase_mm: OMIT to use the Spinel E2 wheelbase.
+        track_mm:     OMIT to use the Spinel E2 track.
+    """
+    for label, val in (("FL", fl_kg), ("FR", fr_kg), ("RL", rl_kg), ("RR", rr_kg)):
+        if val is None or val <= 0:
+            return f"ERROR: {label} wheel load must be positive (got {val})."
+
+    assumed = []
+    wb, tr = wheelbase_mm, track_mm
+    if wb <= 0 or tr <= 0:
+        try:
+            ref = vehicle_measured()
+            wb = wb if wb > 0 else ref.wheelbase_mm
+            tr = tr if tr > 0 else ref.track_mm
+            assumed.append("Spinel E2 geometry (wheelbase/track) assumed from workbook")
+        except Exception:
+            return ("ERROR: wheelbase and track not given and the Spinel workbook is "
+                    "unavailable -- ask the user for wheelbase_mm and track_mm.")
+
+    gw = fl_kg + fr_kg + rl_kg + rr_kg
+    xcg = wb * (rl_kg + rr_kg) / gw
+    ycg = tr * ((fr_kg + rr_kg) / gw - 0.5)
+    front, rear = fl_kg + fr_kg, rl_kg + rr_kg
+
+    lines = [
+        "=== CG FROM WHEEL LOADS (SAR Appendix B moment balance) ===",
+        f"  Inputs    : FL {fl_kg:,.0f} / FR {fr_kg:,.0f} / RL {rl_kg:,.0f} / "
+        f"RR {rr_kg:,.0f} kg   WB {wb:,.0f} mm  Track {tr:,.0f} mm",
+        f"  GW        : {gw:,.1f} kg",
+        f"  Xcg       : {xcg:,.1f} mm from front axle",
+        f"  Ycg       : {ycg:,.1f} mm from centreline (+right)",
+        f"  Front axle: {front:,.1f} kg ({front / gw * 100:.2f}% of GW)   "
+        f"Rear axle: {rear:,.1f} kg",
+    ]
+    if assumed:
+        lines.append(f"  Note      : {'; '.join(assumed)} -- Spinel vendor axle/GVW "
+                     "limits apply only if this is the E2.")
+
+    if zcg_mm > 0 and not zcg_source.strip():
+        return ("ERROR: a Zcg value was given without its source. ASK the user where "
+                "the Zcg came from (tilt test / CAD model / certified report) before "
+                "using it.")
+    if zcg_mm > 0:
+        try:
+            v = vehicle_from_wheel_loads(
+                fl_kg, fr_kg, rl_kg, rr_kg,
+                wheelbase_mm=wb, track_mm=tr,
+                zcg_mm=zcg_mm, zcg_source=zcg_source,
+            )
+        except ValueError as e:
+            return f"ERROR: {e}"
+        lines.append(f"  Zcg       : {v.zcg_mm:,.1f} mm above ground  (source: {zcg_source})")
+        for w in check_cg_plausibility(v):
+            lines.append(f"  WARNING   : {w}")
+        lines.append("Vehicle state is complete -- a full slope/cornering analysis can "
+                     "now be run on it.")
+    else:
+        lines.append(
+            "Zcg NOT determined: static wheel loads contain no height information. "
+            "A verified Zcg from a tilt test, CAD mass-properties model or certified "
+            "report is required before any slope or cornering analysis."
+        )
+    return "\n".join(lines)
+
+
+@tool
+def evaluate_mass_change(
+    action: str,
+    mass_kg: float,
+    x_mm: float = 0.0,
+    y_mm: float = 0.0,
+    z_mm: float = 0.0,
+    new_x_mm: float = 0.0,
+    new_y_mm: float = 0.0,
+    new_z_mm: float = 0.0,
+    description: str = "component",
+    variant: str = "measured",
+    workbook_path: str = "",
+) -> str:
+    """
+    THE WHAT-IF TOOL: "if I add a 3200 kg shelter at X 4000 mm...", "move the
+    generator 500 mm rearward", "remove the spare wheel". Applies ONE component
+    change to the workbook baseline and returns the combined CG plus a
+    baseline-vs-modified comparison (CG, axle loads vs limits, governing slope
+    SF, cornering).
+
+    Coordinate datum: X from FRONT AXLE (mm, +rearward), Y from centreline
+    (+right), Z from GROUND (must be positive).
+
+    Parameter mapping by action:
+      action="add"      -> x/y/z = position of the ADDED component.
+      action="remove"   -> x/y/z = position of the REMOVED component.
+      action="relocate" -> x/y/z = OLD position, new_x/new_y/new_z = NEW
+                           position (mass unchanged).
+
+    ONE change per call -- every call starts from the workbook baseline; calls
+    do NOT stack. For multi-change studies, direct the user to the Design /
+    modification section of the Mobility tab.
+
+    If the user did NOT give the component's mass or position, ASK them --
+    NEVER guess or invent a position.
+
+    OMIT variant unless the user says "theory" (default "measured").
+
+    Args:
+        action:      REQUIRED. "add", "remove" or "relocate".
+        mass_kg:     REQUIRED. Component mass (kg), positive.
+        x_mm, y_mm, z_mm: Component position (see mapping above).
+        new_x_mm, new_y_mm, new_z_mm: New position, ONLY for "relocate".
+        description: Short component name, e.g. "shelter", "winch".
+        variant:     "measured" (default) or "theory".
+        workbook_path: OMIT to use the project default workbook.
+    """
+    if action not in ("add", "remove", "relocate"):
+        return f"ERROR: action must be 'add', 'remove' or 'relocate' (got {action!r})."
+    if mass_kg is None or mass_kg <= 0:
+        return ("ERROR: a positive component mass is required. ASK the user for the "
+                "component's mass -- never guess it.")
+
+    if action == "add":
+        change = MassChange(action, description, mass_kg, new_xyz_mm=(x_mm, y_mm, z_mm))
+    elif action == "remove":
+        change = MassChange(action, description, mass_kg, old_xyz_mm=(x_mm, y_mm, z_mm))
+    else:
+        change = MassChange(action, description, mass_kg,
+                            old_xyz_mm=(x_mm, y_mm, z_mm),
+                            new_xyz_mm=(new_x_mm, new_y_mm, new_z_mm))
+
+    path = workbook_path or None
+    try:
+        base = vehicle_measured(path) if variant == "measured" else vehicle_theory(path)
+    except Exception as e:
+        return f"ERROR: could not read workbook: {e}"
+
+    try:
+        mod = apply_mass_changes(base, [change])
+    except ValueError as e:
+        return (f"ERROR: invalid change -- {e}. If a coordinate is missing, ASK the "
+                "user for it (datum: X from front axle, Y from centreline, Z from "
+                "ground, Z must be positive).")
+
+    rep_b = run_mobility_analysis(base)
+    rep_m = run_mobility_analysis(mod)
+    d = baseline_delta(base, mod)
+    ab, am = rep_b.axle, rep_m.axle
+    gb, gm = rep_b.governing_slope(), rep_m.governing_slope()
+
+    pos = (f"X={x_mm:,.0f}, Y={y_mm:,.0f}, Z={z_mm:,.0f} mm"
+           + (f" -> X={new_x_mm:,.0f}, Y={new_y_mm:,.0f}, Z={new_z_mm:,.0f} mm"
+              if action == "relocate" else ""))
+    def _st(ok):
+        return "[OK]" if ok else "[OVER]"
+
+    lines = [
+        f"=== MASS CHANGE: {action} '{description}' {mass_kg:,.0f} kg at {pos} "
+        f"(baseline: {variant}) ===",
+        f"{'':<18}{'baseline':>14}{'modified':>14}{'change':>12}",
+        f"{'GW (kg)':<18}{base.gw_kg:>14,.0f}{mod.gw_kg:>14,.0f}{d['gw_kg']:>+12,.0f}",
+        f"{'Xcg (mm)':<18}{base.xcg_mm:>14,.1f}{mod.xcg_mm:>14,.1f}{d['xcg_mm']:>+12,.1f}",
+        f"{'Ycg (mm)':<18}{base.ycg_mm:>14,.1f}{mod.ycg_mm:>14,.1f}{d['ycg_mm']:>+12,.1f}",
+        f"{'Zcg (mm)':<18}{base.zcg_mm:>14,.1f}{mod.zcg_mm:>14,.1f}{d['zcg_mm']:>+12,.1f}",
+        f"{'Front axle (kg)':<18}{ab.front_kg:>14,.1f}{am.front_kg:>14,.1f}"
+        f"   {_st(am.front_ok)} (limit {base.front_axle_limit_kg:,.0f})",
+        f"{'Rear axle (kg)':<18}{ab.rear_kg:>14,.1f}{am.rear_kg:>14,.1f}"
+        f"   {_st(am.rear_ok)} (limit {base.rear_axle_limit_kg:,.0f})",
+        f"{'GVW (kg)':<18}{base.gw_kg:>14,.0f}{mod.gw_kg:>14,.0f}"
+        f"   {_st(am.gvw_ok)} (limit {base.gvw_limit_kg:,.0f})",
+        f"{'Steer (front %)':<18}{ab.front_pct:>14,.2f}{am.front_pct:>14,.2f}"
+        f"   {'[OK]' if am.steer_ok else '[FAIL]'} (needs >= 25%)",
+        f"Governing slope : {gb.direction} {gb.grade_pct:.0f}% SF={gb.SF:.4f}  ->  "
+        f"{gm.direction} {gm.grade_pct:.0f}% SF={gm.SF:.4f}",
+    ]
+    if rep_b.corner and rep_m.corner:
+        lines.append(
+            f"Cornering SF    : {rep_b.corner.SF:.4f} "
+            f"(max safe {rep_b.corner.max_safe_speed_kmh:.1f} km/h)  ->  "
+            f"{rep_m.corner.SF:.4f} (max safe {rep_m.corner.max_safe_speed_kmh:.1f} km/h)"
+        )
+    lines.append(
+        "STRUCTURAL: " + ("all axle/GVW/steer limits OK" if am.all_ok else
+                          "LIMIT EXCEEDED -- modified vehicle fails axle/GVW/steer "
+                          "checks (see [OVER]/[FAIL] above)")
+    )
+    for w in check_cg_plausibility(mod):
+        lines.append(f"WARNING: {w}")
+    return "\n".join(lines)
+
+
 _MOBILITY_PROMPT = """\
 You are a mechanical engineering assistant specialising in VEHICLE MOBILITY and
 STABILITY analysis for military platform assessments.
@@ -275,14 +567,32 @@ CRITICAL parameter rule for ALL tools:
 - Only pass values the user explicitly mentions. OMIT every other parameter.
 - Never pass 0 for any argument.
 
-Tool guide:
-- run_mobility_check  : full analysis from workbook (measured or theory CG).
-- slope_limit         : slope SF grid + critical tip angle for user-given CG.
-- cornering_check     : cornering SF + max safe speed for user-given CG.
-- flag_unstable       : list all cases below a target SF — returns FULL context
-                        (SF, lever, Zcg, crit angle) so you can advise fixes.
-- lookup_knowledge    : ALWAYS pass parent_topic="mobility". Use it to cite
-                        slope formulas, cornering theory, steerability rule.
+CG IS MEASURED, NOT PREDICTED: a vehicle's Xcg is not a function of its weight.
+If the user asks e.g. "for a 3,200 kg E2 what is the expected Xcg", clarify what
+they mean: adding a 3,200 kg payload to the E2 (then ASK for the payload position
+and use evaluate_mass_change) or a different vehicle entirely (then they must
+supply its CG).
+
+Tool guide -- route by QUESTION TYPE:
+- get_vehicle_baseline : DATA LOOKUP for the known E2. "what is the GW / Xcg /
+                         Zcg / axle loads / limits?", "measured vs theory
+                         difference?". Fast; returns NO slope/cornering results.
+- evaluate_mass_change : WHAT-IF. "if I add/remove/relocate X kg at position ...".
+                         Computes the combined CG and compares baseline vs
+                         modified. ONE change per call. If the component's mass
+                         or POSITION is missing, ASK the user -- never guess a
+                         position.
+- derive_cg_from_wheel_loads : user gives FOUR wheel/weighbridge readings.
+                         Returns GW/Xcg/Ycg; Zcg is NOT derivable from static
+                         loads.
+- run_mobility_check   : FULL stability assessment of the workbook vehicle
+                         (slope grid + cornering + axles): "is it stable on a
+                         60% slope?", "max safe cornering speed?".
+- slope_limit          : slope SFs for a CUSTOM vehicle with user-GIVEN CG only.
+- cornering_check      : one cornering case for a CUSTOM vehicle, user-GIVEN CG only.
+- flag_unstable        : list workbook cases below a target SF.
+- lookup_knowledge     : ALWAYS pass parent_topic="mobility". Use it to cite
+                         slope formulas, cornering theory, steerability rule.
 
 When you give a verdict, cite one sentence from lookup_knowledge tagged
 [source: <file>.md]. If the knowledge base is not built, say so and continue.
@@ -302,6 +612,9 @@ INTERPRETING RESULTS — units matter:
 
 _MOBILITY_TOOLS = [
     run_mobility_check,
+    get_vehicle_baseline,
+    evaluate_mass_change,
+    derive_cg_from_wheel_loads,
     slope_limit,
     cornering_check,
     flag_unstable,
@@ -318,6 +631,22 @@ MOBILITY_CAPABILITIES = [
      "purpose": "Analyse measured or theoretical Spinel CG — axle loads, slopes, cornering",
      "example": "Is the measured Spinel stable on a 60% slope?",
      "tool": "run_mobility_check"},
+    {"capability": "Vehicle data lookup",
+     "purpose": "GW, CG, geometry, axle loads and limits for the measured or theory E2",
+     "example": "What is the measured Xcg of the Spinel E2?",
+     "tool": "get_vehicle_baseline"},
+    {"capability": "What-if mass change",
+     "purpose": "Add / remove / relocate a component and compare CG, axle loads and stability vs baseline",
+     "example": "If I add a 3,200 kg shelter at X 4,000 mm, Z 2,500 mm, does the rear axle still hold?",
+     "tool": "evaluate_mass_change"},
+    {"capability": "CG from wheel loads",
+     "purpose": "Derive GW, Xcg and Ycg from four weighbridge readings",
+     "example": "Wheel loads are FL 4000, FR 3975, RL 4750, RR 5125 kg — where is the CG?",
+     "tool": "derive_cg_from_wheel_loads"},
+    {"capability": "Margin screening",
+     "purpose": "Find workbook cases below a selected SF",
+     "example": "Which mobility cases are below SF 2.2?",
+     "tool": "flag_unstable"},
     {"capability": "Custom slope analysis",
      "purpose": "Slope SF and tipping angle from a known CG and geometry",
      "example": "For Xcg 2600 mm and Zcg 1700 mm, what is the ascending slope limit?",
@@ -326,10 +655,6 @@ MOBILITY_CAPABILITIES = [
      "purpose": "Cornering SF and maximum safe speed",
      "example": "Check cornering at 20 km/h with an 11 m radius.",
      "tool": "cornering_check"},
-    {"capability": "Margin screening",
-     "purpose": "Find workbook cases below a selected SF",
-     "example": "Which mobility cases are below SF 2.2?",
-     "tool": "flag_unstable"},
     {"capability": "Engineering references",
      "purpose": "Explain formulas and mobility requirements",
      "example": "How is ascending slope safety factor calculated?",

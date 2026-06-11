@@ -21,6 +21,18 @@ def test_tiedown_domain_wired():
     assert "flag_critical_items" not in names   # removed: scan/flag tool retired
 
 
+MOBILITY_8 = sorted([
+    "run_mobility_check", "get_vehicle_baseline", "evaluate_mass_change",
+    "derive_cg_from_wheel_loads", "slope_limit", "cornering_check",
+    "flag_unstable", "lookup_knowledge",
+])
+
+
+def test_mobility_domain_wired():
+    from agent import DOMAINS
+    assert sorted(t.name for t in DOMAINS["mobility"]["tools"]) == MOBILITY_8
+
+
 def test_every_mobility_tool_is_documented():
     """Every registered mobility tool must appear in the user-facing capability guide,
     so the guide can't silently fall out of sync with _MOBILITY_TOOLS."""

@@ -48,6 +48,7 @@ from tiedown_tools import (
 )
 from mobility_tools import (
     run_mobility_check, slope_limit, cornering_check, flag_unstable,
+    get_vehicle_baseline, evaluate_mass_change, derive_cg_from_wheel_loads,
     _MOBILITY_PROMPT, _MOBILITY_TOOLS,
 )
 
@@ -860,6 +861,10 @@ _TIEDOWN_TOOLS = [
     lookup_knowledge,           # shared retriever; tiedown prompt scopes it to parent_topic="tiedown"
 ]
 
+# Mobility domain tools + the shared retriever (lookup_knowledge lives in this module,
+# so it can't be appended inside mobility_tools.py without a circular import).
+_MOBILITY_TOOLS_FULL = [*_MOBILITY_TOOLS, lookup_knowledge]
+
 # Unified co-pilot: every tool across the three engineering domains, deduplicated.
 _UNIFIED_TOOLS = [
     # shock isolation
@@ -872,6 +877,9 @@ _UNIFIED_TOOLS = [
     recommend_fasteners,
     # mobility / stability
     run_mobility_check,
+    get_vehicle_baseline,
+    evaluate_mass_change,
+    derive_cg_from_wheel_loads,
     slope_limit,
     cornering_check,
     flag_unstable,
@@ -930,6 +938,13 @@ MOBILITY
                         question ("is it stable on a 60% slope?"). Reads the REAL
                         CG from the workbook -- no CG inputs needed. Use this
                         whenever the user names the known platform.
+- get_vehicle_baseline: DATA LOOKUP -- E2 GW/CG/geometry/axle loads/limits,
+                        measured vs theory. No slope/cornering results.
+- evaluate_mass_change: WHAT-IF -- add/remove/relocate ONE component on the E2
+                        baseline; combined CG + baseline-vs-modified comparison.
+                        ASK for missing mass/position -- never guess.
+- derive_cg_from_wheel_loads : user gives FOUR weighbridge readings -> GW/Xcg/Ycg
+                        (Zcg not derivable from static loads).
 - slope_limit         : ONLY when the user GIVES explicit CG numbers for a custom
                         / hypothetical vehicle. Never invent CG to use this.
 - cornering_check     : cornering SF + max safe speed -- same rule: explicit CG only.
@@ -969,7 +984,7 @@ _UI_GUIDE_TOOLS = [lookup_knowledge]
 DOMAINS = {
     "shock_mount": {"prompt": _SYSTEM_PROMPT,    "tools": _SHOCK_TOOLS},
     "tiedown":     {"prompt": _TIEDOWN_PROMPT,   "tools": _TIEDOWN_TOOLS},
-    "mobility":    {"prompt": _MOBILITY_PROMPT,  "tools": _MOBILITY_TOOLS},
+    "mobility":    {"prompt": _MOBILITY_PROMPT,  "tools": _MOBILITY_TOOLS_FULL},
     "unified":     {"prompt": _UNIFIED_PROMPT,   "tools": _UNIFIED_TOOLS},
     "ui_guide":    {"prompt": _UI_GUIDE_PROMPT,  "tools": _UI_GUIDE_TOOLS},
 }

@@ -16,8 +16,12 @@ judge the agent deterministically.
 import argparse
 import json
 import os
+import sys
 import time
 from dotenv import load_dotenv
+
+# Repo root on sys.path (this file lives in evaluation/; agent.py uses flat imports).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 load_dotenv()
 
@@ -54,13 +58,31 @@ CASES = [
      "run_mobility_check"),
     ("mob-axle",       "mobility",
      "Give me the Spinel's axle loadings — are they within limits?",
-     "run_mobility_check"),
+     "get_vehicle_baseline"),   # axle-only = data lookup (no slope/cornering run)
 
     # --- mobility (custom CG fully specified) ---
     ("mob-custom",     "mobility",
      "A truck with Zcg 1500 mm, Xcg 2000 mm, wheelbase 4000 mm, track 1800 mm, "
      "GW 3000 kg — is it stable ascending a 30% slope?",
      "slope_limit"),
+
+    # --- mobility (granular Q&A tools) ---
+    ("mob-baseline",   "mobility",
+     "What is the measured Xcg of the Spinel E2?",
+     "get_vehicle_baseline"),
+    ("mob-variants",   "mobility",
+     "What's the difference between the measured and theory CG?",
+     "get_vehicle_baseline"),
+    ("mob-wheel",      "mobility",
+     "Wheel loads: FL 4000, FR 3975, RL 4750, RR 5125 kg. Where is the CG?",
+     "derive_cg_from_wheel_loads"),
+    ("mob-whatif",     "mobility",
+     "If I add a 3200 kg shelter at X=4000 mm, Z=2500 mm to the measured E2, "
+     "what's the new Xcg and does the rear axle stay within limits?",
+     "evaluate_mass_change"),
+    ("mob-ask",        "mobility",
+     "If I add a 3200 kg payload to the E2, what is the expected Xcg?",
+     None),   # position missing -> the agent must ASK, not call a tool
 ]
 
 
@@ -99,17 +121,22 @@ def main():
     agents, rows = {}, []
     print(f"{'id':<14}{'route':>6}{'1st-try':>8}{'calls':>6}{'lat(s)':>8}  expected")
     print("-" * 70)
-    for cid, domain, q, expected in CASES:
+    for i, (cid, domain, q, expected) in enumerate(CASES):
+        if i:
+            time.sleep(5)   # stay under the NVIDIA API rate limit between cases
         tools, had_err, n, lat, ans = run_case(agents, domain, q)
-        routed = expected in tools
+        # expected=None means the question is ambiguous: success = the agent ASKS a
+        # clarifying question instead of fabricating an answer. (A refused tool call
+        # on the way is fine -- the tool's ERROR text instructs the agent to ask.)
+        routed = (expected in tools) if expected else ("?" in ans)
         rows.append({
             "id": cid, "domain": domain, "question": q, "expected": expected,
             "tools_called": tools, "routed": routed, "had_error": had_err,
             "n_calls": n, "latency_s": round(lat, 2), "answer": ans[:300],
         })
         print(f"{cid:<14}{'OK' if routed else 'MISS':>6}"
-              f"{'no' if had_err else 'yes':>8}{n:>6}{lat:>8.2f}  {expected} "
-              f"-> {tools or '[]'}")
+              f"{'no' if had_err else 'yes':>8}{n:>6}{lat:>8.2f}  "
+              f"{expected or 'ASK (no tool)'} -> {tools or '[]'}")
 
     n = len(rows)
     routed = sum(r["routed"] for r in rows)
