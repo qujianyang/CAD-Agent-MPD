@@ -306,3 +306,32 @@ _MOBILITY_TOOLS = [
     cornering_check,
     flag_unstable,
 ]
+
+# User-facing capability registry for the mobility assistant. Curated for end users
+# (capability -> purpose -> example), NOT extracted from tool docstrings (those are
+# LLM-routing instructions). The "tool" field is the internal tool name, surfaced in
+# small text for transparency and checked by a drift test so this guide can't fall out
+# of sync with _MOBILITY_TOOLS. "lookup_knowledge" is a shared retriever the mobility
+# prompt scopes to parent_topic="mobility"; it's documented here but not in _MOBILITY_TOOLS.
+MOBILITY_CAPABILITIES = [
+    {"capability": "Workbook mobility analysis",
+     "purpose": "Analyse measured or theoretical Spinel CG — axle loads, slopes, cornering",
+     "example": "Is the measured Spinel stable on a 60% slope?",
+     "tool": "run_mobility_check"},
+    {"capability": "Custom slope analysis",
+     "purpose": "Slope SF and tipping angle from a known CG and geometry",
+     "example": "For Xcg 2600 mm and Zcg 1700 mm, what is the ascending slope limit?",
+     "tool": "slope_limit"},
+    {"capability": "Custom cornering analysis",
+     "purpose": "Cornering SF and maximum safe speed",
+     "example": "Check cornering at 20 km/h with an 11 m radius.",
+     "tool": "cornering_check"},
+    {"capability": "Margin screening",
+     "purpose": "Find workbook cases below a selected SF",
+     "example": "Which mobility cases are below SF 2.2?",
+     "tool": "flag_unstable"},
+    {"capability": "Engineering references",
+     "purpose": "Explain formulas and mobility requirements",
+     "example": "How is ascending slope safety factor calculated?",
+     "tool": "lookup_knowledge"},
+]

@@ -35,6 +35,14 @@ from mobility_import import (
     vehicle_measured, vehicle_theory, approach_departure_angles,
     measurement_measured, measurement_unladen, shelter_cg, WB_DEFAULT as MB_DEFAULT,
 )
+from mobility_scenarios import (
+    vehicle_from_certified_cg, vehicle_from_wheel_loads, check_cg_plausibility,
+    MassChange, apply_mass_changes, baseline_delta,
+    sf_verdict, margin_for_direction, ZCG_SOURCES,
+    OEM_MARGIN_LONGITUDINAL, OEM_MARGIN_LATERAL, OEM_MARGIN_CORNERING,
+    VERDICT_UNSTABLE, VERDICT_BELOW, VERDICT_MEETS,
+    DEFAULT_FRONT_AXLE_LIMIT_KG, DEFAULT_REAR_AXLE_LIMIT_KG, DEFAULT_GVW_LIMIT_KG,
+)
 
 
 # ----------------------------------------------------------------------------
@@ -93,6 +101,12 @@ def _init_state():
         "tiedown_chat_history": [],
         "mobility_agent": None,
         "mobility_chat_history": [],
+        # Mobility scenario workspace
+        "mb_vehicle": None,    # derived mobility Vehicle (single source of truth)
+        "mb_prov": None,       # {"method": ..., "source": ...} provenance
+        "mb_approach": None,   # (approach_deg, departure_deg) or None
+        "mb_report": None,     # last MobilityReport (cleared on vehicle change)
+        "mb_base": None,       # baseline Vehicle for modification deltas, or None
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -421,17 +435,33 @@ def _get_domain_agent(domain: str, key: str):
 
 
 def render_domain_assistant(domain: str, title: str, placeholder: str,
-                            *, expanded: bool = False):
+                            *, expanded: bool = False,
+                            capabilities=None, examples=None):
     """
     Collapsible, domain-scoped chat assistant embedded in a tab.
     Each instance carries only its own domain's tools, so routing is far more
     reliable than one 14-tool co-pilot. Uses per-domain session + widget keys.
+
+    Optional `capabilities` (a list of {capability, purpose, example, tool} dicts)
+    renders a "what can this do?" popover BEFORE the API-key check, so the guide is
+    visible even when the assistant is disabled. Optional `examples` renders static
+    prompt suggestions just above the chat input.
     """
     hist_key = f"asst_{domain}_history"
     if hist_key not in st.session_state:
         st.session_state[hist_key] = []
 
     with st.expander(title, expanded=expanded):
+        if capabilities:
+            with st.popover("ℹ️ What can this assistant do?", use_container_width=False):
+                st.markdown(
+                    "| Capability | Purpose | Example question |\n|---|---|---|\n" +
+                    "\n".join(
+                        f"| **{c['capability']}** | {c['purpose']} | _{c['example']}_ |"
+                        for c in capabilities)
+                )
+                st.caption("Internal tools: " +
+                           ", ".join(f"`{c['tool']}`" for c in capabilities))
         if not API_KEY:
             st.info("Set `NVIDIA_API_KEY` in `.env` to enable the assistant.")
             return
@@ -464,6 +494,8 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                     _trace(msg["events"])
                 st.markdown(msg["content"])
 
+        if examples:
+            st.caption("Try:  •  " + "  •  ".join(examples))
         q = st.chat_input(placeholder, key=f"asst_{domain}_input")
         if q:
             st.session_state[hist_key].append({"role": "user", "content": q})
@@ -505,14 +537,20 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
             st.rerun()
 
 
-def render_floating_assistant(domain: str, title: str, placeholder: str):
+def render_floating_assistant(domain: str, title: str, placeholder: str,
+                              *, quickstart=None):
     """
     Floating corner chat bubble (Tidio-style) for one domain, via streamlit-float.
     Collapsed = a 💬 button bottom-right; expanded = a chat panel.
     Same domain-scoped agent as the expander version (~4 tools).
+
+    Optional `quickstart` is a list of (label, seed_question) tuples. When the panel
+    is open and the chat is empty, the labels render as buttons that seed the question
+    into the same submit path as typing it.
     """
     open_key = f"float_{domain}_open"
     hist_key = f"asst_{domain}_history"
+    pend_key = f"float_{domain}_pending"
     st.session_state.setdefault(open_key, False)
     st.session_state.setdefault(hist_key, [])
 
@@ -548,7 +586,16 @@ def render_floating_assistant(domain: str, title: str, placeholder: str):
                     with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
 
+                if agent_obj and not st.session_state[hist_key] and quickstart:
+                    st.caption("Quick start:")
+                    for i, (label, seed) in enumerate(quickstart):
+                        if st.button(label, key=f"float_{domain}_qs{i}",
+                                     use_container_width=True):
+                            st.session_state[pend_key] = seed
+                            st.rerun()
+
                 q = st.chat_input(placeholder, key=f"float_{domain}_input") if agent_obj else None
+                q = q or st.session_state.pop(pend_key, None)   # seeded quick-start question
                 if q:
                     st.session_state[hist_key].append({"role": "user", "content": q})
                     with st.chat_message("user"):
@@ -574,11 +621,12 @@ def render_floating_assistant(domain: str, title: str, placeholder: str):
                         {"role": "assistant", "content": final_text})
                     st.rerun()
             css = float_css_helper(
-                width="380px", height="540px", bottom="24px", right="24px",
+                width="380px", height="560px", bottom="24px", right="24px",
                 css="padding:14px 16px; border-radius:14px; overflow-y:auto; "
-                    "background-color:var(--background-color); "
-                    "border:1px solid rgba(255,255,255,.15); "
-                    "box-shadow:0 6px 24px rgba(0,0,0,.45);",
+                    "background-color:#1a1d24; "          # solid: was var(--background-color) → transparent
+                    "border:1px solid rgba(255,255,255,.25); "
+                    "box-shadow:0 8px 32px rgba(0,0,0,.6); "
+                    "z-index:9999;",
             )
     box.float(css)
 
@@ -687,11 +735,14 @@ with tab_quick:
                 )
         _render_selection_result(report, candidates)
 
-    # ---- Shock-isolation assistant (FLOATING bubble — proof of concept) ----
-    render_floating_assistant(
+    # ---- Shock-isolation assistant (collapsible, consistent with other tabs) ----
+    from agent import SHOCK_CAPABILITIES
+    render_domain_assistant(
         "shock_mount",
-        "💬 Shock-isolation assistant",
+        "💬 Ask the shock-isolation assistant",
         "e.g. 'select an isolator for a 1500 kg rack, 6 bottom + 4 wall'",
+        capabilities=SHOCK_CAPABILITIES,
+        examples=[c["example"] for c in SHOCK_CAPABILITIES[:5]],
     )
 
 
@@ -923,33 +974,8 @@ with tab_tiedown:
         )
 
     st.divider()
-    # ---- Section 3: scan the provision workbook ----
-    st.markdown("### 3. Scan the provision workbook for marginal items")
-    td_wbpath = st.text_input("Workbook path", value=WB_DEFAULT, key="td_wbpath",
-                              help="The MCDLL Tie-Down Provision .xlsx to import and scan.")
-    td_scan_tgt = st.number_input("Flag items below SF", value=2.0, min_value=0.1, max_value=20.0,
-                                  step=0.5, key="td_scan_tgt")
-    if st.button("Scan workbook", use_container_width=True, key="td_scan_btn"):
-        try:
-            items = import_workbook(td_wbpath)
-            report = run_tiedown_analysis(items, target_SF=td_scan_tgt)
-            crit = sorted(report.critical_items(), key=lambda r: r.min_SF)
-            st.info(f"{len(items)} items imported · {len(crit)} below SF {td_scan_tgt}")
-            if crit:
-                st.dataframe(
-                    [{"Item": r.item.name, "Min SF": round(r.min_SF, 3),
-                      "Limiting axis": r.limiting_axis.axis, "Fastener": r.item.fastener.name,
-                      "Qty": r.item.qty} for r in crit],
-                    use_container_width=True, hide_index=True,
-                )
-            else:
-                st.success("All items meet the target.")
-        except Exception as e:
-            st.error(f"Could not read workbook: {e}")
-
-    st.divider()
-    # ---- Section 4: generate the Appendix G report section ----
-    st.markdown("### 4. Generate the Appendix G report section")
+    # ---- Section 3: generate the Appendix G report section ----
+    st.markdown("### 3. Generate the Appendix G report section")
     st.caption("Runs the whole workbook, then drafts the SAR Appendix G section "
                "(scope + MIL-STD-209K basis, results table, pass/fail assessment). "
                "Every number comes from the validated engine -- no AI in the numbers.")
@@ -992,112 +1018,408 @@ with tab_tiedown:
 # TAB — Mobility and Stability Analysis (SAR Appendices B–E)
 # =============================================================================
 with tab_mobility:
-    st.subheader("Mobility & Stability Analysis")
-    st.caption("Source: Spinel-E2 Measured CG workbook. All SFs from validated engine (22/22).")
-
-    mb_path = st.text_input(
-        "Workbook path (.xls)",
-        value=MB_DEFAULT,
-        help="Spinel-E2 Measured CG workbook. Override via MOBILITY_XLS env var.",
-        key="mb_wb_path",
-    )
-    mb_variant = st.radio(
-        "CG variant", ["measured", "theory"], horizontal=True, key="mb_variant",
-        help="Measured = from physical tilt tests. Theory = from component mass budget.",
+    st.subheader("Mobility & Stability Workspace")
+    st.caption(
+        "Workflow: select/derive vehicle state -> review CG source -> set analysis "
+        "conditions -> run full analysis -> compare against structural and OEM limits. "
+        "All SFs from the validated engine (22/22 vs workbook)."
     )
 
-    st.divider()
+    def _mb_set_vehicle(v, prov, approach=None, base=None):
+        """Install a newly derived vehicle; always invalidates old results."""
+        st.session_state.mb_vehicle = v
+        st.session_state.mb_prov = prov
+        st.session_state.mb_approach = approach
+        st.session_state.mb_report = None
+        st.session_state.mb_base = base
 
-    # ---- Section 1: Full mobility analysis ----
-    st.markdown("### 1. Full Mobility Analysis")
-    st.markdown("Runs all 5 modules: axle loads, steerability, slope stability (4 grades × 4 directions), cornering.")
-    if st.button("Run Analysis", key="mb_run"):
-        try:
-            v = vehicle_measured(mb_path) if mb_variant == "measured" else vehicle_theory(mb_path)
+    def _mb_clear_vehicle():
+        """Failed builds/reads must never leave stale vehicle or results."""
+        st.session_state.mb_vehicle = None
+        st.session_state.mb_prov = None
+        st.session_state.mb_approach = None
+        st.session_state.mb_report = None
+        st.session_state.mb_base = None
+
+    # ---- 1. Scenario builder ----
+    st.markdown("### 1. Vehicle Scenario")
+    mb_mode = st.radio(
+        "Vehicle source",
+        ["Workbook baseline", "Wheel-load measurement", "Design / modification study",
+         "Advanced: certified CG entry"],
+        horizontal=True, key="mb_mode",
+        help="Workbook = validated Spinel-E2 measured/theory CG (normal workflow). "
+             "Wheel-load = derive CG from four weighbridge readings. "
+             "Modification = add/remove/relocate components on a workbook baseline. "
+             "Advanced = direct GW/CG entry with a mandatory source reference.",
+    )
+
+    if mb_mode == "Workbook baseline":
+        mb_path = st.text_input(
+            "Workbook path (.xls)",
+            value=MB_DEFAULT,
+            help="Spinel-E2 Measured CG workbook. Override via MOBILITY_XLS env var.",
+            key="mb_wb_path",
+        )
+        mb_variant = st.radio(
+            "CG variant", ["measured", "theory"], horizontal=True, key="mb_variant",
+            help="Measured = from physical tilt tests. Theory = from component mass budget.",
+        )
+        if st.button("Load baseline from workbook", key="mb_load_wb"):
             try:
-                app_deg, dep_deg = approach_departure_angles(mb_path, mb_variant)
-            except Exception:
-                app_deg = dep_deg = None
-            report = run_mobility_analysis(v, approach_deg=app_deg, departure_deg=dep_deg)
-
-            gov = report.governing_slope()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Governing SF", f"{gov.SF:.4f}" if gov else "—",
-                      f"{gov.direction} {gov.grade_pct:.0f}%" if gov else "")
-            c2.metric("Front axle", f"{report.axle.front_kg:,.0f} kg",
-                      f"{report.axle.front_pct:.1f}% {'✓' if report.axle.steer_ok else '✗ <25%'}")
-            c3.metric("Overall", "ALL PASS ✓" if report.all_passed else "CASES FAIL ✗")
-
-            with st.expander("Console-style full report", expanded=True):
-                st.code(format_mobility_report(report), language="text")
-            with st.expander("Slope SF grid"):
-                st.code(format_slope_table(report), language="text")
-            if report.corner:
-                c = report.corner
-                st.markdown(
-                    f"**Cornering** @{c.speed_kmh:.0f} km/h, R={c.radius_m:.0f} m, "
-                    f"wind {c.wind_kmh:.0f} km/h: "
-                    f"SF = **{c.SF:.3f}** | max safe speed = **{c.max_safe_speed_kmh:.1f} km/h**"
+                v = vehicle_measured(mb_path) if mb_variant == "measured" else vehicle_theory(mb_path)
+                try:
+                    mb_appr = approach_departure_angles(mb_path, mb_variant)
+                except Exception:
+                    mb_appr = None
+                _mb_set_vehicle(
+                    v,
+                    {"method": "Workbook baseline",
+                     "source": f"{Path(mb_path).name} [{mb_variant} CG]"},
+                    mb_appr,
                 )
-        except Exception as e:
-            st.error(f"Error: {e}")
+            except Exception as e:
+                _mb_clear_vehicle()
+                st.error(f"Workbook read failed: {e}")
+    elif mb_mode == "Wheel-load measurement":
+        st.caption(
+            "Derive GW / Xcg / Ycg from four weighbridge readings (SAR Appendix B "
+            "moment balance). Zcg cannot be derived from static wheel loads -- enter "
+            "a verified value and its source. Spinel vendor axle/GVW limits apply by default."
+        )
+        wl1, wl2, wl3, wl4 = st.columns(4)
+        wl_fl = wl1.number_input("FL (kg)", value=4000.0, min_value=0.0, step=25.0, key="mb_wl_fl")
+        wl_fr = wl2.number_input("FR (kg)", value=3975.0, min_value=0.0, step=25.0, key="mb_wl_fr")
+        wl_rl = wl3.number_input("RL (kg)", value=4750.0, min_value=0.0, step=25.0, key="mb_wl_rl")
+        wl_rr = wl4.number_input("RR (kg)", value=5125.0, min_value=0.0, step=25.0, key="mb_wl_rr")
+        wg1, wg2, wg3, wg4 = st.columns(4)
+        wl_wb  = wg1.number_input("Wheelbase (mm)", value=4800.0, key="mb_wl_wb")
+        wl_tr  = wg2.number_input("Track (mm)",     value=2088.0, key="mb_wl_tr")
+        wl_zcg = wg3.number_input("Zcg (mm, verified)", value=1617.8, key="mb_wl_zcg",
+                                  help="Above ground. From tilt test, CAD model "
+                                       "or certified report -- not derivable here.")
+        wl_zsrc = wg4.selectbox("Zcg source", list(ZCG_SOURCES), key="mb_wl_zsrc")
 
-    st.divider()
+        # Live preview of the derived values before committing
+        wl_gw = wl_fl + wl_fr + wl_rl + wl_rr
+        if wl_gw > 0:
+            wl_x = wl_wb * (wl_rl + wl_rr) / wl_gw
+            wl_y = wl_tr * ((wl_fr + wl_rr) / wl_gw - 0.5)
+            st.caption(f"Derived preview: GW = {wl_gw:,.0f} kg | "
+                       f"Xcg = {wl_x:,.1f} mm from front axle | "
+                       f"Ycg = {wl_y:,.1f} mm ({'right' if wl_y >= 0 else 'left'} of centreline)")
 
-    # ---- Section 2: Slope stability calculator (manual CG) ----
-    st.markdown("### 2. Slope Stability — Custom CG")
-    st.caption("Enter CG values to compute slope SFs without loading the workbook.")
-    cc1, cc2, cc3, cc4, cc5, cc6 = st.columns(6)
-    mb2_gw  = cc1.number_input("GW (kg)",    value=17850.0, key="mb2_gw")
-    mb2_xcg = cc2.number_input("Xcg (mm)",   value=2655.5,  key="mb2_xcg")
-    mb2_ycg = cc3.number_input("Ycg (mm)",   value=20.5,    key="mb2_ycg")
-    mb2_zcg = cc4.number_input("Zcg (mm)",   value=1617.8,  key="mb2_zcg")
-    mb2_wb  = cc5.number_input("WB (mm)",    value=4800.0,  key="mb2_wb")
-    mb2_tr  = cc6.number_input("Track (mm)", value=2088.0,  key="mb2_tr")
+        with st.expander("Axle / GVW limits (Spinel vendor defaults)"):
+            wv1, wv2, wv3 = st.columns(3)
+            wl_flim = wv1.number_input("Front axle limit (kg)",
+                                       value=DEFAULT_FRONT_AXLE_LIMIT_KG, key="mb_wl_flim")
+            wl_rlim = wv2.number_input("Rear axle limit (kg)",
+                                       value=DEFAULT_REAR_AXLE_LIMIT_KG, key="mb_wl_rlim")
+            wl_glim = wv3.number_input("GVW limit (kg)",
+                                       value=DEFAULT_GVW_LIMIT_KG, key="mb_wl_glim")
 
-    if st.button("Calculate Slope SFs", key="mb2_run"):
-        try:
-            v2 = Vehicle("custom", mb2_gw, mb2_xcg, mb2_ycg, mb2_zcg, mb2_wb, mb2_tr)
-            report2 = run_mobility_analysis(v2)
-            st.code(format_slope_table(report2), language="text")
-            gov2 = report2.governing_slope()
-            if gov2:
-                st.info(f"Governing case: {gov2.direction} {gov2.grade_pct:.0f}% — SF = {gov2.SF:.4f}, "
-                        f"critical tip angle = {gov2.crit_angle_deg:.1f}°")
-        except Exception as e:
-            st.error(f"Error: {e}")
+        if st.button("Derive vehicle from wheel loads", key="mb_wl_build"):
+            try:
+                v = vehicle_from_wheel_loads(
+                    wl_fl, wl_fr, wl_rl, wl_rr, wl_wb, wl_tr, wl_zcg,
+                    zcg_source=wl_zsrc,
+                    front_axle_limit_kg=wl_flim,
+                    rear_axle_limit_kg=wl_rlim,
+                    gvw_limit_kg=wl_glim,
+                )
+                _mb_set_vehicle(v, {
+                    "method": "Wheel-load measurement",
+                    "source": f"FL/FR/RL/RR = {wl_fl:.0f}/{wl_fr:.0f}/"
+                              f"{wl_rl:.0f}/{wl_rr:.0f} kg, Zcg from {wl_zsrc}",
+                })
+            except ValueError as e:
+                _mb_clear_vehicle()
+                st.error(f"Invalid measurement: {e}")
+    elif mb_mode == "Design / modification study":
+        st.caption(
+            "Start from a workbook baseline, then add / remove / relocate components. "
+            "Coordinates use the vehicle datum: X from front axle, Y right-positive "
+            "from centreline, Z from ground. add uses New X/Y/Z, remove uses Old "
+            "X/Y/Z, relocate uses both (mass unchanged)."
+        )
+        md1, md2 = st.columns([3, 1])
+        mod_path = md1.text_input("Workbook path (.xls)", value=MB_DEFAULT,
+                                  key="mb_mod_path")
+        mod_variant = md2.radio("Baseline CG", ["measured", "theory"],
+                                key="mb_mod_variant")
 
-    st.divider()
+        mod_rows = st.data_editor(
+            [{"Action": "add", "Description": "", "Mass (kg)": None,
+              "Old X (mm)": None, "Old Y (mm)": None, "Old Z (mm)": None,
+              "New X (mm)": None, "New Y (mm)": None, "New Z (mm)": None}],
+            num_rows="dynamic",
+            use_container_width=True,
+            key="mb_mod_table",
+            column_config={
+                "Action": st.column_config.SelectboxColumn(
+                    "Action", options=["add", "remove", "relocate"], required=True),
+                "Mass (kg)": st.column_config.NumberColumn("Mass (kg)", min_value=0.0),
+            },
+        )
 
-    # ---- Section 3: Cornering calculator ----
-    st.markdown("### 3. Cornering Stability Calculator")
-    cb1, cb2, cb3 = st.columns(3)
-    mb3_spd = cb1.slider("Speed (km/h)", 5, 60, 15, key="mb3_spd")
-    mb3_rad = cb2.slider("Radius (m)",   5, 50, 11, key="mb3_rad")
-    mb3_wnd = cb3.slider("Wind (km/h)",  0, 100, 60, key="mb3_wnd")
+        def _mod_xyz(row, prefix):
+            vals = (row.get(f"{prefix} X (mm)"), row.get(f"{prefix} Y (mm)"),
+                    row.get(f"{prefix} Z (mm)"))
+            if any(x is None for x in vals):
+                return None
+            return tuple(float(x) for x in vals)
 
-    if st.button("Calculate Cornering SF", key="mb3_run"):
-        try:
-            v3 = vehicle_measured(mb_path) if mb_variant == "measured" else vehicle_theory(mb_path)
-            from mobility_engine import cornering_stability
-            c3 = cornering_stability(v3, Aero(), mb3_spd, mb3_rad, mb3_wnd)
-            verdict = "PASS ✓" if c3.SF >= 1.0 else "FAIL ✗"
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("SF", f"{c3.SF:.3f}", verdict)
-            mc2.metric("Max safe speed", f"{c3.max_safe_speed_kmh:.1f} km/h")
-            mc3.metric("Fc", f"{c3.Fc_N:,.0f} N")
-            st.caption(
-                f"Overturning: Fc×Zcg = {c3.over_fc_Nm:,.0f} Nm + "
-                f"Fw×h = {c3.over_wind_Nm:,.0f} Nm = {c3.over_total_Nm:,.0f} Nm total  |  "
-                f"Resist = {c3.resist_Nm:,.0f} Nm  (Y' = {c3.yprime_mm:.0f} mm)"
+        if st.button("Apply changes to baseline", key="mb_mod_build", type="primary"):
+            try:
+                base = (vehicle_measured(mod_path) if mod_variant == "measured"
+                        else vehicle_theory(mod_path))
+                try:
+                    mod_appr = approach_departure_angles(mod_path, mod_variant)
+                except Exception:
+                    mod_appr = None
+                changes = []
+                for i, r in enumerate(mod_rows):
+                    if not (r.get("Action") or "").strip() or not r.get("Mass (kg)"):
+                        continue   # skip empty / incomplete rows
+                    changes.append(MassChange(
+                        action=r["Action"].strip(),
+                        description=(r.get("Description") or "").strip() or f"row {i + 1}",
+                        mass_kg=float(r["Mass (kg)"]),
+                        old_xyz_mm=_mod_xyz(r, "Old"),
+                        new_xyz_mm=_mod_xyz(r, "New"),
+                    ))
+                v = apply_mass_changes(base, changes)
+                _mb_set_vehicle(
+                    v,
+                    {"method": "Design / modification study",
+                     "source": f"{Path(mod_path).name} [{mod_variant} CG] "
+                               f"+ {len(changes)} change(s)"},
+                    mod_appr, base=base,
+                )
+                if not changes:
+                    st.info("No valid change rows -- modified vehicle equals the baseline.")
+            except Exception as e:
+                _mb_clear_vehicle()
+                st.error(f"Modification failed: {e}")
+    else:
+        st.caption(
+            "Advanced path for certified CG data only. Requires geometry, axle limits "
+            "and a source/reference label. Prefer the workbook baseline for normal use."
+        )
+        with st.expander("Certified CG entry", expanded=False):
+            ac1, ac2, ac3, ac4 = st.columns(4)
+            adv_gw  = ac1.number_input("GW (kg)",  value=17850.0, key="mb_adv_gw")
+            adv_xcg = ac2.number_input("Xcg (mm)", value=2655.5,  key="mb_adv_xcg",
+                                       help="From front axle, positive rearward")
+            adv_ycg = ac3.number_input("Ycg (mm)", value=20.5,    key="mb_adv_ycg",
+                                       help="From centreline, right-positive")
+            adv_zcg = ac4.number_input("Zcg (mm)", value=1617.8,  key="mb_adv_zcg",
+                                       help="Above ground")
+            ag1, ag2, ag3, ag4, ag5 = st.columns(5)
+            adv_wb  = ag1.number_input("Wheelbase (mm)", value=4800.0, key="mb_adv_wb")
+            adv_tr  = ag2.number_input("Track (mm)",     value=2088.0, key="mb_adv_tr")
+            adv_fl  = ag3.number_input("Front axle limit (kg)",
+                                       value=DEFAULT_FRONT_AXLE_LIMIT_KG, key="mb_adv_flim")
+            adv_rl  = ag4.number_input("Rear axle limit (kg)",
+                                       value=DEFAULT_REAR_AXLE_LIMIT_KG, key="mb_adv_rlim")
+            adv_gvw = ag5.number_input("GVW limit (kg)",
+                                       value=DEFAULT_GVW_LIMIT_KG, key="mb_adv_glim")
+            adv_src = st.text_input(
+                "CG source / reference (required)", key="mb_adv_src",
+                placeholder="e.g. OEM homologation cert 123-A, tilt test report TR-07",
             )
-        except Exception as e:
-            st.error(f"Error: {e}")
+            if st.button("Build vehicle from certified CG", key="mb_adv_build"):
+                try:
+                    v = vehicle_from_certified_cg(
+                        adv_gw, adv_xcg, adv_ycg, adv_zcg, adv_wb, adv_tr,
+                        source=adv_src,
+                        front_axle_limit_kg=adv_fl,
+                        rear_axle_limit_kg=adv_rl,
+                        gvw_limit_kg=adv_gvw,
+                    )
+                    _mb_set_vehicle(v, {"method": "Certified CG entry",
+                                        "source": adv_src.strip()})
+                except ValueError as e:
+                    _mb_clear_vehicle()
+                    st.error(f"Invalid scenario: {e}")
 
     st.divider()
 
-    # ---- Section 4: Generate SAR Appendices B-E (.docx) ----
-    st.markdown("### 4. Generate SAR Appendices B–E (Word .docx)")
+    # ---- 2. Derived vehicle summary + provenance ----
+    st.markdown("### 2. Derived Vehicle & Provenance")
+    mb_v = st.session_state.mb_vehicle
+    if mb_v is None:
+        st.info("No vehicle loaded yet -- build a scenario in step 1.")
+    else:
+        mb_prov = st.session_state.mb_prov or {}
+        st.caption(
+            f"Source: **{mb_prov.get('method', '?')}** -- {mb_prov.get('source', '?')}  |  "
+            f"Datum: X from front axle, Y right-positive from centreline, Z from ground"
+        )
+        mb_base = st.session_state.mb_base
+        d = baseline_delta(mb_base, mb_v) if mb_base is not None else None
+        s1, s2, s3, s4, s5, s6 = st.columns(6)
+        s1.metric("GW",   f"{mb_v.gw_kg:,.0f} kg",
+                  delta=f"{d['gw_kg']:+,.0f} kg" if d else None, delta_color="off")
+        s2.metric("Xcg",  f"{mb_v.xcg_mm:,.1f} mm",
+                  delta=f"{d['xcg_mm']:+,.1f} mm" if d else None, delta_color="off")
+        s3.metric("Ycg",  f"{mb_v.ycg_mm:,.1f} mm",
+                  delta=f"{d['ycg_mm']:+,.1f} mm" if d else None, delta_color="off")
+        s4.metric("Zcg",  f"{mb_v.zcg_mm:,.1f} mm",
+                  delta=f"{d['zcg_mm']:+,.1f} mm" if d else None, delta_color="off")
+        s5.metric("Wheelbase", f"{mb_v.wheelbase_mm:,.0f} mm")
+        s6.metric("Track",     f"{mb_v.track_mm:,.0f} mm")
+        if d is not None:
+            st.caption(f"Deltas vs baseline: {mb_base.name} "
+                       f"(GW {mb_base.gw_kg:,.0f} kg, Xcg {mb_base.xcg_mm:,.1f}, "
+                       f"Ycg {mb_base.ycg_mm:,.1f}, Zcg {mb_base.zcg_mm:,.1f} mm)")
+        for w in check_cg_plausibility(mb_v):
+            st.warning(w)
+
+    st.divider()
+
+    # ---- 3. Analysis assumptions ----
+    st.markdown("### 3. Analysis Assumptions")
+    aa1, aa2 = st.columns(2)
+    mb_grades_long = aa1.multiselect(
+        "Longitudinal grades (%)", [70, 60, 50, 40, 30, 20], default=[60, 50],
+        key="mb_grades_long")
+    mb_grades_side = aa2.multiselect(
+        "Lateral grades (%)", [40, 30, 25, 20, 15], default=[30, 25],
+        key="mb_grades_side")
+    ab1, ab2, ab3 = st.columns(3)
+    mb_speed = ab1.slider("Cornering speed (km/h)", 5, 60, 15, key="mb_speed")
+    mb_radius = ab2.slider("Turning radius (m)", 5, 50, 11, key="mb_radius")
+    mb_wind = ab3.slider("Wind (km/h)", 0, 100, 60, key="mb_wind")
+    with st.expander("OEM recommended margins (verdict thresholds)"):
+        om1, om2, om3 = st.columns(3)
+        mb_m_long = om1.number_input("Longitudinal", value=OEM_MARGIN_LONGITUDINAL,
+                                     min_value=1.0, step=0.1, key="mb_m_long")
+        mb_m_lat = om2.number_input("Lateral", value=OEM_MARGIN_LATERAL,
+                                    min_value=1.0, step=0.1, key="mb_m_lat")
+        mb_m_corner = om3.number_input("Cornering", value=OEM_MARGIN_CORNERING,
+                                       min_value=1.0, step=0.1, key="mb_m_corner")
+
+    st.divider()
+
+    # ---- 4. Unified results ----
+    st.markdown("### 4. Full Mobility Analysis")
+    if st.button("Run Analysis", key="mb_run", type="primary",
+                 disabled=(mb_v is None),
+                 help=None if mb_v is not None else "Build a scenario in step 1 first"):
+        try:
+            mb_appr = st.session_state.mb_approach
+            report = run_mobility_analysis(
+                mb_v,
+                grades_long=tuple(mb_grades_long) or (60, 50),
+                grades_side=tuple(mb_grades_side) or (30, 25),
+                speed_kmh=float(mb_speed),
+                radius_m=float(mb_radius),
+                wind_kmh=float(mb_wind),
+                approach_deg=mb_appr[0] if mb_appr else None,
+                departure_deg=mb_appr[1] if mb_appr else None,
+            )
+            st.session_state.mb_report = report
+        except Exception as e:
+            st.session_state.mb_report = None
+            st.error(f"Analysis failed: {e}")
+
+    mb_rep = st.session_state.mb_report
+    if mb_rep is not None:
+        # Verdicts (3-tier vs OEM margins)
+        slope_verdicts = [
+            sf_verdict(r.SF, margin_for_direction(r.direction, mb_m_long, mb_m_lat))
+            for r in mb_rep.slope_results
+        ]
+        corner_verdict = (sf_verdict(mb_rep.corner.SF, mb_m_corner)
+                          if mb_rep.corner else None)
+        all_verdicts = slope_verdicts + ([corner_verdict] if corner_verdict else [])
+        if VERDICT_UNSTABLE in all_verdicts:
+            overall = VERDICT_UNSTABLE
+        elif VERDICT_BELOW in all_verdicts:
+            overall = VERDICT_BELOW
+        else:
+            overall = VERDICT_MEETS
+
+        gov = mb_rep.governing_slope()
+        h1, h2, h3 = st.columns(3)
+        h1.metric("Governing slope SF", f"{gov.SF:.4f}" if gov else "--",
+                  f"{gov.direction} {gov.grade_pct:.0f}%" if gov else "")
+        h2.metric("Cornering SF",
+                  f"{mb_rep.corner.SF:.3f}" if mb_rep.corner else "--",
+                  f"max safe {mb_rep.corner.max_safe_speed_kmh:.1f} km/h"
+                  if mb_rep.corner else "")
+        h3.metric("Overall verdict", overall)
+
+        # Axle loads, structural limits and margins
+        ax = mb_rep.axle
+        st.markdown("**Axle loads vs structural / OEM limits**")
+        st.dataframe(
+            [
+                {"Check": "Front axle", "Load (kg)": round(ax.front_kg, 1),
+                 "Limit (kg)": mb_v.front_axle_limit_kg,
+                 "Margin (kg)": round(mb_v.front_axle_limit_kg - ax.front_kg, 1),
+                 "Status": "[OK]" if ax.front_ok else "[OVER LIMIT]"},
+                {"Check": "Rear axle", "Load (kg)": round(ax.rear_kg, 1),
+                 "Limit (kg)": mb_v.rear_axle_limit_kg,
+                 "Margin (kg)": round(mb_v.rear_axle_limit_kg - ax.rear_kg, 1),
+                 "Status": "[OK]" if ax.rear_ok else "[OVER LIMIT]"},
+                {"Check": "GVW", "Load (kg)": round(mb_v.gw_kg, 1),
+                 "Limit (kg)": mb_v.gvw_limit_kg,
+                 "Margin (kg)": round(mb_v.gvw_limit_kg - mb_v.gw_kg, 1),
+                 "Status": "[OK]" if ax.gvw_ok else "[OVER LIMIT]"},
+                {"Check": "Steerability (front >= 25% GW)",
+                 "Load (kg)": round(ax.front_pct, 1), "Limit (kg)": 25.0,
+                 "Margin (kg)": round(ax.front_pct - 25.0, 1),
+                 "Status": "[OK]" if ax.steer_ok else "[FAIL]"},
+            ],
+            hide_index=True, use_container_width=True,
+        )
+
+        # Slope SF table with 3-tier verdicts
+        st.markdown("**Slope stability**")
+        st.dataframe(
+            [
+                {"Grade (%)": r.grade_pct, "Direction": r.direction,
+                 "SF": round(r.SF, 4),
+                 "Crit. tip angle (deg)": round(r.crit_angle_deg, 1),
+                 "OEM margin": margin_for_direction(r.direction, mb_m_long, mb_m_lat),
+                 "Verdict": vd}
+                for r, vd in zip(mb_rep.slope_results, slope_verdicts)
+            ],
+            hide_index=True, use_container_width=True,
+        )
+        if gov:
+            st.info(f"Governing case: {gov.direction} {gov.grade_pct:.0f}% -- "
+                    f"SF = {gov.SF:.4f}, critical tip angle = {gov.crit_angle_deg:.1f} deg")
+
+        # Cornering
+        if mb_rep.corner:
+            c = mb_rep.corner
+            st.markdown(
+                f"**Cornering** @{c.speed_kmh:.0f} km/h, R={c.radius_m:.0f} m, "
+                f"wind {c.wind_kmh:.0f} km/h: SF = **{c.SF:.3f}** "
+                f"({corner_verdict}) | max safe speed = **{c.max_safe_speed_kmh:.1f} km/h**"
+            )
+            st.caption(
+                f"Overturning: Fc x Zcg = {c.over_fc_Nm:,.0f} Nm + "
+                f"Fw x h = {c.over_wind_Nm:,.0f} Nm = {c.over_total_Nm:,.0f} Nm  |  "
+                f"Resist = {c.resist_Nm:,.0f} Nm  (Y' = {c.yprime_mm:.0f} mm)"
+            )
+
+        with st.expander("Console-style full report"):
+            st.code(format_mobility_report(mb_rep), language="text")
+        with st.expander("Slope SF grid (console format)"):
+            st.code(format_slope_table(mb_rep), language="text")
+
+    st.divider()
+
+    # ---- 5. Generate SAR Appendices B-E (.docx) ----
+    st.markdown("### 5. Generate SAR Appendices B–E (Word .docx)")
+    # SAR always derives from the measured workbook (Appendix B needs raw wheel
+    # loads + tilt tests). Falls back to defaults if workbook mode not active.
+    mb_sar_path = st.session_state.get("mb_wb_path", MB_DEFAULT) or MB_DEFAULT
+    mb_sar_variant = st.session_state.get("mb_variant", "measured")
     st.caption("Drop-in replica of the SAR mobility appendices. Reproduces the published "
                "safety factors (2.21 / 2.73 / 2.20 / 2.11 / 3.12). Figures inserted as placeholders.")
     mb4_project  = st.text_input("Project", value="Project Spinel", key="mb4_proj")
@@ -1105,13 +1427,13 @@ with tab_mobility:
 
     if st.button("Generate Appendices B–E (.docx)", key="mb4_gen"):
         try:
-            if mb_variant != "measured":
+            if mb_sar_variant != "measured":
                 st.warning("Appendix B (wheel-load derivation) uses Measured-CG data. "
                            "Switch CG variant to 'measured' for the full B-E set.")
-            v4 = vehicle_measured(mb_path)
-            m4 = measurement_measured(mb_path)
-            mu4 = measurement_unladen(mb_path)
-            sh4 = shelter_cg(mb_path)
+            v4 = vehicle_measured(mb_sar_path)
+            m4 = measurement_measured(mb_sar_path)
+            mu4 = measurement_unladen(mb_sar_path)
+            sh4 = shelter_cg(mb_sar_path)
             from sar_report import generate_sar_appendices
             from io import BytesIO
             doc = generate_sar_appendices(
@@ -1155,17 +1477,35 @@ with tab_mobility:
 
     st.divider()
 
-    # ---- Section 5: mobility assistant (collapsible) ----
+    # ---- 6. Mobility assistant (collapsible) ----
+    from mobility_tools import MOBILITY_CAPABILITIES
     render_domain_assistant(
         "mobility",
         "💬 Ask the mobility assistant",
         "e.g. 'is the Spinel E2 stable on a 60% slope?'",
+        capabilities=MOBILITY_CAPABILITIES,
+        examples=[c["example"] for c in MOBILITY_CAPABILITIES[:5]],
+    )
+
+    # ---- 7. UI Guide (floating bubble; explains how to operate the tab, never computes) ----
+    render_floating_assistant(
+        "ui_guide",
+        "🧭 Mobility UI Guide",
+        "e.g. 'why is Run Analysis disabled?'",
+        quickstart=[
+            ("Analyse the existing Spinel",     "How do I analyse the existing Spinel using the workbook baseline?"),
+            ("Enter wheel-scale measurements",  "How do I enter wheel-scale measurements, and what does the Zcg source mean?"),
+            ("Study an equipment modification", "How do I study an equipment modification (add/remove/relocate a component)?"),
+            ("Use a certified CG",              "How do I use the advanced certified CG entry?"),
+            ("Understand the results",          "How do I read the mobility results and the verdict colours?"),
+        ],
     )
 
 
 # ----------------------------------------------------------------------------
 # Footer
 # ----------------------------------------------------------------------------
+
 st.divider()
 st.caption(
     "Physics: 4 load cases per `Shock Isolator_850kg_4 Bayed 35U.xls` reference  ·  "

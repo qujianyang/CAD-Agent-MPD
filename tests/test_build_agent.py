@@ -17,8 +17,38 @@ def test_tiedown_domain_wired():
     names = sorted(t.name for t in DOMAINS["tiedown"]["tools"])
     assert "run_tiedown_check" in names
     assert "recommend_fasteners" in names
-    assert "flag_critical_items" in names
     assert "lookup_knowledge" in names
+    assert "flag_critical_items" not in names   # removed: scan/flag tool retired
+
+
+def test_every_mobility_tool_is_documented():
+    """Every registered mobility tool must appear in the user-facing capability guide,
+    so the guide can't silently fall out of sync with _MOBILITY_TOOLS."""
+    from agent import DOMAINS
+    from mobility_tools import MOBILITY_CAPABILITIES
+    registered = {t.name for t in DOMAINS["mobility"]["tools"]}
+    documented = {c["tool"] for c in MOBILITY_CAPABILITIES}
+    missing = registered - documented
+    assert not missing, f"Mobility tools missing from capability guide: {missing}"
+
+
+def test_every_shock_tool_is_documented():
+    """Every registered shock-mount tool must appear in the user-facing capability guide."""
+    from agent import DOMAINS, SHOCK_CAPABILITIES
+    registered = {t.name for t in DOMAINS["shock_mount"]["tools"]}
+    documented = {c["tool"] for c in SHOCK_CAPABILITIES}
+    missing = registered - documented
+    assert not missing, f"Shock tools missing from capability guide: {missing}"
+
+
+def test_ui_guide_domain_wired():
+    """UI-guide is a calculation-free RAG assistant: only lookup_knowledge, and its
+    prompt enforces parent_topic='ui_guide' scoping."""
+    from agent import DOMAINS
+    cfg = DOMAINS["ui_guide"]
+    names = [t.name for t in cfg["tools"]]
+    assert names == ["lookup_knowledge"]        # RAG only — no engineering tools
+    assert "ui_guide" in cfg["prompt"]          # scoped retrieval enforced in prompt
 
 
 def test_build_agent_unknown_domain():

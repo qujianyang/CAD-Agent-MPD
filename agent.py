@@ -44,7 +44,7 @@ from catalog import (
 )
 from cad_compliance_checker import extract_cad_data as _extract_cad_data_raw
 from tiedown_tools import (
-    run_tiedown_check, recommend_fasteners, flag_critical_items, _TIEDOWN_PROMPT,
+    run_tiedown_check, recommend_fasteners, _TIEDOWN_PROMPT,
 )
 from mobility_tools import (
     run_mobility_check, slope_limit, cornering_check, flag_unstable,
@@ -820,10 +820,43 @@ _SHOCK_TOOLS = [
     list_cad_files,
 ]
 
+# User-facing capability registry for the shock-mount assistant. Curated for end users —
+# one row per registered tool so the drift test (test_every_shock_tool_is_documented)
+# can assert complete coverage with registered - documented.
+SHOCK_CAPABILITIES = [
+    {"capability": "Isolator selection",
+     "purpose": "Pick the softest passing part from the CB61400/CB1400/CB1500/CB1700 catalog",
+     "example": "Select an isolator for a 1500 kg rack, 6 bottom + 4 wall mounts.",
+     "tool": "select_isolator"},
+    {"capability": "Shock analysis verification",
+     "purpose": "Verify GT, natural frequency, and dynamic deflection for a specific part",
+     "example": "Does CB1400-12 pass for a 900 kg unit with half-sine 15g 11ms?",
+     "tool": "run_shock_analysis"},
+    {"capability": "Capacity / mass limit",
+     "purpose": "Find the mass range a given isolator part can handle across all load cases",
+     "example": "What is the maximum mass CB1500-8 can support?",
+     "tool": "find_capacity_limit"},
+    {"capability": "Deflection-constrained filtering",
+     "purpose": "List parts that pass shock analysis and stay within a clearance limit",
+     "example": "Which parts pass for 1200 kg with deflection under 15 mm?",
+     "tool": "filter_by_deflection"},
+    {"capability": "CAD data extraction",
+     "purpose": "Pull mass, CG, and bounding envelope from a SolidWorks assembly",
+     "example": "Extract mass and CG from the open SolidWorks assembly.",
+     "tool": "extract_cad_data"},
+    {"capability": "SolidWorks file discovery",
+     "purpose": "List available .SLDASM files in the project directory",
+     "example": "What SolidWorks assemblies are available?",
+     "tool": "list_cad_files"},
+    {"capability": "Engineering references",
+     "purpose": "Explain shock isolation formulas and catalog selection rules",
+     "example": "How is transmitted G calculated?",
+     "tool": "lookup_knowledge"},
+]
+
 _TIEDOWN_TOOLS = [
     run_tiedown_check,
     recommend_fasteners,
-    flag_critical_items,
     lookup_knowledge,           # shared retriever; tiedown prompt scopes it to parent_topic="tiedown"
 ]
 
@@ -837,7 +870,6 @@ _UNIFIED_TOOLS = [
     # tie-down
     run_tiedown_check,
     recommend_fasteners,
-    flag_critical_items,
     # mobility / stability
     run_mobility_check,
     slope_limit,
@@ -892,7 +924,6 @@ SHOCK ISOLATION
 TIE-DOWN
 - run_tiedown_check   : SF for a specific item + fastener + qty (4G/2G/1.5G).
 - recommend_fasteners : size the smallest fastener + qty for a target SF.
-- flag_critical_items : items in the workbook below a margin (default SF 2.0).
 
 MOBILITY
 - run_mobility_check  : DEFAULT for the Spinel E2 / "the vehicle" / any workbook
@@ -916,11 +947,31 @@ SHARED
 - Keep it terse. This user is an engineer; skip hand-holding.
 """
 
+_UI_GUIDE_PROMPT = """\
+You are the MOBILITY TAB UI GUIDE for this application. You explain HOW TO OPERATE
+the app -- which control to use, what each input means, what a button does, why it is
+disabled. You do NOT perform engineering calculations.
+
+HARD RULES:
+- NEVER compute or quote a safety factor, slope limit, force, axle load, or any number
+  for the user's vehicle. If they ask for a calculation, tell them to use the engineering
+  "Ask the mobility assistant" panel, and suggest the exact question to type there.
+- ALWAYS call lookup_knowledge with parent_topic="ui_guide" before answering, and base
+  your answer on what it returns. If it returns nothing useful, say so briefly.
+- Be concise and practical. Name the on-screen control (e.g. the "Vehicle source" radio,
+  the "Zcg source" dropdown, the "Run Analysis" button).
+- If the user just greets you, reply in ONE friendly sentence and offer 2-3 of the
+  quick-start choices. Do not mention tools, JSON, or any internal format to the user.
+"""
+
+_UI_GUIDE_TOOLS = [lookup_knowledge]
+
 DOMAINS = {
-    "shock_mount": {"prompt": _SYSTEM_PROMPT,   "tools": _SHOCK_TOOLS},
-    "tiedown":     {"prompt": _TIEDOWN_PROMPT,  "tools": _TIEDOWN_TOOLS},
-    "mobility":    {"prompt": _MOBILITY_PROMPT, "tools": _MOBILITY_TOOLS},
-    "unified":     {"prompt": _UNIFIED_PROMPT,  "tools": _UNIFIED_TOOLS},
+    "shock_mount": {"prompt": _SYSTEM_PROMPT,    "tools": _SHOCK_TOOLS},
+    "tiedown":     {"prompt": _TIEDOWN_PROMPT,   "tools": _TIEDOWN_TOOLS},
+    "mobility":    {"prompt": _MOBILITY_PROMPT,  "tools": _MOBILITY_TOOLS},
+    "unified":     {"prompt": _UNIFIED_PROMPT,   "tools": _UNIFIED_TOOLS},
+    "ui_guide":    {"prompt": _UI_GUIDE_PROMPT,  "tools": _UI_GUIDE_TOOLS},
 }
 
 
