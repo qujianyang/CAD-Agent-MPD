@@ -39,9 +39,6 @@ CASES = [
      "filter_by_deflection"),
 
     # --- tie-down ---
-    ("td-flag",        "tiedown",
-     "Which secured items fall below a safety factor of 2 in the workbook?",
-     "flag_critical_items"),
     ("td-check",       "tiedown",
      "Check a 60 kg item on the front wall held by four 8.8 M8 bolts at SF 2.",
      "run_tiedown_check"),

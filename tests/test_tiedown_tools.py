@@ -1,5 +1,5 @@
 """Run: .\\mpd\\Scripts\\python.exe test_tiedown_tools.py  (deterministic; reads the workbook)"""
-from tiedown_tools import run_tiedown_check, recommend_fasteners, flag_critical_items
+from tiedown_tools import run_tiedown_check, recommend_fasteners
 
 
 def test_run_tiedown_check_generator():
@@ -26,11 +26,6 @@ def test_recommend_fasteners_prefers_bolt():
     })
     assert "M10" in out                 # smallest valid bolt at SF 1.0
     assert "RECOMMENDED" in out
-
-
-def test_flag_critical_items_lists_water_cans():
-    out = flag_critical_items.invoke({"target_SF": 2.0})
-    assert "Water Jerry Cans" in out    # min SF 1.06 < 2.0
 
 
 def _run():

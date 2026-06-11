@@ -5,9 +5,8 @@ every number comes from those modules, never from the LLM.
 """
 from langchain_core.tools import tool
 
-from tiedown_engine import MountFace, Item, analyze_item, run_tiedown_analysis, format_item_detail
-from fastener_catalog import make_fastener, resolve_fastener, size_fasteners as _size_fasteners
-from tiedown_import import import_workbook, WB_DEFAULT
+from tiedown_engine import MountFace, Item, analyze_item, format_item_detail
+from fastener_catalog import resolve_fastener, size_fasteners as _size_fasteners
 
 _FACE_ALIASES = {
     "wall_x": MountFace.WALL_X, "x": MountFace.WALL_X, "front": MountFace.WALL_X,
@@ -106,41 +105,6 @@ def recommend_fasteners(weight_kg: float, mount_face: str, target_SF: float = 1.
     return "\n".join(lines)
 
 
-@tool
-def flag_critical_items(target_SF: float = 2.0, workbook_path: str = "") -> str:
-    """
-    Import the tie-down provision workbook and list the items whose minimum safety
-    factor falls below a target margin (the marginal / at-risk items).
-
-    OMIT both parameters to use the defaults (target_SF=2.0, the configured workbook).
-
-    Args:
-        target_SF     : Margin to flag against. Default 2.0. OMIT unless the user specifies.
-        workbook_path : Path to a tie-down .xlsx. OMIT to use the configured default.
-    """
-    notes = []
-    if target_SF is None or target_SF <= 0:
-        notes.append(f"NOTE: target_SF was {target_SF!r} (invalid); substituted default 2.0")
-        target_SF = 2.0
-    path = workbook_path or WB_DEFAULT
-    try:
-        items = import_workbook(path)
-    except Exception as e:
-        return f"ERROR: could not read workbook at {path}: {e}"
-    report = run_tiedown_analysis(items, target_SF=target_SF)
-    crit = sorted(report.critical_items(), key=lambda r: r.min_SF)
-    lines = notes + [
-        f"=== CRITICAL ITEMS (min SF < {target_SF}) ===",
-        f"Workbook: {path}",
-        f"{len(crit)} of {len(items)} items below target:",
-    ]
-    for r in crit:
-        lines.append(f"  {r.item.name[:40]:<40} min SF {r.min_SF:>7.3f} ({r.limiting_axis.axis})")
-    if not crit:
-        lines.append("  (none -- all items meet the target)")
-    return "\n".join(lines)
-
-
 _TIEDOWN_PROMPT = """\
 You are a mechanical engineering assistant specializing in TIE-DOWN / cargo securing
 for transported military shelter equipment.
@@ -161,7 +125,6 @@ CRITICAL parameter rule for ALL tools:
 Tool guide:
 - run_tiedown_check  : verify a specific item + fastener + quantity.
 - recommend_fasteners: size the smallest fastener + quantity for a target SF.
-- flag_critical_items: list items below a margin (default SF 2.0) from the workbook.
 - lookup_knowledge   : ALWAYS pass parent_topic="tiedown". Use it to cite the design
   loads, the mount-face tension/shear rule, fastener capacities, or the selection rule.
 
