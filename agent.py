@@ -44,7 +44,8 @@ from catalog import (
 )
 from cad_compliance_checker import extract_cad_data as _extract_cad_data_raw
 from tiedown_tools import (
-    run_tiedown_check, recommend_fasteners, _TIEDOWN_PROMPT,
+    run_tiedown_check, recommend_fasteners, get_fastener_data, check_workbook_item,
+    _TIEDOWN_PROMPT,
 )
 from mobility_tools import (
     run_mobility_check, slope_limit, cornering_check, flag_unstable,
@@ -858,6 +859,8 @@ SHOCK_CAPABILITIES = [
 _TIEDOWN_TOOLS = [
     run_tiedown_check,
     recommend_fasteners,
+    get_fastener_data,
+    check_workbook_item,
     lookup_knowledge,           # shared retriever; tiedown prompt scopes it to parent_topic="tiedown"
 ]
 
@@ -875,6 +878,8 @@ _UNIFIED_TOOLS = [
     # tie-down
     run_tiedown_check,
     recommend_fasteners,
+    get_fastener_data,
+    check_workbook_item,
     # mobility / stability
     run_mobility_check,
     get_vehicle_baseline,
@@ -931,7 +936,12 @@ SHOCK ISOLATION
 
 TIE-DOWN
 - run_tiedown_check   : SF for a specific item + fastener + qty (4G/2G/1.5G).
-- recommend_fasteners : size the smallest fastener + qty for a target SF.
+- recommend_fasteners : SIZING -- "how many M12 bolts?" (pass the named fastener)
+                        or "smallest fastener?" (omit it).
+- get_fastener_data   : capacity / rated-load NUMBERS from the catalog. Never
+                        answer a capacity from memory.
+- check_workbook_item : the validated tie-down workbook (59 items) -- item by
+                        name ("does the generator pass?") or summary (omit name).
 
 MOBILITY
 - run_mobility_check  : DEFAULT for the Spinel E2 / "the vehicle" / any workbook

@@ -1,0 +1,237 @@
+{
+  "summary": {
+    "routing": "16/16",
+    "clean": "14/16",
+    "avg_calls": 1.19,
+    "avg_latency_s": 33.37
+  },
+  "cases": [
+    {
+      "id": "shock-select",
+      "domain": "shock_mount",
+      "question": "Select an isolator for a 1500 kg rack with 6 bottom and 4 wall mounts.",
+      "expected": "select_isolator",
+      "tools_called": [
+        "select_isolator",
+        "lookup_knowledge"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 2,
+      "latency_s": 77.02,
+      "answer": "**Recommendation:** CB61400-50 in 6 bottom + 4 wall configuration\n\n**Why this part:** CB61400-50 is the softest valid part that passes all 4 load cases (Comp-Bottom, Comp-Wall, Roll-Wall, Roll-Bottom) with a GT ratio of 21% of the limit. It has the lowest K_compression among all valid candidates, wh"
+    },
+    {
+      "id": "shock-capacity",
+      "domain": "shock_mount",
+      "question": "What's the heaviest mass a CB1400-30 can support?",
+      "expected": "find_capacity_limit",
+      "tools_called": [
+        "find_capacity_limit",
+        "lookup_knowledge"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 2,
+      "latency_s": 8.25,
+      "answer": "The heaviest mass a CB1400-30 can support is 1877 kg. \n\nThe part fails when the mass is below 154 kg because the transmitted G (GT) exceeds the limit of 10.0G in the Comp - Wall (Y-axis, lateral) direction. \n\nThe part also fails when the mass is above 1877 kg because the dynamic deflection (dD) exce"
+    },
+    {
+      "id": "shock-clearance",
+      "domain": "shock_mount",
+      "question": "Which isolator keeps deflection under 30 mm for a 1000 kg rack?",
+      "expected": "filter_by_deflection",
+      "tools_called": [
+        "filter_by_deflection"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 78.34,
+      "answer": "Based on the output, the recommended isolator that keeps deflection under 30 mm for a 1000 kg rack is CB1500-20. This part has a worst-case dynamic deflection (dD) of 25.8 mm, which is within the specified limit of 30 mm. Additionally, it has a worst-case transmitted G (GT) of 6.62 G, which is below"
+    },
+    {
+      "id": "td-check",
+      "domain": "tiedown",
+      "question": "Check a 60 kg item on the front wall held by four 8.8 M8 bolts at SF 2.",
+      "expected": "run_tiedown_check",
+      "tools_called": [
+        "run_tiedown_check"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 75.12,
+      "answer": "The item passes the safety factor check with a minimum safety factor of 35.709, which is greater than the target safety factor of 2.0."
+    },
+    {
+      "id": "td-size",
+      "domain": "tiedown",
+      "question": "How many M12 8.8 bolts to floor-mount a 1269 kg generator at SF 2?",
+      "expected": "recommend_fasteners",
+      "tools_called": [
+        "recommend_fasteners"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 9.58,
+      "answer": "To floor-mount a 1269 kg generator at a safety factor of 2, you would need 5 M12 8.8 bolts. This configuration achieves a minimum safety factor of 2.45, with the limiting axis being the longitudinal axis. There are also alternative fastening options available, including 8.8 M10 x6, Camlock Strap (1."
+    },
+    {
+      "id": "td-data",
+      "domain": "tiedown",
+      "question": "What is the shear capacity of an 8.8 M10 bolt?",
+      "expected": "get_fastener_data",
+      "tools_called": [
+        "get_fastener_data"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 3.56,
+      "answer": "The shear capacity of an 8.8 M10 bolt is 16,733.44 N."
+    },
+    {
+      "id": "td-wb",
+      "domain": "tiedown",
+      "question": "Does the generator in the tie-down workbook pass at SF 1.5?",
+      "expected": "check_workbook_item",
+      "tools_called": [
+        "check_workbook_item",
+        "check_workbook_item"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 2,
+      "latency_s": 6.3,
+      "answer": "The generator in the tie-down workbook passes at SF 1.5."
+    },
+    {
+      "id": "mob-slope",
+      "domain": "mobility",
+      "question": "Is the Spinel E2 stable on a 60% slope?",
+      "expected": "run_mobility_check",
+      "tools_called": [
+        "run_mobility_check"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 8.9,
+      "answer": "The Spinel E2 is stable on a 60% slope, with a safety factor of 2.2093 for ascending and 2.7356 for descending. The critical tip angle is 52.97\u00b0 for ascending and 58.65\u00b0 for descending."
+    },
+    {
+      "id": "mob-corner",
+      "domain": "mobility",
+      "question": "What's the max safe cornering speed for the Spinel?",
+      "expected": "run_mobility_check",
+      "tools_called": [
+        "run_mobility_check"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 5.17,
+      "answer": "The maximum safe cornering speed for the Spinel is 28.7 km/h."
+    },
+    {
+      "id": "mob-axle",
+      "domain": "mobility",
+      "question": "Give me the Spinel's axle loadings \u2014 are they within limits?",
+      "expected": "get_vehicle_baseline",
+      "tools_called": [
+        "get_vehicle_baseline"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 5.24,
+      "answer": "The Spinel's axle loadings are within limits. The front axle is at 44.68% of the gross vehicle weight (GW), which is above the minimum required 25%. The rear axle is also within its limit."
+    },
+    {
+      "id": "mob-custom",
+      "domain": "mobility",
+      "question": "A truck with Zcg 1500 mm, Xcg 2000 mm, wheelbase 4000 mm, track 1800 mm, GW 3000 kg \u2014 is it stable ascending a 30% slope?",
+      "expected": "slope_limit",
+      "tools_called": [
+        "slope_limit"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 6.47,
+      "answer": "The truck is stable ascending a 30% slope, with a safety factor of 4.4444 and a critical tip angle of 53.13\u00b0."
+    },
+    {
+      "id": "mob-baseline",
+      "domain": "mobility",
+      "question": "What is the measured Xcg of the Spinel E2?",
+      "expected": "get_vehicle_baseline",
+      "tools_called": [
+        "get_vehicle_baseline"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 7.31,
+      "answer": "The measured Xcg of the Spinel E2 is 2,655.5 mm from the front axle."
+    },
+    {
+      "id": "mob-variants",
+      "domain": "mobility",
+      "question": "What's the difference between the measured and theory CG?",
+      "expected": "get_vehicle_baseline",
+      "tools_called": [
+        "get_vehicle_baseline"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 20.83,
+      "answer": "The difference between the measured and theory CG is:\n\n* GW: +482 kg\n* Xcg: +104.8 mm\n* Ycg: -34.3 mm\n* Zcg: -11.3 mm"
+    },
+    {
+      "id": "mob-wheel",
+      "domain": "mobility",
+      "question": "Wheel loads: FL 4000, FR 3975, RL 4750, RR 5125 kg. Where is the CG?",
+      "expected": "derive_cg_from_wheel_loads",
+      "tools_called": [
+        "derive_cg_from_wheel_loads"
+      ],
+      "routed": true,
+      "had_error": false,
+      "n_calls": 1,
+      "latency_s": 200.55,
+      "answer": "The CG is located at 2,655.5 mm from the front axle and 20.5 mm from the centerline (+right). The front axle carries 44.68% of the GW, and the rear axle carries 55.32% of the GW."
+    },
+    {
+      "id": "mob-whatif",
+      "domain": "mobility",
+      "question": "If I add a 3200 kg shelter at X=4000 mm, Z=2500 mm to the measured E2, what's the new Xcg and does the rear axle stay within limits?",
+      "expected": "evaluate_mass_change",
+      "tools_called": [
+        "evaluate_mass_change"
+      ],
+      "routed": true,
+      "had_error": true,
+      "n_calls": 1,
+      "latency_s": 16.0,
+      "answer": "<exception: [429] Too Many Requests\n{'status': 429, 'title': 'Too Many Requests'}>"
+    },
+    {
+      "id": "mob-ask",
+      "domain": "mobility",
+      "question": "If I add a 3200 kg payload to the E2, what is the expected Xcg?",
+      "expected": null,
+      "tools_called": [
+        "evaluate_mass_change"
+      ],
+      "routed": true,
+      "had_error": true,
+      "n_calls": 1,
+      "latency_s": 5.3,
+      "answer": "I apologize, but I need more information to answer your question. Can you please provide the position of the payload (X, Y, Z coordinates) so I can accurately calculate the expected Xcg?"
+    }
+  ]
+}

@@ -1008,10 +1008,13 @@ with tab_tiedown:
 
     st.divider()
     # ---- Section 5: tie-down assistant (collapsible) ----
+    from tiedown_tools import TIEDOWN_CAPABILITIES
     render_domain_assistant(
         "tiedown",
         "💬 Ask the tie-down assistant",
         "e.g. 'how many M12 bolts to floor-mount a 1269 kg generator at SF 2?'",
+        capabilities=TIEDOWN_CAPABILITIES,
+        examples=[c["example"] for c in TIEDOWN_CAPABILITIES[:5]],
     )
 
 

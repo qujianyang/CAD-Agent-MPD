@@ -12,13 +12,26 @@ def test_shock_domain_unchanged():
     assert shock["prompt"] is _SYSTEM_PROMPT      # exact same prompt object
 
 
+TIEDOWN_5 = sorted([
+    "run_tiedown_check", "recommend_fasteners", "get_fastener_data",
+    "check_workbook_item", "lookup_knowledge",
+])
+
+
 def test_tiedown_domain_wired():
     from agent import DOMAINS
     names = sorted(t.name for t in DOMAINS["tiedown"]["tools"])
-    assert "run_tiedown_check" in names
-    assert "recommend_fasteners" in names
-    assert "lookup_knowledge" in names
-    assert "flag_critical_items" not in names   # removed: scan/flag tool retired
+    assert names == TIEDOWN_5   # exact lock; flag_critical_items stays retired
+
+
+def test_every_tiedown_tool_is_documented():
+    """Every registered tie-down tool must appear in the user-facing capability guide."""
+    from agent import DOMAINS
+    from tiedown_tools import TIEDOWN_CAPABILITIES
+    registered = {t.name for t in DOMAINS["tiedown"]["tools"]}
+    documented = {c["tool"] for c in TIEDOWN_CAPABILITIES}
+    missing = registered - documented
+    assert not missing, f"Tie-down tools missing from capability guide: {missing}"
 
 
 MOBILITY_8 = sorted([

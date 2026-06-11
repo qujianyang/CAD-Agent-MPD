@@ -45,6 +45,12 @@ CASES = [
     ("td-size",        "tiedown",
      "How many M12 8.8 bolts to floor-mount a 1269 kg generator at SF 2?",
      "recommend_fasteners"),
+    ("td-data",        "tiedown",
+     "What is the shear capacity of an 8.8 M10 bolt?",
+     "get_fastener_data"),
+    ("td-wb",          "tiedown",
+     "Does the generator in the tie-down workbook pass at SF 1.5?",
+     "check_workbook_item"),
 
     # --- mobility (known vehicle) ---
     ("mob-slope",      "mobility",
