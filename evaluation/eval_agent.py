@@ -37,6 +37,12 @@ CASES = [
     ("shock-clearance","shock_mount",
      "Which isolator keeps deflection under 30 mm for a 1000 kg rack?",
      "filter_by_deflection"),
+    ("shock-verify",   "shock_mount",
+     "Does CB1400-12 pass for a 900 kg unit with a half-sine 15G 11ms pulse?",
+     "run_shock_analysis"),
+    ("shock-data",     "shock_mount",
+     "What is the stiffness and rated travel of CB1400-30?",
+     "get_isolator_data"),
 
     # --- tie-down ---
     ("td-check",       "tiedown",

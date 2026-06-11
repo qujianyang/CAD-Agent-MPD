@@ -38,7 +38,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
 from physics_engine import ShockEnv, run_analysis, format_report
 from catalog import (
-    ALL_CATALOGS,
+    ALL_CATALOGS, SELECT_OBJECTIVES,
     CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
     select_and_analyze, format_selection_table, selection_context_for_llm,
 )
@@ -126,6 +126,17 @@ def extract_cad_data(cad_file_path: str = "") -> str:
     return "\n".join(lines)
 
 
+def _parse_pulse_shape(pulse_shape: str):
+    """Normalize a pulse-shape string; fall back to sawtooth with a NOTE."""
+    s = (pulse_shape or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if s in ("", "sawtooth", "saw_tooth"):
+        return "sawtooth", None
+    if s in ("half_sine", "halfsine"):
+        return "half_sine", None
+    return "sawtooth", (f"pulse_shape was {pulse_shape!r} (unknown); substituted "
+                        f"default 'sawtooth' (valid: sawtooth, half_sine)")
+
+
 @tool
 def select_isolator(
     mass_kg: float,
@@ -135,10 +146,13 @@ def select_isolator(
     to_s: float = 0.011,
     GT_limit_G: float = 10.0,
     series: str = "ALL",
+    pulse_shape: str = "sawtooth",
+    objective: str = "best_isolation",
 ) -> str:
     """
     Select the optimal wire rope isolator from the CB61400 / CB1400 / CB1500 / CB1700 catalog.
-    Evaluates every matching part and recommends the SOFTEST (best isolation) that passes:
+    Evaluates every matching part and recommends the best per `objective` (default:
+    SOFTEST that passes = best isolation):
       - GT < GT_limit in all 3 load directions (compression vertical, lateral, shear)
       - Dynamic deflection < isolator's rated travel in all 3 directions
     Returns the full selection table plus mathematical proof for the recommended part.
@@ -150,7 +164,8 @@ def select_isolator(
 
     Project defaults (used if you omit the parameter):
         n_bottom=6, n_wall=4, Ao_G=20.0G, to_s=0.011s (11ms),
-        GT_limit_G=10.0G, series="ALL"
+        GT_limit_G=10.0G, series="ALL", pulse_shape="sawtooth",
+        objective="best_isolation"
 
     Args:
         mass_kg    : REQUIRED. Total assembly mass in kg. Get from extract_cad_data
@@ -163,6 +178,11 @@ def select_isolator(
                      OMIT unless user explicitly gives a different pulse duration.
         GT_limit_G : Max allowable transmitted G. Default 10.0 G. OMIT unless user says.
         series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
+        pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
+                     names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.
+        objective  : Tiebreak among passing parts: "best_isolation" (softest, default),
+                     "max_clearance" (smallest deflection), or "balanced" (furthest
+                     from any limit). OMIT unless the user states a preference.
     """
     catalog_map = {
         "CB1400": CB1400_CATALOG,
@@ -188,8 +208,15 @@ def select_isolator(
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
         GT_limit_G = 10.0
+    pulse, pulse_note = _parse_pulse_shape(pulse_shape)
+    if pulse_note:
+        substitutions.append(pulse_note)
+    if objective not in SELECT_OBJECTIVES:
+        substitutions.append(f"objective was {objective!r} (unknown); substituted default "
+                             f"'best_isolation' (valid: {', '.join(SELECT_OBJECTIVES)})")
+        objective = "best_isolation"
 
-    env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
+    env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G, pulse_shape=pulse)
 
     report, candidates = select_and_analyze(
         mass_kg=mass_kg,
@@ -198,6 +225,7 @@ def select_isolator(
         cad_props=None,     # CG coordinate calibration pending; mass-only for now
         shock_env=env,
         catalog=catalog,
+        objective=objective,
     )
 
     valid = [c for c in candidates if c.valid]
@@ -213,7 +241,8 @@ def select_isolator(
         lines.append("")
     lines += [
         "=== ISOLATOR SELECTION RESULT ===",
-        f"Input:  mass={mass_kg} kg | mounts={n_bottom} bottom + {n_wall} wall | shock={Ao_G}G/{to_s*1000:.0f}ms | GT_limit={GT_limit_G}G",
+        f"Input:  mass={mass_kg} kg | mounts={n_bottom} bottom + {n_wall} wall | "
+        f"shock={Ao_G}G/{to_s*1000:.0f}ms {pulse} | GT_limit={GT_limit_G}G | objective={objective}",
         "",
     ]
     if rec:
@@ -255,6 +284,7 @@ def run_shock_analysis(
     Ao_G: float = 20.0,
     to_s: float = 0.011,
     GT_limit_G: float = 10.0,
+    pulse_shape: str = "sawtooth",
 ) -> str:
     """
     Verify whether a specific isolator part passes shock analysis for a given mass.
@@ -277,6 +307,8 @@ def run_shock_analysis(
         Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user specifies.
         to_s       : Shock pulse duration (seconds). Default 0.011. OMIT unless user specifies.
         GT_limit_G : Max allowable transmitted G. Default 10.0. OMIT unless user says.
+        pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
+                     names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.
     """
     entry = next((e for e in ALL_CATALOGS if e.part_no == part_no), None)
     if entry is None:
@@ -298,9 +330,12 @@ def run_shock_analysis(
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
         GT_limit_G = 10.0
+    pulse, pulse_note = _parse_pulse_shape(pulse_shape)
+    if pulse_note:
+        substitutions.append(pulse_note)
 
     spec = entry.to_isolator_spec()
-    env  = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
+    env  = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G, pulse_shape=pulse)
     report = run_analysis(mass_kg, n_bottom, n_wall, shock_env=env, isolator=spec)
     body = format_report(report)
     if substitutions:
@@ -396,6 +431,7 @@ def find_capacity_limit(
     Ao_G: float = 20.0,
     to_s: float = 0.011,
     GT_limit_G: float = 10.0,
+    pulse_shape: str = "sawtooth",
 ) -> str:
     """
     Find the mass range where a specific isolator part passes all 4 load cases.
@@ -418,6 +454,8 @@ def find_capacity_limit(
         Ao_G      : Shock magnitude in G. Default 20.0. OMIT unless user specifies.
         to_s      : Shock pulse duration (s). Default 0.011. OMIT unless user specifies.
         GT_limit_G: Max allowable transmitted G. Default 10.0. OMIT unless user specifies.
+        pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
+                     names a pulse shape.
 
     Returns mass range as "X kg <= M <= Y kg" plus the limiting failure reason
     at each boundary (which direction failed and by how much).
@@ -441,9 +479,12 @@ def find_capacity_limit(
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
         GT_limit_G = 10.0
+    pulse, pulse_note = _parse_pulse_shape(pulse_shape)
+    if pulse_note:
+        substitutions.append(pulse_note)
 
     spec = entry.to_isolator_spec()
-    env  = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
+    env  = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G, pulse_shape=pulse)
 
     def _eval(mass_kg: float):
         """Return (all_passed: bool, report: PhysicsReport | None)."""
@@ -489,7 +530,7 @@ def find_capacity_limit(
         why = _failure_reason(r)
         return (
             f"=== CAPACITY ANALYSIS: {part_no} ===\n"
-            f"Config: {n_bottom} bottom + {n_wall} wall mounts | Shock: {Ao_G}G/{to_s*1000:.0f}ms | GT limit: {GT_limit_G}G\n\n"
+            f"Config: {n_bottom} bottom + {n_wall} wall mounts | Shock: {Ao_G}G/{to_s*1000:.0f}ms {pulse} | GT limit: {GT_limit_G}G\n\n"
             f"NO valid mass found in {SEARCH_LO:.0f}-{SEARCH_HI:.0f} kg range.\n"
             f"At 1000 kg: FAIL — {why}\n\n"
             f"Try: a softer part (lower K), more mounts, or a looser GT limit."
@@ -541,7 +582,7 @@ def find_capacity_limit(
     lines += [
         f"=== CAPACITY ANALYSIS: {part_no} (Series {entry.series}) ===",
         f"Config: {n_bottom} bottom + {n_wall} wall mounts",
-        f"Shock : {Ao_G}G / {to_s*1000:.0f}ms saw-tooth",
+        f"Shock : {Ao_G}G / {to_s*1000:.0f}ms {pulse}",
         f"GT limit: {GT_limit_G}G | Travel limits: dmax_comp={entry.d_max_comp_mm:.1f}mm, dmax_shear={entry.d_max_shear_mm:.1f}mm",
         "",
         f"Valid mass range: {M_min:.0f} kg <= M <= {M_max:.0f} kg",
@@ -564,6 +605,7 @@ def filter_by_deflection(
     to_s: float = 0.011,
     GT_limit_G: float = 10.0,
     series: str = "ALL",
+    pulse_shape: str = "sawtooth",
 ) -> str:
     """
     List isolator parts that BOTH pass the 4-case shock analysis AND keep
@@ -592,6 +634,8 @@ def filter_by_deflection(
         to_s       : Shock pulse duration (s). Default 0.011. OMIT unless user says.
         GT_limit_G : Maximum transmitted G. Default 10.0. OMIT unless user says.
         series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
+        pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
+                     names a pulse shape.
 
     Returns the qualifying parts sorted softest-K first (best isolation that
     still fits the clearance), plus a list of parts that pass the 4-case
@@ -613,6 +657,9 @@ def filter_by_deflection(
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted 10.0 G")
         GT_limit_G = 10.0
+    pulse, pulse_note = _parse_pulse_shape(pulse_shape)
+    if pulse_note:
+        substitutions.append(pulse_note)
 
     catalog_map = {
         "CB1400": CB1400_CATALOG,
@@ -622,7 +669,7 @@ def filter_by_deflection(
         "ALL":    ALL_CATALOGS,
     }
     catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
-    env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G)
+    env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G, pulse_shape=pulse)
 
     _, candidates = select_and_analyze(
         mass_kg   = mass_kg,
@@ -663,7 +710,7 @@ def filter_by_deflection(
     lines += [
         "=== DEFLECTION-CONSTRAINED SELECTION ===",
         f"Input: mass={mass_kg} kg | mounts={n_bottom}+{n_wall} | "
-        f"shock={Ao_G}G/{to_s*1000:.0f}ms | GT_limit={GT_limit_G}G",
+        f"shock={Ao_G}G/{to_s*1000:.0f}ms {pulse} | GT_limit={GT_limit_G}G",
         f"Extra constraint: worst-case dD must be <= {max_dD_mm:.1f} mm",
         "",
     ]
@@ -703,6 +750,76 @@ def filter_by_deflection(
     return "\n".join(lines)
 
 
+_SERIES_MAP = {
+    "CB61400": CB61400_CATALOG,
+    "CB1400":  CB1400_CATALOG,
+    "CB1500":  CB1500_CATALOG,
+    "CB1700":  CB1700_CATALOG,
+}
+
+
+@tool
+def get_isolator_data(part_no: str = "", series: str = "") -> str:
+    """
+    DATA LOOKUP in the isolator catalog -- no analysis. Use this for:
+      - "what is the stiffness / rated travel / size of CB1400-30?"
+      - "what parts are in the CB1500 series?"
+      - "what series / parts are available?"
+    Catalog numbers come from THIS tool only -- never from memory, and never
+    convert lb/in to N/m yourself.
+
+    OMIT both arguments for the overview of all four series.
+
+    Args:
+        part_no : Exact part number, e.g. "CB1400-30". OMIT if asking about a series.
+        series  : "CB61400", "CB1400", "CB1500" or "CB1700". OMIT for all series.
+    """
+    if part_no.strip():
+        key = part_no.strip().upper()
+        entry = next((e for e in ALL_CATALOGS if e.part_no.upper() == key), None)
+        if entry is None:
+            available = sorted({e.part_no for e in ALL_CATALOGS})
+            return (f"ERROR: Part '{part_no}' not found in catalog.\n"
+                    f"Available parts: {', '.join(available)}")
+        return "\n".join([
+            f"Part: {entry.part_no}  (Series {entry.series})",
+            f"  Size (H x W)        : {entry.H_in}\" x {entry.W_in}\"  "
+            f"({entry.H_in * 25.4:.1f} x {entry.W_in * 25.4:.1f} mm)",
+            f"  K compression       : {entry.k_comp_lbin:,.0f} lb/in  ({entry.k_comp_Nm:,.0f} N/m)",
+            f"  K shear/roll        : {entry.k_shear_lbin:,.0f} lb/in  ({entry.k_shear_Nm:,.0f} N/m)",
+            f"  Rated travel (comp) : {entry.d_max_comp_in}\"  ({entry.d_max_comp_mm:.2f} mm)",
+            f"  Rated travel (shear): {entry.d_max_shear_in}\"  ({entry.d_max_shear_mm:.2f} mm)",
+        ])
+
+    if series.strip():
+        key = series.strip().upper()
+        cat = _SERIES_MAP.get(key)
+        if cat is None:
+            return (f"ERROR: unknown series {series!r}. "
+                    f"Valid series: {', '.join(_SERIES_MAP)}.")
+        lines = [
+            f"=== {key} SERIES ({len(cat)} parts; softest last) ===",
+            f"{'Part':<12} {'Kcomp lb/in':>12} {'Kshear lb/in':>13} "
+            f"{'dmax comp mm':>13} {'dmax shear mm':>14}",
+        ]
+        for e in sorted(cat, key=lambda e: -e.k_comp_lbin):
+            lines.append(f"{e.part_no:<12} {e.k_comp_lbin:>12,.0f} {e.k_shear_lbin:>13,.0f} "
+                         f"{e.d_max_comp_mm:>13.2f} {e.d_max_shear_mm:>14.2f}")
+        return "\n".join(lines)
+
+    lines = ["=== ISOLATOR CATALOG OVERVIEW (4 series) ===",
+             "Stiffer K -> higher GT but less deflection; softer K -> better isolation."]
+    for name, cat in _SERIES_MAP.items():
+        ks = [e.k_comp_lbin for e in cat]
+        ds = [e.d_max_comp_mm for e in cat]
+        lines.append(
+            f"  {name:<8} {len(cat):>2} parts | K_comp {min(ks):,.0f}-{max(ks):,.0f} lb/in | "
+            f"rated travel {min(ds):.0f}-{max(ds):.0f} mm"
+        )
+    lines.append("Give a series for its full table, or a part number for exact data.")
+    return "\n".join(lines)
+
+
 _SYSTEM_PROMPT = """\
 You are a mechanical engineering design assistant specializing in shock isolation \
 for military vehicle-mounted shelter equipment.
@@ -726,6 +843,14 @@ CRITICAL — parameter passing rule for ALL tools:
   makes the physics trivial and the result meaningless.
 - Numeric parameters: pass real numbers (e.g. 0.011, 20.0), never strings of
   truncated numbers (e.g. "0" instead of "0.011").
+
+PULSE SHAPE: every analysis tool accepts pulse_shape ("sawtooth" default, or
+"half_sine"). Pass "half_sine" ONLY when the user says half-sine; otherwise OMIT
+it. A half-sine pulse is ~27% harsher for the same Ao/to (V = (2/pi)*g*Ao*to vs
+0.5*g*Ao*to) — NEVER answer a half-sine question with sawtooth numbers.
+
+CATALOG NUMBERS (stiffness K, rated travel dmax, part size) come ONLY from
+get_isolator_data — never from memory, and never convert lb/in to N/m yourself.
 
 ==========================================================================
 WORKFLOW FOR ISOLATOR SELECTION QUESTIONS (mandatory two-call pattern)
@@ -798,6 +923,15 @@ When the user mentions a deflection / clearance constraint — phrases like \
 fake parameters like dD_mm or max_dD to select_isolator (that tool does not \
 have a deflection-limit parameter).
 
+When the user asks for catalog DATA — "what is the stiffness / travel / size \
+of part X", "list the CB1500 parts", "what series exist" — use \
+get_isolator_data. Do NOT run an analysis just to read off K or dmax.
+
+When the user states a selection PREFERENCE — "best isolation" (default), \
+"maximum clearance margin" / "smallest deflection", or "balanced margins" — \
+pass objective="best_isolation" / "max_clearance" / "balanced" to \
+select_isolator. OMIT objective when the user states no preference.
+
 Always show key numbers. Never invent stiffness values or GT results — \
 call the tools to compute them.
 
@@ -818,6 +952,7 @@ _SHOCK_TOOLS = [
     run_shock_analysis,
     find_capacity_limit,
     filter_by_deflection,
+    get_isolator_data,
     lookup_knowledge,
     list_cad_files,
 ]
@@ -842,6 +977,10 @@ SHOCK_CAPABILITIES = [
      "purpose": "List parts that pass shock analysis and stay within a clearance limit",
      "example": "Which parts pass for 1200 kg with deflection under 15 mm?",
      "tool": "filter_by_deflection"},
+    {"capability": "Catalog data lookup",
+     "purpose": "Stiffness, rated travel and size of any part or series, in catalog and SI units",
+     "example": "What is the stiffness and rated travel of CB1400-30?",
+     "tool": "get_isolator_data"},
     {"capability": "CAD data extraction",
      "purpose": "Pull mass, CG, and bounding envelope from a SolidWorks assembly",
      "example": "Extract mass and CG from the open SolidWorks assembly.",
@@ -875,6 +1014,7 @@ _UNIFIED_TOOLS = [
     run_shock_analysis,
     find_capacity_limit,
     filter_by_deflection,
+    get_isolator_data,
     # tie-down
     run_tiedown_check,
     recommend_fasteners,
@@ -932,6 +1072,8 @@ SHOCK ISOLATION
 - run_shock_analysis  : verify one named part (fn, GT, dD) for a mass.
 - find_capacity_limit : the mass RANGE a part survives ("heaviest it can hold").
 - filter_by_deflection: parts that pass AND fit a clearance limit (mm).
+- get_isolator_data   : catalog NUMBERS (K, rated travel, size) for a part or
+                        series. Never quote catalog data from memory.
 - extract_cad_data    : read mass/CG/envelope from a SolidWorks file (or active doc).
 
 TIE-DOWN

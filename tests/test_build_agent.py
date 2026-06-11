@@ -1,14 +1,15 @@
 """Run: .\\mpd\\Scripts\\python.exe test_build_agent.py  (offline; inspects the registry only)"""
-SHOCK_7 = sorted([
+SHOCK_8 = sorted([
     "extract_cad_data", "select_isolator", "run_shock_analysis",
-    "find_capacity_limit", "filter_by_deflection", "lookup_knowledge", "list_cad_files",
+    "find_capacity_limit", "filter_by_deflection", "get_isolator_data",
+    "lookup_knowledge", "list_cad_files",
 ])
 
 
 def test_shock_domain_unchanged():
     from agent import DOMAINS, _SYSTEM_PROMPT
     shock = DOMAINS["shock_mount"]
-    assert sorted(t.name for t in shock["tools"]) == SHOCK_7
+    assert sorted(t.name for t in shock["tools"]) == SHOCK_8
     assert shock["prompt"] is _SYSTEM_PROMPT      # exact same prompt object
 
 
