@@ -14,6 +14,7 @@ Run on a server (LAN-accessible):
 """
 import os
 import sys
+import math
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
@@ -1283,11 +1284,30 @@ with tab_mobility:
     st.markdown("### 3. Analysis Assumptions")
     aa1, aa2 = st.columns(2)
     mb_grades_long = aa1.multiselect(
-        "Longitudinal grades (%)", [70, 60, 50, 40, 30, 20], default=[60, 50],
-        key="mb_grades_long")
+        "Longitudinal slope grades (%)", [70, 60, 50, 40, 30, 20], default=[60, 50],
+        key="mb_grades_long",
+        help="Each selected grade is tested in BOTH ascending and descending directions.")
     mb_grades_side = aa2.multiselect(
-        "Lateral grades (%)", [40, 30, 25, 20, 15], default=[30, 25],
-        key="mb_grades_side")
+        "Side-slope grades (%)", [40, 30, 25, 20, 15], default=[30, 25],
+        key="mb_grades_side",
+        help="Each selected grade is tested leaning toward BOTH kerbside and roadside.")
+
+    # Make the generated directional cases explicit (mirror the engine's empty-input
+    # fallback at the run_mobility_analysis call below so the preview never lies).
+    _long = list(mb_grades_long) or [60, 50]
+    _side = list(mb_grades_side) or [30, 25]
+    _ang = lambda g: math.degrees(math.atan(g / 100))          # 60% -> 31.0°
+    st.caption(f"**Tests that will run: {2 * len(_long) + 2 * len(_side)}**")
+    pc1, pc2 = st.columns(2)
+    with pc1:
+        st.markdown("**Longitudinal** — ascending + descending")
+        for g in sorted(_long, reverse=True):
+            st.markdown(f"- Ascending {g}% ({_ang(g):.1f}°)  •  Descending {g}% ({_ang(g):.1f}°)")
+    with pc2:
+        st.markdown("**Side-slope** — kerbside + roadside")
+        for g in sorted(_side, reverse=True):
+            st.markdown(f"- Kerbside {g}% ({_ang(g):.1f}°)  •  Roadside {g}% ({_ang(g):.1f}°)")
+
     ab1, ab2, ab3 = st.columns(3)
     mb_speed = ab1.slider("Cornering speed (km/h)", 5, 60, 15, key="mb_speed")
     mb_radius = ab2.slider("Turning radius (m)", 5, 50, 11, key="mb_radius")
@@ -1295,9 +1315,15 @@ with tab_mobility:
     with st.expander("OEM recommended margins (verdict thresholds)"):
         om1, om2, om3 = st.columns(3)
         mb_m_long = om1.number_input("Longitudinal", value=OEM_MARGIN_LONGITUDINAL,
-                                     min_value=1.0, step=0.1, key="mb_m_long")
+                                     min_value=1.0, step=0.1, key="mb_m_long",
+                                     help="Applied to EVERY selected longitudinal grade "
+                                          "(ascending and descending).")
         mb_m_lat = om2.number_input("Lateral", value=OEM_MARGIN_LATERAL,
-                                    min_value=1.0, step=0.1, key="mb_m_lat")
+                                    min_value=1.0, step=0.1, key="mb_m_lat",
+                                    help="Applied to EVERY selected side-slope grade "
+                                         "(kerbside and roadside). Confirm with the OEM "
+                                         "whether 2.2 is intended for all grades or only "
+                                         "the 25% test.")
         mb_m_corner = om3.number_input("Cornering", value=OEM_MARGIN_CORNERING,
                                        min_value=1.0, step=0.1, key="mb_m_corner")
 
