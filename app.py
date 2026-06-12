@@ -905,10 +905,14 @@ with tab_tiedown:
                "(g=9.81). Engine validated against the MCDLL workbook — 177/177 safety factors.")
 
     _FACE_LABELS = {
-        "Front / rear wall (X-normal)":            MountFace.WALL_X,
-        "Floor / ceiling / top / base (Z-normal)": MountFace.FLOOR_Z,
-        "Left / right side wall (Y-normal)":       MountFace.WALL_Y,
+        "Front or rear wall": MountFace.WALL_X,
+        "Floor or ceiling":   MountFace.FLOOR_Z,
+        "Left or right wall": MountFace.WALL_Y,
     }
+    _FACE_HELP = ("Decides which axis loads the fastener in tension vs shear. "
+                  "Opposing faces are equivalent (front=rear: X-normal; "
+                  "floor=ceiling: Z-normal; left=right: Y-normal) -- only the "
+                  "surface's normal axis matters.")
     _BOLT_CLASS_OPTS = list(BOLT_CLASSES.keys())
     _BOLT_SIZE_OPTS  = list(BOLT_SIZES.keys())
     _STRAP_OPTS      = list(NON_BOLTS.keys())
@@ -930,7 +934,8 @@ with tab_tiedown:
     c1, c2, c3 = st.columns([1, 1.6, 1])
     td_wt = c1.number_input("Item weight [kg]", value=60.0, min_value=0.1, max_value=5000.0,
                             step=1.0, key="td_wt")
-    td_face_label = c2.selectbox("Mounted to", list(_FACE_LABELS.keys()), key="td_face")
+    td_face_label = c2.selectbox("Mounting surface", list(_FACE_LABELS.keys()),
+                                 key="td_face", help=_FACE_HELP)
     td_qty = c3.number_input("Fasteners (qty)", value=4, min_value=1, max_value=200, step=1, key="td_qty")
     td_fastener = _td_fastener_picker("td_chk")
     td_tgt = st.number_input("Target safety factor", value=1.0, min_value=0.1, max_value=20.0, step=0.5,
@@ -962,7 +967,8 @@ with tab_tiedown:
     s1, s2, s3 = st.columns([1, 1.6, 1])
     td_swt = s1.number_input("Item weight [kg]", value=1269.0, min_value=0.1, max_value=5000.0,
                              step=1.0, key="td_swt")
-    td_sface_label = s2.selectbox("Mounted to", list(_FACE_LABELS.keys()), key="td_sface")
+    td_sface_label = s2.selectbox("Mounting surface", list(_FACE_LABELS.keys()),
+                                  key="td_sface", help=_FACE_HELP)
     td_stgt = s3.number_input("Target SF", value=2.0, min_value=0.1, max_value=20.0, step=0.5, key="td_stgt")
     if st.button("Recommend fasteners", use_container_width=True, key="td_size_btn"):
         opts = size_fasteners(td_swt, _FACE_LABELS[td_sface_label], target_SF=td_stgt)
