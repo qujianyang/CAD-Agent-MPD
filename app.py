@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 
+import pandas as pd
 import streamlit as st
 
 from cad_compliance_checker import _parse_cad_output
@@ -35,6 +36,7 @@ from mobility_engine import Vehicle, Aero, run_mobility_analysis, format_mobilit
 from mobility_import import (
     vehicle_measured, vehicle_theory, approach_departure_angles,
     measurement_measured, measurement_unladen, shelter_cg, WB_DEFAULT as MB_DEFAULT,
+    shelter_components, shelter_datum_offsets,
 )
 from mobility_scenarios import (
     vehicle_from_certified_cg, vehicle_from_wheel_loads, check_cg_plausibility,
@@ -1235,13 +1237,12 @@ with tab_mobility:
                 st.error(f"Invalid measurement: {e}")
     elif mb_mode == "Design / modification study":
         st.caption(
-            "Start from a workbook baseline, then add / remove / relocate components. "
-            "Component coordinates use the DESIGN datum: X rearward from the front "
-            "ISO twist-lock plane, Y right-positive from the shelter centreline, "
-            "Z from ground. X is converted internally to the front-axle analysis "
-            f"datum (X_axle = X_ISO + {FRONT_AXLE_TO_ISO_PLANE_MM:.0f} mm). "
-            "add uses New X/Y/Z, remove uses Old X/Y/Z, relocate uses both "
-            "(mass unchanged)."
+            "Start from a workbook baseline: browse the existing components, pick one "
+            "to relocate or remove (or add new rows), then apply. Coordinates use the "
+            "DESIGN datum: X rearward from the front ISO twist-lock plane, Y "
+            "right-positive from the shelter centreline, Z from ground. X is converted "
+            "internally to the front-axle analysis datum "
+            f"(X_axle = X_ISO + {FRONT_AXLE_TO_ISO_PLANE_MM:.0f} mm)."
         )
         md1, md2 = st.columns([3, 1])
         mod_path = md1.text_input("Workbook path (.xls)", value=MB_DEFAULT,
@@ -1249,23 +1250,148 @@ with tab_mobility:
         mod_variant = md2.radio("Baseline CG", ["measured", "theory"],
                                 key="mb_mod_variant")
 
-        mod_rows = st.data_editor(
-            [{"Action": "add", "Description": "", "Mass (kg)": None,
-              "Old X from front ISO (mm)": None,
-              "Old Y from centreline (mm, +right)": None,
-              "Old Z from ground (mm)": None,
-              "New X from front ISO (mm)": None,
-              "New Y from centreline (mm, +right)": None,
-              "New Z from ground (mm)": None}],
+        @st.cache_data(show_spinner=False)
+        def _mb_load_components(path: str):
+            """Component table + shelter->vehicle datum offsets (cached per path)."""
+            return shelter_components(path), shelter_datum_offsets(path)
+
+        try:
+            mod_base = (vehicle_measured(mod_path) if mod_variant == "measured"
+                        else vehicle_theory(mod_path))
+            mod_comps, (mod_dx, mod_dz) = _mb_load_components(mod_path)
+        except Exception as e:
+            st.error(f"Workbook read failed: {e}")
+            mod_base, mod_comps = None, []
+
+        # Pending-change state. The editor is keyed on mb_mod_rev so that
+        # programmatic appends (Relocate/Remove buttons) can reseed it.
+        ss = st.session_state
+        ss.setdefault("mb_mod_pending", [])
+        ss.setdefault("mb_mod_rev", 0)
+        ss.setdefault("mb_mod_last", None)
+        _MOD_COLS = ["Action", "Description", "Mass (kg)",
+                     "Old X from front ISO (mm)",
+                     "Old Y from centreline (mm, +right)",
+                     "Old Z from ground (mm)",
+                     "New X from front ISO (mm)",
+                     "New Y from centreline (mm, +right)",
+                     "New Z from ground (mm)"]
+        _MOD_NUM_COLS = _MOD_COLS[2:]
+
+        def _mb_mod_append(prefill: dict):
+            """Merge the user's latest edits, then append one prefilled change row."""
+            if ss.mb_mod_last is not None:
+                ss.mb_mod_pending = [dict(r) for r in ss.mb_mod_last]
+            row = {col: None for col in _MOD_COLS}
+            row.update(prefill)
+            ss.mb_mod_pending = ss.mb_mod_pending + [row]
+            ss.mb_mod_rev += 1
+
+        if mod_base is not None:
+            # ---- (1) baseline summary ----
+            shelter_total = sum(c.total_mass_kg for c in mod_comps)
+            bsum1, bsum2, bsum3, bsum4 = st.columns(4)
+            bsum1.metric("Existing components", f"{len(mod_comps)}")
+            bsum2.metric("Shelter mass", f"{shelter_total:,.0f} kg")
+            bsum3.metric("Baseline GW", f"{mod_base.gw_kg:,.0f} kg")
+            bsum4.metric("Baseline Zcg", f"{mod_base.zcg_mm:,.1f} mm")
+            st.caption(
+                f"Baseline CG ({mod_variant}): Xcg = {mod_base.xcg_mm:,.1f} mm from "
+                f"front axle = {axle_x_to_iso_x(mod_base.xcg_mm):,.1f} mm from front "
+                f"ISO plane | Ycg = {mod_base.ycg_mm:,.1f} mm | "
+                f"Zcg = {mod_base.zcg_mm:,.1f} mm above ground"
+            )
+
+            # ---- (2) read-only component browser ----
+            with st.expander(f"Existing baseline components ({len(mod_comps)})",
+                             expanded=False):
+                fc1, fc2 = st.columns(2)
+                mod_q = fc1.text_input("Search by description", key="mb_mod_search",
+                                       placeholder="e.g. generator")
+                mod_cats = fc2.multiselect(
+                    "Filter by subsystem",
+                    sorted({c.category for c in mod_comps}),
+                    key="mb_mod_cats", placeholder="All subsystems")
+                filtered = [
+                    c for c in mod_comps
+                    if (not mod_q or mod_q.lower() in c.description.lower())
+                    and (not mod_cats or c.category in mod_cats)
+                ]
+                comp_df = pd.DataFrame([{
+                    "ID": c.item_no,
+                    "Subsystem": c.category,
+                    "Description": c.description,
+                    "Qty": c.qty,
+                    "Total mass (kg)": round(c.total_mass_kg, 2),
+                    "X from front ISO (mm)": round(axle_x_to_iso_x(c.x_shelter_mm + mod_dx), 1),
+                    "Y (mm, +right)": round(c.y_mm, 1),
+                    "Z from ground (mm)": round(c.z_shelter_mm + mod_dz, 1),
+                } for c in filtered])
+                ev = st.dataframe(
+                    comp_df, height=320, hide_index=True, use_container_width=True,
+                    on_select="rerun", selection_mode="single-row", key="mb_mod_list",
+                )
+                st.caption(
+                    "Read-only baseline. Workbook shelter-frame coordinates are shown "
+                    "converted to the design datum (X from front ISO plane, Z from "
+                    "ground) so they match the change table 1:1."
+                )
+
+                # ---- (3) selection -> relocate / remove ----
+                sel_rows = list(getattr(getattr(ev, "selection", None), "rows", []) or [])
+                if sel_rows and sel_rows[0] < len(filtered):
+                    sc = filtered[sel_rows[0]]
+                    sc_x = round(axle_x_to_iso_x(sc.x_shelter_mm + mod_dx), 1)
+                    sc_y = round(sc.y_mm, 1)
+                    sc_z = round(sc.z_shelter_mm + mod_dz, 1)
+                    st.markdown(
+                        f"**Selected: {sc.description}** ({sc.category}, item {sc.item_no}) "
+                        f"-- {sc.total_mass_kg:,.1f} kg at X={sc_x:,.1f}, Y={sc_y:,.1f}, "
+                        f"Z={sc_z:,.1f} mm"
+                    )
+                    sb1, sb2 = st.columns(2)
+                    if sb1.button("Relocate component", key="mb_mod_btn_rel",
+                                  use_container_width=True):
+                        _mb_mod_append({
+                            "Action": "relocate", "Description": sc.description,
+                            "Mass (kg)": sc.total_mass_kg,
+                            "Old X from front ISO (mm)": sc_x,
+                            "Old Y from centreline (mm, +right)": sc_y,
+                            "Old Z from ground (mm)": sc_z,
+                        })
+                        st.toast(f"Relocate row added for {sc.description} -- "
+                                 "enter the New X/Y/Z below.")
+                    if sb2.button("Remove component", key="mb_mod_btn_rem",
+                                  use_container_width=True):
+                        _mb_mod_append({
+                            "Action": "remove", "Description": sc.description,
+                            "Mass (kg)": sc.total_mass_kg,
+                            "Old X from front ISO (mm)": sc_x,
+                            "Old Y from centreline (mm, +right)": sc_y,
+                            "Old Z from ground (mm)": sc_z,
+                        })
+                        st.toast(f"Remove row added for {sc.description}.")
+                else:
+                    st.caption("Select a row above to relocate or remove that component.")
+
+        # ---- (4) pending changes (editable; add new rows directly) ----
+        st.markdown("**Proposed changes**")
+        seed_df = pd.DataFrame(ss.mb_mod_pending, columns=_MOD_COLS)
+        for col in _MOD_NUM_COLS:
+            seed_df[col] = pd.to_numeric(seed_df[col], errors="coerce")
+        mod_edit = st.data_editor(
+            seed_df,
             num_rows="dynamic",
             use_container_width=True,
-            key="mb_mod_table",
+            key=f"mb_mod_table_{ss.mb_mod_rev}",
             column_config={
                 "Action": st.column_config.SelectboxColumn(
                     "Action", options=["add", "remove", "relocate"], required=True),
                 "Mass (kg)": st.column_config.NumberColumn("Mass (kg)", min_value=0.0),
             },
         )
+        mod_rows = mod_edit.where(pd.notnull(mod_edit), None).to_dict("records")
+        ss.mb_mod_last = mod_rows
 
         def _mod_xyz(row, prefix):
             """Read one endpoint; convert design-datum X (front ISO plane) to the
@@ -1278,10 +1404,20 @@ with tab_mobility:
             x_iso, y, z = (float(x) for x in vals)
             return (iso_x_to_axle_x(x_iso), y, z)
 
-        if st.button("Apply changes to baseline", key="mb_mod_build", type="primary"):
+        n_pending = sum(1 for r in mod_rows
+                        if (r.get("Action") or "").strip() and r.get("Mass (kg)"))
+        ap1, ap2 = st.columns([3, 1])
+        ap1.caption(f"**{n_pending} pending change(s)** -- add uses New X/Y/Z, "
+                    "remove uses Old X/Y/Z, relocate uses both (mass unchanged).")
+        if ap2.button("Clear all", key="mb_mod_clear", disabled=not mod_rows):
+            ss.mb_mod_pending = []
+            ss.mb_mod_last = None
+            ss.mb_mod_rev += 1
+            st.rerun()
+
+        if st.button("Apply changes and recalculate", key="mb_mod_build",
+                     type="primary", disabled=mod_base is None):
             try:
-                base = (vehicle_measured(mod_path) if mod_variant == "measured"
-                        else vehicle_theory(mod_path))
                 try:
                     mod_appr = approach_departure_angles(mod_path, mod_variant)
                 except Exception:
@@ -1297,13 +1433,13 @@ with tab_mobility:
                         old_xyz_mm=_mod_xyz(r, "Old"),
                         new_xyz_mm=_mod_xyz(r, "New"),
                     ))
-                v = apply_mass_changes(base, changes)
+                v = apply_mass_changes(mod_base, changes)
                 _mb_set_vehicle(
                     v,
                     {"method": "Design / modification study",
                      "source": f"{Path(mod_path).name} [{mod_variant} CG] "
                                f"+ {len(changes)} change(s)"},
-                    mod_appr, base=base,
+                    mod_appr, base=mod_base,
                 )
                 if not changes:
                     st.info("No valid change rows -- modified vehicle equals the baseline.")

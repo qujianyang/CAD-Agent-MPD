@@ -287,6 +287,88 @@ def shelter_cg(path: str = None) -> PlatformCG:
     )
 
 
+# ---------------------------------------------------------------------------
+# Shelter component table ('E2 CG Table' sheet)
+#
+# Component rows 1..~70; 0-indexed columns:
+#   3 item no | 4 Category | 5 Description | 6 Wt/Unit | 7 Qty
+#   8 Total Wt (kg) | 9 X (mm) | 10 Y (mm) | 11 Z (mm)
+# Datum (sheet row 79): X from the SHELTER FRONT SURFACE, Y from the centre
+# axis (+right), Z from the SHELTER BOTTOM SURFACE -- NOT the vehicle datum.
+# The sheet's integration block holds the same shelter CG in both datums:
+#   row 73 (shelter datum, cols 8/9/10) vs row 84 (vehicle datum, cols 4/5/6)
+# whose difference gives the exact shelter->vehicle offsets (1348.5 / 1593.0).
+# ---------------------------------------------------------------------------
+
+_CG_TABLE = "E2 CG Table"
+_COMP_COLS = {"item": 3, "category": 4, "description": 5, "unit": 6,
+              "qty": 7, "total": 8, "x": 9, "y": 10, "z": 11}
+_CG_SHELTER_DATUM = (73, {"x": 9, "z": 11})   # 0-idx row 73: C.G (X,Y,Z), shelter datum
+_CG_VEHICLE_DATUM = (84, {"x": 4, "z": 6})    # 0-idx row 84: 'E2' row, vehicle datum
+
+
+@dataclass(frozen=True)
+class ShelterComponent:
+    """One baseline component from the 'E2 CG Table' sheet (SHELTER datum)."""
+    item_no: int
+    category: str          # workbook "Category" = UI "Subsystem"
+    description: str
+    unit_mass_kg: float
+    qty: float
+    total_mass_kg: float
+    x_shelter_mm: float    # from shelter front surface, +rearward
+    y_mm: float            # from centre axis, +right
+    z_shelter_mm: float    # from shelter bottom surface, +up
+
+
+def shelter_components(path: str = None) -> list:
+    """
+    Read the baseline component list from 'E2 CG Table'. Rows are read while
+    the item-no column stays numeric; rows with non-positive total mass or
+    blank coordinates (e.g. the '2 human' placeholder) are skipped.
+    """
+    s = _open(path).sheet_by_name(_CG_TABLE)
+    cols = _COMP_COLS
+    out = []
+    for r in range(1, s.nrows):
+        item = s.cell_value(r, cols["item"])
+        if not isinstance(item, float) or item != int(item):
+            break   # end of the contiguous component block
+        total = s.cell_value(r, cols["total"])
+        coords = [s.cell_value(r, cols[k]) for k in ("x", "y", "z")]
+        if not isinstance(total, float) or total <= 0 \
+                or any(not isinstance(v, float) for v in coords):
+            continue
+        out.append(ShelterComponent(
+            item_no=int(item),
+            category=str(s.cell_value(r, cols["category"])).strip(),
+            description=str(s.cell_value(r, cols["description"])).strip(),
+            unit_mass_kg=float(s.cell_value(r, cols["unit"])),
+            qty=float(s.cell_value(r, cols["qty"]) or 0),
+            total_mass_kg=float(total),
+            x_shelter_mm=float(coords[0]),
+            y_mm=float(coords[1]),
+            z_shelter_mm=float(coords[2]),
+        ))
+    return out
+
+
+def shelter_datum_offsets(path: str = None) -> tuple:
+    """
+    (dx_to_axle_mm, dz_to_ground_mm): add to a SHELTER-datum component
+    position to get the vehicle analysis datum (X from front axle, Z from
+    ground). Derived from the workbook's own integration block, so it stays
+    correct if the workbook is revised. For the current E2 workbook this is
+    (1348.5, 1593.0); note 1348.5 + 101.5 (ISO corner inset) = 1450 = the
+    front-axle-to-ISO-plane offset used by the design datum.
+    """
+    s = _open(path).sheet_by_name(_CG_TABLE)
+    (r_sh, c_sh), (r_vh, c_vh) = _CG_SHELTER_DATUM, _CG_VEHICLE_DATUM
+    dx = float(s.cell_value(r_vh, c_vh["x"])) - float(s.cell_value(r_sh, c_sh["x"]))
+    dz = float(s.cell_value(r_vh, c_vh["z"])) - float(s.cell_value(r_sh, c_sh["z"]))
+    return dx, dz
+
+
 def import_workbook(path: str = None) -> dict:
     """
     Top-level import: returns both vehicles and their stored SF maps.
