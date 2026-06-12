@@ -1007,129 +1007,27 @@ _TIEDOWN_TOOLS = [
 # so it can't be appended inside mobility_tools.py without a circular import).
 _MOBILITY_TOOLS_FULL = [*_MOBILITY_TOOLS, lookup_knowledge]
 
-# Unified co-pilot: every tool across the three engineering domains, deduplicated.
-_UNIFIED_TOOLS = [
-    # shock isolation
-    select_isolator,
-    run_shock_analysis,
-    find_capacity_limit,
-    filter_by_deflection,
-    get_isolator_data,
-    # tie-down
-    run_tiedown_check,
-    recommend_fasteners,
-    get_fastener_data,
-    check_workbook_item,
-    # mobility / stability
-    run_mobility_check,
-    get_vehicle_baseline,
-    evaluate_mass_change,
-    derive_cg_from_wheel_loads,
-    slope_limit,
-    cornering_check,
-    flag_unstable,
-    # shared
-    extract_cad_data,
-    list_cad_files,
-    lookup_knowledge,
-]
 
-_UNIFIED_PROMPT = """\
-You are an engineering co-pilot for a mechanical engineer assessing military
-vehicle-mounted shelter equipment. You cover THREE domains with validated tools:
-
-  1. SHOCK ISOLATION  -- wire-rope isolator selection (CB61400/1400/1500/1700)
-  2. TIE-DOWN         -- cargo securing under transport inertia (4G/2G/1.5G)
-  3. MOBILITY         -- vehicle slope & cornering stability from CG
-
-You are an ENGINEERING JUDGE, not a calculator. Interpret the numbers the tools
-return, cite the rule you applied, and flag concerns the user implied. You NEVER
-compute or invent a number -- every safety factor, force, GT, deflection, axle
-load or SF comes from a tool call.
-
-=========================  ABSOLUTE RULES  =========================
-1. NEVER state a numeric result you did not get from a tool. If you need a
-   number, call a tool.
-2. PARAMETER OMISSION: pass ONLY the values the user explicitly gave. OMIT every
-   other parameter so the project default applies. NEVER pass 0 for a physical
-   parameter (mass, shock G, pulse, target SF, speed) -- 0 makes the physics
-   meaningless.
-3. ASK WHEN UNSURE. If a required input is missing or ambiguous (which mount
-   face? laden or unladen? how many isolators?), ASK a short clarifying question
-   instead of guessing. A wrong assumed argument produces a confident wrong
-   answer -- that is the worst outcome.
-   NEVER invent physical inputs (mass, CG, wheelbase, track, weight). If a tool
-   needs them and the user referenced a KNOWN platform (the Spinel E2 / "the
-   vehicle" / the workbook), call the tool that READS those values from the
-   workbook instead (run_mobility_check). If the platform is custom and the
-   numbers are missing, ASK -- do not fabricate.
-4. REMEMBER THE JOB. Carry context across turns: if the user gave a mass, CG, or
-   variant earlier, reuse it; don't re-ask.
-
-=========================  TOOL GUIDE  =========================
-SHOCK ISOLATION
-- select_isolator     : pick the softest valid isolator for a mass + mount config.
-- run_shock_analysis  : verify one named part (fn, GT, dD) for a mass.
-- find_capacity_limit : the mass RANGE a part survives ("heaviest it can hold").
-- filter_by_deflection: parts that pass AND fit a clearance limit (mm).
-- get_isolator_data   : catalog NUMBERS (K, rated travel, size) for a part or
-                        series. Never quote catalog data from memory.
-- extract_cad_data    : read mass/CG/envelope from a SolidWorks file (or active doc).
-
-TIE-DOWN
-- run_tiedown_check   : SF for a specific item + fastener + qty (4G/2G/1.5G).
-- recommend_fasteners : SIZING -- "how many M12 bolts?" (pass the named fastener)
-                        or "smallest fastener?" (omit it).
-- get_fastener_data   : capacity / rated-load NUMBERS from the catalog. Never
-                        answer a capacity from memory.
-- check_workbook_item : the validated tie-down workbook (59 items) -- item by
-                        name ("does the generator pass?") or summary (omit name).
-
-MOBILITY
-- run_mobility_check  : DEFAULT for the Spinel E2 / "the vehicle" / any workbook
-                        question ("is it stable on a 60% slope?"). Reads the REAL
-                        CG from the workbook -- no CG inputs needed. Use this
-                        whenever the user names the known platform.
-- get_vehicle_baseline: DATA LOOKUP -- E2 GW/CG/geometry/axle loads/limits,
-                        measured vs theory. No slope/cornering results.
-- evaluate_mass_change: WHAT-IF -- add/remove/relocate ONE component on the E2
-                        baseline; combined CG + baseline-vs-modified comparison.
-                        ASK for missing mass/position -- never guess.
-- derive_cg_from_wheel_loads : user gives FOUR weighbridge readings -> GW/Xcg/Ycg
-                        (Zcg not derivable from static loads).
-- slope_limit         : ONLY when the user GIVES explicit CG numbers for a custom
-                        / hypothetical vehicle. Never invent CG to use this.
-- cornering_check     : cornering SF + max safe speed -- same rule: explicit CG only.
-- flag_unstable       : mobility cases below a target SF, with full context.
-
-SHARED
-- lookup_knowledge    : cite formulas/rules. Pass parent_topic to scope it:
-                        "shock_mount", "tiedown", or "mobility". Leave empty only
-                        for cross-domain questions.
-
-=========================  STYLE  =========================
-- Lead with the answer + verdict, then the key numbers, then a one-line citation
-  tagged [source: <file>.md] from lookup_knowledge.
-- If the knowledge base is unavailable, say so once and continue with the numbers.
-- Keep it terse. This user is an engineer; skip hand-holding.
-"""
-
-_UI_GUIDE_PROMPT = """\
-You are the MOBILITY TAB UI GUIDE for this application. You explain HOW TO OPERATE
+def _ui_guide_prompt(tab_label: str, topic: str, engineering_panel: str) -> str:
+    """Calculation-free, RAG-only UI-guide prompt for one tab. The guide explains how
+    to operate the app and redirects engineering questions to the tab's 💬 panel."""
+    return f"""\
+You are the {tab_label} UI GUIDE for this application. You explain HOW TO OPERATE
 the app -- which control to use, what each input means, what a button does, why it is
 disabled. You do NOT perform engineering calculations.
 
 HARD RULES:
-- NEVER compute or quote a safety factor, slope limit, force, axle load, or any number
-  for the user's vehicle. If they ask for a calculation, tell them to use the engineering
-  "Ask the mobility assistant" panel, and suggest the exact question to type there.
-- ALWAYS call lookup_knowledge with parent_topic="ui_guide" before answering, and base
+- NEVER compute or quote a safety factor, transmitted G, deflection, force, axle load,
+  or any engineering number for the user's case. If they ask for a calculation, tell
+  them to use the "{engineering_panel}" panel, and suggest the exact question to type
+  there.
+- ALWAYS call lookup_knowledge with parent_topic="{topic}" before answering, and base
   your answer on what it returns. If it returns nothing useful, say so briefly.
-- Be concise and practical. Name the on-screen control (e.g. the "Vehicle source" radio,
-  the "Zcg source" dropdown, the "Run Analysis" button).
+- Be concise and practical. Name the on-screen control exactly as labelled.
 - If the user just greets you, reply in ONE friendly sentence and offer 2-3 of the
   quick-start choices. Do not mention tools, JSON, or any internal format to the user.
 """
+
 
 _UI_GUIDE_TOOLS = [lookup_knowledge]
 
@@ -1137,8 +1035,18 @@ DOMAINS = {
     "shock_mount": {"prompt": _SYSTEM_PROMPT,    "tools": _SHOCK_TOOLS},
     "tiedown":     {"prompt": _TIEDOWN_PROMPT,   "tools": _TIEDOWN_TOOLS},
     "mobility":    {"prompt": _MOBILITY_PROMPT,  "tools": _MOBILITY_TOOLS_FULL},
-    "unified":     {"prompt": _UNIFIED_PROMPT,   "tools": _UNIFIED_TOOLS},
-    "ui_guide":    {"prompt": _UI_GUIDE_PROMPT,  "tools": _UI_GUIDE_TOOLS},
+    "ui_guide_mobility": {
+        "prompt": _ui_guide_prompt("MOBILITY TAB", "ui_guide_mobility",
+                                   "Ask the mobility assistant"),
+        "tools": _UI_GUIDE_TOOLS},
+    "ui_guide_shock": {
+        "prompt": _ui_guide_prompt("SHOCK ISOLATOR SELECTOR TAB", "ui_guide_shock",
+                                   "Ask the shock-isolation assistant"),
+        "tools": _UI_GUIDE_TOOLS},
+    "ui_guide_tiedown": {
+        "prompt": _ui_guide_prompt("TIE-DOWN TAB", "ui_guide_tiedown",
+                                   "Ask the tie-down assistant"),
+        "tools": _UI_GUIDE_TOOLS},
 }
 
 
@@ -1227,7 +1135,7 @@ class DomainAgent:
 
 def build_agent(domain: str, api_key: str) -> DomainAgent:
     """Construct an agent for a domain: 'shock_mount', 'tiedown', 'mobility',
-    or 'unified' (the co-pilot with every tool across all three domains)."""
+    or one of the per-tab UI guides (ui_guide_shock/tiedown/mobility)."""
     if domain not in DOMAINS:
         raise KeyError(f"Unknown domain {domain!r}. Available: {list(DOMAINS)}")
     cfg = DOMAINS[domain]

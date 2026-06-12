@@ -67,14 +67,16 @@ def test_every_shock_tool_is_documented():
     assert not missing, f"Shock tools missing from capability guide: {missing}"
 
 
-def test_ui_guide_domain_wired():
-    """UI-guide is a calculation-free RAG assistant: only lookup_knowledge, and its
-    prompt enforces parent_topic='ui_guide' scoping."""
+def test_ui_guide_domains_wired():
+    """Each tab's UI-guide is a calculation-free RAG assistant: only lookup_knowledge,
+    and its prompt enforces its own parent_topic scoping. Old 'ui_guide' name retired."""
     from agent import DOMAINS
-    cfg = DOMAINS["ui_guide"]
-    names = [t.name for t in cfg["tools"]]
-    assert names == ["lookup_knowledge"]        # RAG only — no engineering tools
-    assert "ui_guide" in cfg["prompt"]          # scoped retrieval enforced in prompt
+    for domain in ("ui_guide_mobility", "ui_guide_shock", "ui_guide_tiedown"):
+        cfg = DOMAINS[domain]
+        names = [t.name for t in cfg["tools"]]
+        assert names == ["lookup_knowledge"], domain    # RAG only — no engineering tools
+        assert f'parent_topic="{domain}"' in cfg["prompt"], domain   # scoped retrieval
+    assert "ui_guide" not in DOMAINS            # renamed to ui_guide_mobility
 
 
 def test_build_agent_unknown_domain():
