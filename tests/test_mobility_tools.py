@@ -5,6 +5,7 @@ from mobility_import import vehicle_measured
 from mobility_tools import (
     get_vehicle_baseline,
     derive_cg_from_wheel_loads,
+    derive_zcg_from_tilt_tests,
     evaluate_mass_change,
 )
 
@@ -89,6 +90,73 @@ class TestEvaluateMassChange:
              "new_x_mm": 2500, "new_y_mm": 0, "new_z_mm": 1500})
         assert "+0" in out                            # GW change is zero
         assert "Governing slope" in out
+
+
+class TestDeriveZcgFromTiltTests:
+    # E2 tilt-test data: F_level = RL+RR = 9875 kg, GW = 17850 kg, WB = 4800 mm
+    E2 = {"f_level_kg": 9875, "gw_kg": 17850,
+          "tilt_angles_deg": "10.2, 12.3, 8.2, 6.2",
+          "rear_loads_kg": "10550, 10700, 10450, 10300"}
+
+    def test_reproduces_e2_zcg_values_and_average(self):
+        out = derive_zcg_from_tilt_tests.invoke(dict(self.E2))
+        assert "1,588.8" in out and "1,597.5" in out
+        assert "1,653.0" in out and "1,632.0" in out
+        assert "1,617.8" in out                       # average
+        assert "tilt test" in out                     # usable zcg_source hint
+
+    def test_explicit_wheelbase_matches_workbook_default(self):
+        out_default = derive_zcg_from_tilt_tests.invoke(dict(self.E2))
+        out_explicit = derive_zcg_from_tilt_tests.invoke(
+            {**self.E2, "wheelbase_mm": 4800})
+        assert "1,617.8" in out_default and "1,617.8" in out_explicit
+
+    def test_mismatched_list_lengths_is_error(self):
+        out = derive_zcg_from_tilt_tests.invoke(
+            {**self.E2, "rear_loads_kg": "10550, 10700"})
+        assert out.startswith("ERROR")
+
+    def test_unparseable_list_is_error(self):
+        out = derive_zcg_from_tilt_tests.invoke(
+            {**self.E2, "tilt_angles_deg": "ten, twelve, eight, six"})
+        assert out.startswith("ERROR")
+
+    def test_bad_angle_is_error(self):
+        out = derive_zcg_from_tilt_tests.invoke(
+            {**self.E2, "tilt_angles_deg": "0, 12.3, 8.2, 6.2"})
+        assert out.startswith("ERROR")
+
+    def test_nonpositive_f_level_is_error(self):
+        out = derive_zcg_from_tilt_tests.invoke({**self.E2, "f_level_kg": 0})
+        assert out.startswith("ERROR")
+
+
+class TestEvaluateMassChangeIsoDatum:
+    def test_iso_datum_equals_axle_datum_shifted_1450(self):
+        """X entered from the front ISO plane must give the same physics as the
+        equivalent front-axle X (X_axle = X_ISO + 1450)."""
+        out_axle = evaluate_mass_change.invoke(
+            {"action": "add", "mass_kg": 500, "x_mm": 4450, "z_mm": 1500})
+        out_iso = evaluate_mass_change.invoke(
+            {"action": "add", "mass_kg": 500, "x_mm": 3000, "z_mm": 1500,
+             "x_datum": "front_iso"})
+        # Same modified CG/axle numbers in both outputs (compare the table body
+        # after the header, which echoes the differing input position).
+        body_axle = out_axle.split("===", 2)[-1]
+        body_iso = out_iso.split("===", 2)[-1]
+        assert body_axle == body_iso
+
+    def test_iso_output_reports_both_datums(self):
+        out = evaluate_mass_change.invoke(
+            {"action": "add", "mass_kg": 500, "x_mm": 3000, "z_mm": 1500,
+             "x_datum": "front_iso"})
+        assert "front ISO" in out and "front axle" in out
+
+    def test_bad_datum_is_error(self):
+        out = evaluate_mass_change.invoke(
+            {"action": "add", "mass_kg": 500, "x_mm": 3000, "z_mm": 1500,
+             "x_datum": "rear_bumper"})
+        assert out.startswith("ERROR")
 
 
 def _run():

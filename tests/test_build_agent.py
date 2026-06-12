@@ -35,16 +35,16 @@ def test_every_tiedown_tool_is_documented():
     assert not missing, f"Tie-down tools missing from capability guide: {missing}"
 
 
-MOBILITY_8 = sorted([
+MOBILITY_9 = sorted([
     "run_mobility_check", "get_vehicle_baseline", "evaluate_mass_change",
-    "derive_cg_from_wheel_loads", "slope_limit", "cornering_check",
-    "flag_unstable", "lookup_knowledge",
+    "derive_cg_from_wheel_loads", "derive_zcg_from_tilt_tests",
+    "slope_limit", "cornering_check", "flag_unstable", "lookup_knowledge",
 ])
 
 
 def test_mobility_domain_wired():
     from agent import DOMAINS
-    assert sorted(t.name for t in DOMAINS["mobility"]["tools"]) == MOBILITY_8
+    assert sorted(t.name for t in DOMAINS["mobility"]["tools"]) == MOBILITY_9
 
 
 def test_every_mobility_tool_is_documented():

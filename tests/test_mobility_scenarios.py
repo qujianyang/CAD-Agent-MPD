@@ -13,6 +13,7 @@ import pytest
 
 from mobility_engine import Vehicle, run_mobility_analysis
 from mobility_scenarios import (
+    FRONT_AXLE_TO_ISO_PLANE_MM,
     MassChange,
     OEM_MARGIN_CORNERING,
     OEM_MARGIN_LATERAL,
@@ -21,12 +22,15 @@ from mobility_scenarios import (
     VERDICT_MEETS,
     VERDICT_UNSTABLE,
     apply_mass_changes,
+    axle_x_to_iso_x,
     baseline_delta,
     check_cg_plausibility,
+    iso_x_to_axle_x,
     margin_for_direction,
     sf_verdict,
     vehicle_from_certified_cg,
     vehicle_from_wheel_loads,
+    zcg_from_tilt_tests,
 )
 
 # Measured Spinel E2 wheel loads (avg readings, SAR Appendix B)
@@ -359,6 +363,112 @@ class TestVerdicts:
     def test_custom_margins_override(self):
         assert margin_for_direction("ascending", long_margin=3.0) == 3.0
         assert margin_for_direction("kerbside", lat_margin=2.5) == 2.5
+
+
+# ---------------------------------------------------------------------------
+# Tilt-test Zcg derivation (four-test SAR method)
+# ---------------------------------------------------------------------------
+
+# Spinel E2 tilt-test data (SAR): level rear-axle load = RL + RR
+F_LEVEL = RL + RR          # 9875 kg
+GW = FL + FR + RL + RR     # 17850 kg
+WHEEL_R = 580.0
+E2_TILT_TESTS = [
+    (10.2, 10550.0),
+    (12.3, 10700.0),
+    (8.2, 10450.0),
+    (6.2, 10300.0),
+]
+
+
+class TestTiltTestZcg:
+    def test_reproduces_four_e2_zcg_values(self):
+        results, _ = zcg_from_tilt_tests(F_LEVEL, GW, WB, E2_TILT_TESTS,
+                                         wheel_radius_mm=WHEEL_R)
+        zs = [r.zcg_mm for r in results]
+        assert zs[0] == pytest.approx(1588.8, abs=0.1)
+        assert zs[1] == pytest.approx(1597.5, abs=0.1)
+        assert zs[2] == pytest.approx(1653.0, abs=0.1)
+        assert zs[3] == pytest.approx(1632.0, abs=0.1)
+
+    def test_average_matches_workbook_zcg(self):
+        _, avg = zcg_from_tilt_tests(F_LEVEL, GW, WB, E2_TILT_TESTS,
+                                     wheel_radius_mm=WHEEL_R)
+        assert avg == pytest.approx(1617.8, abs=0.1)
+
+    def test_default_wheel_radius_is_580(self):
+        _, avg_default = zcg_from_tilt_tests(F_LEVEL, GW, WB, E2_TILT_TESTS)
+        _, avg_explicit = zcg_from_tilt_tests(F_LEVEL, GW, WB, E2_TILT_TESTS,
+                                              wheel_radius_mm=580.0)
+        assert avg_default == pytest.approx(avg_explicit)
+
+    def test_results_keep_input_order_and_inputs(self):
+        results, _ = zcg_from_tilt_tests(F_LEVEL, GW, WB, E2_TILT_TESTS)
+        assert [(r.angle_deg, r.rear_load_kg) for r in results] == E2_TILT_TESTS
+
+    def test_average_feeds_wheel_load_vehicle(self):
+        _, avg = zcg_from_tilt_tests(F_LEVEL, GW, WB, E2_TILT_TESTS)
+        v = vehicle_from_wheel_loads(FL, FR, RL, RR, WB, TRACK, avg,
+                                     zcg_source="tilt test")
+        assert v.zcg_mm == pytest.approx(ZCG, abs=0.1)
+
+    @pytest.mark.parametrize("angle", [0.0, -5.0, 90.0, 95.0])
+    def test_rejects_out_of_range_angle(self, angle):
+        with pytest.raises(ValueError):
+            zcg_from_tilt_tests(F_LEVEL, GW, WB, [(angle, 10500.0)])
+
+    @pytest.mark.parametrize("load", [0.0, -100.0])
+    def test_rejects_non_positive_rear_load(self, load):
+        with pytest.raises(ValueError):
+            zcg_from_tilt_tests(F_LEVEL, GW, WB, [(10.0, load)])
+
+    @pytest.mark.parametrize("kw", ["f_level_kg", "gw_kg", "wheelbase_mm",
+                                    "wheel_radius_mm"])
+    def test_rejects_non_positive_scalars(self, kw):
+        kwargs = dict(f_level_kg=F_LEVEL, gw_kg=GW, wheelbase_mm=WB,
+                      wheel_radius_mm=WHEEL_R)
+        kwargs[kw] = 0.0
+        with pytest.raises(ValueError):
+            zcg_from_tilt_tests(tests=E2_TILT_TESTS, **kwargs)
+
+    def test_rejects_empty_test_list(self):
+        with pytest.raises(ValueError):
+            zcg_from_tilt_tests(F_LEVEL, GW, WB, [])
+
+
+# ---------------------------------------------------------------------------
+# ISO twist-lock plane datum conversion
+# ---------------------------------------------------------------------------
+
+class TestIsoDatumConversion:
+    def test_offset_constant(self):
+        assert FRONT_AXLE_TO_ISO_PLANE_MM == 1450.0
+
+    def test_iso_origin_maps_to_1450_from_axle(self):
+        assert iso_x_to_axle_x(0.0) == pytest.approx(1450.0)
+
+    def test_e2_xcg_in_iso_datum(self):
+        assert axle_x_to_iso_x(2655.5) == pytest.approx(1205.5)
+
+    def test_round_trip_identity(self):
+        for x in (-500.0, 0.0, 1450.0, 2655.5, 7000.0):
+            assert axle_x_to_iso_x(iso_x_to_axle_x(x)) == pytest.approx(x)
+
+    def test_mass_change_identical_either_datum(self):
+        """Entering positions from the ISO datum (converted) must give exactly
+        the same modified vehicle as entering axle-datum positions directly."""
+        x_iso_old, x_iso_new = 1000.0, 3000.0
+        via_axle = apply_mass_changes(BASE, [
+            MassChange("relocate", "genset", 250,
+                       old_xyz_mm=(x_iso_old + 1450.0, 100, 800),
+                       new_xyz_mm=(x_iso_new + 1450.0, -100, 1200)),
+        ])
+        via_iso = apply_mass_changes(BASE, [
+            MassChange("relocate", "genset", 250,
+                       old_xyz_mm=(iso_x_to_axle_x(x_iso_old), 100, 800),
+                       new_xyz_mm=(iso_x_to_axle_x(x_iso_new), -100, 1200)),
+        ])
+        assert via_iso == via_axle
 
 
 # ---------------------------------------------------------------------------

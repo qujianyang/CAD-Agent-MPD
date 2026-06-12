@@ -32,8 +32,9 @@ This module does NOT contain physics. SF / axle / cornering math lives in
 mobility_engine.py and is validated against the Spinel-E2 workbook.
 """
 
+import math
 from dataclasses import dataclass, replace
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from mobility_engine import Vehicle
 
@@ -45,6 +46,12 @@ DEFAULT_FRONT_AXLE_LIMIT_KG = 8000.0
 DEFAULT_REAR_AXLE_LIMIT_KG = 10600.0
 DEFAULT_GVW_LIMIT_KG = 18600.0
 DEFAULT_RSTAT_MM = 580.0
+
+# Longitudinal offset from the FRONT AXLE to the front ISO twist-lock PLANE
+# (E2 report). Engineers measure component positions rearward from the ISO
+# plane; the mobility engine keeps its front-axle datum, so UI/tool layers
+# convert with iso_x_to_axle_x() before calling apply_mass_changes().
+FRONT_AXLE_TO_ISO_PLANE_MM = 1450.0
 
 # Accepted provenance labels for a user-supplied Zcg (any non-empty string is
 # allowed; these are the recommended choices the UI should offer).
@@ -171,6 +178,87 @@ def vehicle_from_wheel_loads(
         rear_axle_limit_kg=rear_axle_limit_kg,
         gvw_limit_kg=gvw_limit_kg,
     )
+
+
+# ---------------------------------------------------------------------------
+# Tilt-test Zcg derivation (four-test SAR method)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TiltTestResult:
+    """One inclined-platform test: the inputs and the Zcg it implies."""
+    angle_deg: float
+    rear_load_kg: float
+    zcg_mm: float
+
+
+def zcg_from_tilt_tests(
+    f_level_kg: float,
+    gw_kg: float,
+    wheelbase_mm: float,
+    tests: Sequence[Tuple[float, float]],
+    wheel_radius_mm: float = DEFAULT_RSTAT_MM,
+) -> Tuple[List[TiltTestResult], float]:
+    """
+    Derive Zcg from inclined-platform (tilt) tests.
+
+    Tilting the vehicle nose-up by theta shifts load onto the rear axle in
+    proportion to the CG height above the wheel centres:
+
+        Z_i = (F_i - F_level) * WB / (GW * tan(theta_i)) + R
+
+    (divide by tan(theta) -- a steeper tilt needs LESS load shift for the
+    same CG height). R adds back the wheel radius because the moment balance
+    works about the axle centreline while Zcg is measured from the ground.
+
+    Args:
+        f_level_kg     : rear-axle load on level ground (RL + RR). Named
+                         f_level (not FL) -- FL means front-left wheel load.
+        gw_kg          : gross vehicle weight (kg).
+        wheelbase_mm   : wheelbase (mm).
+        tests          : sequence of (angle_deg, inclined_rear_load_kg).
+        wheel_radius_mm: static wheel radius (mm), default 580.
+
+    Returns (per-test TiltTestResult list in input order, average Zcg in mm).
+    Raises ValueError on non-positive scalars, an empty test list, angles
+    outside (0, 90) degrees, or non-positive rear loads.
+    """
+    f_level = _require_positive(f_level_kg, "f_level_kg (level rear-axle load)")
+    gw = _require_positive(gw_kg, "GW")
+    wb = _require_positive(wheelbase_mm, "wheelbase")
+    r = _require_positive(wheel_radius_mm, "wheel radius")
+    if not tests:
+        raise ValueError("at least one tilt test (angle, rear load) is required")
+
+    results: List[TiltTestResult] = []
+    for i, (angle_deg, rear_load_kg) in enumerate(tests):
+        tag = f"tilt test #{i + 1}"
+        angle = float(angle_deg)
+        if not (0.0 < angle < 90.0):
+            raise ValueError(f"{tag}: angle must be between 0 and 90 degrees "
+                             f"(exclusive), got {angle}")
+        f_i = _require_positive(rear_load_kg, f"{tag}: inclined rear load")
+        z = (f_i - f_level) * wb / (gw * math.tan(math.radians(angle))) + r
+        results.append(TiltTestResult(angle_deg=angle_deg,
+                                      rear_load_kg=rear_load_kg,
+                                      zcg_mm=z))
+
+    avg = sum(t.zcg_mm for t in results) / len(results)
+    return results, avg
+
+
+# ---------------------------------------------------------------------------
+# ISO twist-lock plane datum conversion
+# ---------------------------------------------------------------------------
+
+def iso_x_to_axle_x(x_iso_mm: float) -> float:
+    """Component X from the front ISO twist-lock plane -> X from the front axle."""
+    return float(x_iso_mm) + FRONT_AXLE_TO_ISO_PLANE_MM
+
+
+def axle_x_to_iso_x(x_axle_mm: float) -> float:
+    """X from the front axle -> X from the front ISO twist-lock plane."""
+    return float(x_axle_mm) - FRONT_AXLE_TO_ISO_PLANE_MM
 
 
 # ---------------------------------------------------------------------------

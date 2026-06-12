@@ -16,6 +16,8 @@ from mobility_import import (
 from mobility_scenarios import (
     MassChange, apply_mass_changes, baseline_delta,
     vehicle_from_wheel_loads, check_cg_plausibility,
+    zcg_from_tilt_tests, iso_x_to_axle_x, axle_x_to_iso_x,
+    FRONT_AXLE_TO_ISO_PLANE_MM,
 )
 
 _DEFAULT_AERO = Aero()
@@ -425,6 +427,99 @@ def derive_cg_from_wheel_loads(
     return "\n".join(lines)
 
 
+def _parse_float_list(text: str, label: str) -> list:
+    """Parse a comma/semicolon-separated list of numbers from the LLM."""
+    try:
+        vals = [float(x) for x in str(text).replace(";", ",").split(",")
+                if x.strip()]
+    except ValueError:
+        raise ValueError(f"{label} must be a comma-separated list of numbers, "
+                         f"got {text!r}")
+    if not vals:
+        raise ValueError(f"{label} is empty -- give at least one value")
+    return vals
+
+
+@tool
+def derive_zcg_from_tilt_tests(
+    f_level_kg: float,
+    gw_kg: float,
+    tilt_angles_deg: str,
+    rear_loads_kg: str,
+    wheelbase_mm: float = 0.0,
+    wheel_radius_mm: float = 580.0,
+) -> str:
+    """
+    USE ONLY when the user gives TILT-TEST readings (inclination angles +
+    inclined rear-axle loads). Derives the CG HEIGHT Zcg per test and the
+    average -- the one CG value static wheel loads cannot give:
+
+      Z_i = (F_i - F_level) * WB / (GW * tan(theta_i)) + R
+
+    The average Zcg is a verified value (source: "tilt test") that completes
+    a wheel-load-derived vehicle for slope/cornering analysis.
+
+    Args:
+        f_level_kg     : REQUIRED. Rear-axle load on LEVEL ground = RL + RR (kg).
+        gw_kg          : REQUIRED. Gross vehicle weight (kg).
+        tilt_angles_deg: REQUIRED. Comma-separated inclination angles in degrees,
+                         e.g. "10.2, 12.3, 8.2, 6.2".
+        rear_loads_kg  : REQUIRED. Comma-separated INCLINED rear-axle loads (kg),
+                         same order/count as the angles, e.g. "10550, 10700, 10450, 10300".
+        wheelbase_mm   : OMIT to use the Spinel E2 wheelbase from the workbook.
+        wheel_radius_mm: Static wheel radius (mm). Default 580 (Spinel E2).
+                         OMIT unless the user gives a different radius.
+    """
+    try:
+        angles = _parse_float_list(tilt_angles_deg, "tilt_angles_deg")
+        loads = _parse_float_list(rear_loads_kg, "rear_loads_kg")
+    except ValueError as e:
+        return f"ERROR: {e}"
+    if len(angles) != len(loads):
+        return (f"ERROR: got {len(angles)} angle(s) but {len(loads)} rear "
+                f"load(s) -- each tilt test needs one angle AND one load.")
+
+    assumed = []
+    wb = wheelbase_mm
+    if wb is None or wb <= 0:
+        try:
+            wb = vehicle_measured().wheelbase_mm
+            assumed.append("Spinel E2 wheelbase assumed from workbook")
+        except Exception:
+            return ("ERROR: wheelbase not given and the Spinel workbook is "
+                    "unavailable -- ask the user for wheelbase_mm.")
+
+    try:
+        results, avg = zcg_from_tilt_tests(
+            f_level_kg=f_level_kg, gw_kg=gw_kg, wheelbase_mm=wb,
+            tests=list(zip(angles, loads)), wheel_radius_mm=wheel_radius_mm,
+        )
+    except ValueError as e:
+        return f"ERROR: {e}"
+
+    lines = [
+        "=== ZCG FROM TILT TESTS ===",
+        f"  Inputs : F_level {f_level_kg:,.0f} kg | GW {gw_kg:,.0f} kg | "
+        f"WB {wb:,.0f} mm | wheel radius {wheel_radius_mm:,.0f} mm",
+        f"  Formula: Z = (F_incl - F_level) * WB / (GW * tan(angle)) + R",
+        "",
+    ]
+    for i, r in enumerate(results, 1):
+        lines.append(f"  Test {i}: angle {r.angle_deg:.1f} deg, rear load "
+                     f"{r.rear_load_kg:,.0f} kg  ->  Zcg = {r.zcg_mm:,.1f} mm")
+    lines += [
+        "",
+        f"  AVERAGE Zcg = {avg:,.1f} mm above ground  ({len(results)} tests)",
+        "",
+        "This average is a verified Zcg (source: \"tilt test\"). Combined with "
+        "the four level wheel loads it completes the vehicle for slope and "
+        "cornering analysis.",
+    ]
+    if assumed:
+        lines.append(f"Note: {'; '.join(assumed)}.")
+    return "\n".join(lines)
+
+
 @tool
 def evaluate_mass_change(
     action: str,
@@ -438,6 +533,7 @@ def evaluate_mass_change(
     description: str = "component",
     variant: str = "measured",
     workbook_path: str = "",
+    x_datum: str = "front_axle",
 ) -> str:
     """
     THE WHAT-IF TOOL: "if I add a 3200 kg shelter at X 4000 mm...", "move the
@@ -446,8 +542,12 @@ def evaluate_mass_change(
     baseline-vs-modified comparison (CG, axle loads vs limits, governing slope
     SF, cornering).
 
-    Coordinate datum: X from FRONT AXLE (mm, +rearward), Y from centreline
-    (+right), Z from GROUND (must be positive).
+    Coordinate datum: X from FRONT AXLE (mm, +rearward) by default, Y from
+    centreline (+right), Z from GROUND (must be positive).
+    If the user measures X from the FRONT ISO TWIST-LOCK PLANE ("behind the
+    front ISO plane / corner / twist-lock"), pass x_datum="front_iso" -- the
+    tool converts internally (X_axle = X_ISO + 1450 mm). OMIT x_datum when the
+    user says "from the front axle" or names no datum.
 
     Parameter mapping by action:
       action="add"      -> x/y/z = position of the ADDED component.
@@ -472,12 +572,21 @@ def evaluate_mass_change(
         description: Short component name, e.g. "shelter", "winch".
         variant:     "measured" (default) or "theory".
         workbook_path: OMIT to use the project default workbook.
+        x_datum:     "front_axle" (default) or "front_iso" (X measured rearward
+                     from the front ISO twist-lock plane). OMIT unless the user
+                     references the ISO plane/corner/twist-lock.
     """
     if action not in ("add", "remove", "relocate"):
         return f"ERROR: action must be 'add', 'remove' or 'relocate' (got {action!r})."
     if mass_kg is None or mass_kg <= 0:
         return ("ERROR: a positive component mass is required. ASK the user for the "
                 "component's mass -- never guess it.")
+    if x_datum not in ("front_axle", "front_iso"):
+        return (f"ERROR: x_datum must be 'front_axle' or 'front_iso' (got "
+                f"{x_datum!r}).")
+    if x_datum == "front_iso":
+        x_mm = iso_x_to_axle_x(x_mm)
+        new_x_mm = iso_x_to_axle_x(new_x_mm)
 
     if action == "add":
         change = MassChange(action, description, mass_kg, new_xyz_mm=(x_mm, y_mm, z_mm))
@@ -521,6 +630,8 @@ def evaluate_mass_change(
         f"{'Xcg (mm)':<18}{base.xcg_mm:>14,.1f}{mod.xcg_mm:>14,.1f}{d['xcg_mm']:>+12,.1f}",
         f"{'Ycg (mm)':<18}{base.ycg_mm:>14,.1f}{mod.ycg_mm:>14,.1f}{d['ycg_mm']:>+12,.1f}",
         f"{'Zcg (mm)':<18}{base.zcg_mm:>14,.1f}{mod.zcg_mm:>14,.1f}{d['zcg_mm']:>+12,.1f}",
+        f"Modified Xcg    : {mod.xcg_mm:,.1f} mm from front axle (analysis datum) "
+        f"= {axle_x_to_iso_x(mod.xcg_mm):,.1f} mm from front ISO plane (design datum)",
         f"{'Front axle (kg)':<18}{ab.front_kg:>14,.1f}{am.front_kg:>14,.1f}"
         f"   {_st(am.front_ok)} (limit {base.front_axle_limit_kg:,.0f})",
         f"{'Rear axle (kg)':<18}{ab.rear_kg:>14,.1f}{am.rear_kg:>14,.1f}"
@@ -581,10 +692,17 @@ Tool guide -- route by QUESTION TYPE:
                          Computes the combined CG and compares baseline vs
                          modified. ONE change per call. If the component's mass
                          or POSITION is missing, ASK the user -- never guess a
-                         position.
+                         position. If the user measures X from the FRONT ISO
+                         twist-lock plane ("behind the front ISO plane"), pass
+                         x_datum="front_iso" -- the tool converts to the
+                         front-axle analysis datum internally.
 - derive_cg_from_wheel_loads : user gives FOUR wheel/weighbridge readings.
                          Returns GW/Xcg/Ycg; Zcg is NOT derivable from static
                          loads.
+- derive_zcg_from_tilt_tests : user gives TILT-TEST readings (inclination
+                         angles + inclined rear-axle loads). Returns Zcg per
+                         test and the average -- the missing height that
+                         completes a wheel-load-derived vehicle.
 - run_mobility_check   : FULL stability assessment of the workbook vehicle
                          (slope grid + cornering + axles): "is it stable on a
                          60% slope?", "max safe cornering speed?".
@@ -615,6 +733,7 @@ _MOBILITY_TOOLS = [
     get_vehicle_baseline,
     evaluate_mass_change,
     derive_cg_from_wheel_loads,
+    derive_zcg_from_tilt_tests,
     slope_limit,
     cornering_check,
     flag_unstable,
@@ -636,13 +755,17 @@ MOBILITY_CAPABILITIES = [
      "example": "What is the measured Xcg of the Spinel E2?",
      "tool": "get_vehicle_baseline"},
     {"capability": "What-if mass change",
-     "purpose": "Add / remove / relocate a component and compare CG, axle loads and stability vs baseline",
-     "example": "If I add a 3,200 kg shelter at X 4,000 mm, Z 2,500 mm, does the rear axle still hold?",
+     "purpose": "Add / remove / relocate a component (X from front axle or front ISO plane) and compare CG, axle loads and stability vs baseline",
+     "example": "Add a 500 kg component 3,000 mm behind the front ISO plane — does the rear axle still hold?",
      "tool": "evaluate_mass_change"},
     {"capability": "CG from wheel loads",
      "purpose": "Derive GW, Xcg and Ycg from four weighbridge readings",
      "example": "Wheel loads are FL 4000, FR 3975, RL 4750, RR 5125 kg — where is the CG?",
      "tool": "derive_cg_from_wheel_loads"},
+    {"capability": "ZCG from tilt tests",
+     "purpose": "Derive the CG height (per-test and average) from inclined-platform rear-axle readings",
+     "example": "Calculate ZCG from these four tilt-test readings: 10.2° at 10,550 kg, 12.3° at 10,700 kg, 8.2° at 10,450 kg, 6.2° at 10,300 kg.",
+     "tool": "derive_zcg_from_tilt_tests"},
     {"capability": "Margin screening",
      "purpose": "Find workbook cases below a selected SF",
      "example": "Which mobility cases are below SF 2.2?",

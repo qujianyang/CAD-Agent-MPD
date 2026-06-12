@@ -40,6 +40,8 @@ from mobility_scenarios import (
     vehicle_from_certified_cg, vehicle_from_wheel_loads, check_cg_plausibility,
     MassChange, apply_mass_changes, baseline_delta,
     sf_verdict, margin_for_direction, ZCG_SOURCES,
+    zcg_from_tilt_tests, iso_x_to_axle_x, axle_x_to_iso_x,
+    FRONT_AXLE_TO_ISO_PLANE_MM, DEFAULT_RSTAT_MM,
     OEM_MARGIN_LONGITUDINAL, OEM_MARGIN_LATERAL, OEM_MARGIN_CORNERING,
     VERDICT_UNSTABLE, VERDICT_BELOW, VERDICT_MEETS, VERDICT_STRUCTURAL,
     DEFAULT_FRONT_AXLE_LIMIT_KG, DEFAULT_REAR_AXLE_LIMIT_KG, DEFAULT_GVW_LIMIT_KG,
@@ -746,6 +748,20 @@ with tab_quick:
         examples=[c["example"] for c in SHOCK_CAPABILITIES[:5]],
     )
 
+    # ---- UI Guide (floating bubble; explains how to operate the tab, never computes) ----
+    render_floating_assistant(
+        "ui_guide_shock",
+        "🧭 Shock Selector UI Guide",
+        "e.g. 'what does the Binding column mean?'",
+        quickstart=[
+            ("Pick the best isolator (Auto mode)", "How do I use Auto mode to recommend the best isolator?"),
+            ("Verify a specific part",             "How do I verify a specific part number in Manual mode?"),
+            ("Use my SolidWorks model",            "How do I run the selection from my SolidWorks assembly instead of typing weights?"),
+            ("Set clearances and objective",       "What do the clearance X/Y/Z inputs and the selection objective do?"),
+            ("Read the results",                   "How do I read the 4 load case table and the Binding column?"),
+        ],
+    )
+
 
 # =============================================================================
 # TAB 2 — CAD + Shock (live SolidWorks extraction + auto-selection)
@@ -1023,6 +1039,20 @@ with tab_tiedown:
         examples=[c["example"] for c in TIEDOWN_CAPABILITIES[:5]],
     )
 
+    # ---- UI Guide (floating bubble; explains how to operate the tab, never computes) ----
+    render_floating_assistant(
+        "ui_guide_tiedown",
+        "🧭 Tie-Down UI Guide",
+        "e.g. 'which mounting surface should I pick?'",
+        quickstart=[
+            ("Check one item",                 "How do I check whether one item's tie-down passes?"),
+            ("Size fasteners for a target SF", "How do I size fasteners for a target safety factor?"),
+            ("Choose the mounting surface",    "How do I choose the mounting surface, and why are front and rear equivalent?"),
+            ("Generate the Appendix G report", "How do I generate the Appendix G report section?"),
+            ("Understand PASS/FAIL",           "What do PASS/FAIL, the limiting axis and force type mean in the results?"),
+        ],
+    )
+
 
 # =============================================================================
 # TAB — Mobility and Stability Analysis (SAR Appendices B–E)
@@ -1095,30 +1125,84 @@ with tab_mobility:
     elif mb_mode == "Wheel-load measurement":
         st.caption(
             "Derive GW / Xcg / Ycg from four weighbridge readings (SAR Appendix B "
-            "moment balance). Zcg cannot be derived from static wheel loads -- enter "
-            "a verified value and its source. Spinel vendor axle/GVW limits apply by default."
+            "moment balance), then Zcg from inclined-platform tilt tests (or enter "
+            "a verified value). Spinel vendor axle/GVW limits apply by default."
         )
         wl1, wl2, wl3, wl4 = st.columns(4)
         wl_fl = wl1.number_input("FL (kg)", value=4000.0, min_value=0.0, step=25.0, key="mb_wl_fl")
         wl_fr = wl2.number_input("FR (kg)", value=3975.0, min_value=0.0, step=25.0, key="mb_wl_fr")
         wl_rl = wl3.number_input("RL (kg)", value=4750.0, min_value=0.0, step=25.0, key="mb_wl_rl")
         wl_rr = wl4.number_input("RR (kg)", value=5125.0, min_value=0.0, step=25.0, key="mb_wl_rr")
-        wg1, wg2, wg3, wg4 = st.columns(4)
+        wg1, wg2 = st.columns(2)
         wl_wb  = wg1.number_input("Wheelbase (mm)", value=4800.0, key="mb_wl_wb")
         wl_tr  = wg2.number_input("Track (mm)",     value=2088.0, key="mb_wl_tr")
-        wl_zcg = wg3.number_input("Zcg (mm, verified)", value=1617.8, key="mb_wl_zcg",
-                                  help="Above ground. From tilt test, CAD model "
-                                       "or certified report -- not derivable here.")
-        wl_zsrc = wg4.selectbox("Zcg source", list(ZCG_SOURCES), key="mb_wl_zsrc")
 
         # Live preview of the derived values before committing
         wl_gw = wl_fl + wl_fr + wl_rl + wl_rr
+        wl_f_level = wl_rl + wl_rr     # level rear-axle load (F_level)
         if wl_gw > 0:
             wl_x = wl_wb * (wl_rl + wl_rr) / wl_gw
             wl_y = wl_tr * ((wl_fr + wl_rr) / wl_gw - 0.5)
             st.caption(f"Derived preview: GW = {wl_gw:,.0f} kg | "
                        f"Xcg = {wl_x:,.1f} mm from front axle | "
                        f"Ycg = {wl_y:,.1f} mm ({'right' if wl_y >= 0 else 'left'} of centreline)")
+
+        wl_zmethod = st.radio(
+            "Zcg method", ["Derive from tilt tests", "Enter verified value"],
+            horizontal=True, key="mb_wl_zmethod",
+            help="Static wheel loads contain no height information. Derive Zcg "
+                 "from inclined-platform tests, or enter a pre-verified value.",
+        )
+        wl_zcg, wl_zsrc = None, None
+        if wl_zmethod == "Derive from tilt tests":
+            st.caption(
+                f"Zi = (Fi − F_level) × WB / (GW × tan θi) + R  with "
+                f"**F_level = RL + RR = {wl_f_level:,.0f} kg**, "
+                f"GW = {wl_gw:,.0f} kg, WB = {wl_wb:,.0f} mm taken from the "
+                f"level readings above."
+            )
+            wl_rstat = st.number_input(
+                "Wheel radius R (mm)", value=DEFAULT_RSTAT_MM, min_value=0.0,
+                step=5.0, key="mb_wl_rstat",
+                help="Static wheel radius -- tilt moments balance about the axle "
+                     "centreline; R converts the result to height above ground.")
+            tilt_rows = st.data_editor(
+                [{"Angle (deg)": 10.2, "Inclined rear load (kg)": 10550.0},
+                 {"Angle (deg)": 12.3, "Inclined rear load (kg)": 10700.0},
+                 {"Angle (deg)": 8.2,  "Inclined rear load (kg)": 10450.0},
+                 {"Angle (deg)": 6.2,  "Inclined rear load (kg)": 10300.0}],
+                num_rows="dynamic", use_container_width=True, key="mb_wl_tilt",
+                column_config={
+                    "Angle (deg)": st.column_config.NumberColumn(
+                        "Angle (deg)", min_value=0.0, max_value=89.9),
+                    "Inclined rear load (kg)": st.column_config.NumberColumn(
+                        "Inclined rear load (kg)", min_value=0.0),
+                },
+            )
+            tilt_tests = [(r["Angle (deg)"], r["Inclined rear load (kg)"])
+                          for r in tilt_rows
+                          if r.get("Angle (deg)") and r.get("Inclined rear load (kg)")]
+            if tilt_tests and wl_gw > 0:
+                try:
+                    tilt_results, wl_zcg = zcg_from_tilt_tests(
+                        wl_f_level, wl_gw, wl_wb, tilt_tests,
+                        wheel_radius_mm=wl_rstat)
+                    wl_zsrc = "tilt test"
+                    st.caption("  |  ".join(
+                        f"Z{i} = {r.zcg_mm:,.1f} mm"
+                        for i, r in enumerate(tilt_results, 1)))
+                    st.success(f"Average Zcg = {wl_zcg:,.1f} mm above ground "
+                               f"({len(tilt_results)} tests, source: tilt test)")
+                except ValueError as e:
+                    st.error(f"Invalid tilt test: {e}")
+            else:
+                st.info("Enter at least one tilt test (angle + inclined rear load).")
+        else:
+            wgz1, wgz2 = st.columns(2)
+            wl_zcg = wgz1.number_input("Zcg (mm, verified)", value=1617.8, key="mb_wl_zcg",
+                                       help="Above ground. From tilt test, CAD model "
+                                            "or certified report -- not derivable here.")
+            wl_zsrc = wgz2.selectbox("Zcg source", list(ZCG_SOURCES), key="mb_wl_zsrc")
 
         with st.expander("Axle / GVW limits (Spinel vendor defaults)"):
             wv1, wv2, wv3 = st.columns(3)
@@ -1129,7 +1213,10 @@ with tab_mobility:
             wl_glim = wv3.number_input("GVW limit (kg)",
                                        value=DEFAULT_GVW_LIMIT_KG, key="mb_wl_glim")
 
-        if st.button("Derive vehicle from wheel loads", key="mb_wl_build"):
+        if st.button("Derive vehicle from wheel loads", key="mb_wl_build",
+                     disabled=wl_zcg is None,
+                     help=("Complete the tilt tests (or enter a verified Zcg) first."
+                           if wl_zcg is None else None)):
             try:
                 v = vehicle_from_wheel_loads(
                     wl_fl, wl_fr, wl_rl, wl_rr, wl_wb, wl_tr, wl_zcg,
@@ -1149,9 +1236,12 @@ with tab_mobility:
     elif mb_mode == "Design / modification study":
         st.caption(
             "Start from a workbook baseline, then add / remove / relocate components. "
-            "Coordinates use the vehicle datum: X from front axle, Y right-positive "
-            "from centreline, Z from ground. add uses New X/Y/Z, remove uses Old "
-            "X/Y/Z, relocate uses both (mass unchanged)."
+            "Component coordinates use the DESIGN datum: X rearward from the front "
+            "ISO twist-lock plane, Y right-positive from the shelter centreline, "
+            "Z from ground. X is converted internally to the front-axle analysis "
+            f"datum (X_axle = X_ISO + {FRONT_AXLE_TO_ISO_PLANE_MM:.0f} mm). "
+            "add uses New X/Y/Z, remove uses Old X/Y/Z, relocate uses both "
+            "(mass unchanged)."
         )
         md1, md2 = st.columns([3, 1])
         mod_path = md1.text_input("Workbook path (.xls)", value=MB_DEFAULT,
@@ -1161,8 +1251,12 @@ with tab_mobility:
 
         mod_rows = st.data_editor(
             [{"Action": "add", "Description": "", "Mass (kg)": None,
-              "Old X (mm)": None, "Old Y (mm)": None, "Old Z (mm)": None,
-              "New X (mm)": None, "New Y (mm)": None, "New Z (mm)": None}],
+              "Old X from front ISO (mm)": None,
+              "Old Y from centreline (mm, +right)": None,
+              "Old Z from ground (mm)": None,
+              "New X from front ISO (mm)": None,
+              "New Y from centreline (mm, +right)": None,
+              "New Z from ground (mm)": None}],
             num_rows="dynamic",
             use_container_width=True,
             key="mb_mod_table",
@@ -1174,11 +1268,15 @@ with tab_mobility:
         )
 
         def _mod_xyz(row, prefix):
-            vals = (row.get(f"{prefix} X (mm)"), row.get(f"{prefix} Y (mm)"),
-                    row.get(f"{prefix} Z (mm)"))
+            """Read one endpoint; convert design-datum X (front ISO plane) to the
+            front-axle analysis datum before it reaches apply_mass_changes()."""
+            vals = (row.get(f"{prefix} X from front ISO (mm)"),
+                    row.get(f"{prefix} Y from centreline (mm, +right)"),
+                    row.get(f"{prefix} Z from ground (mm)"))
             if any(x is None for x in vals):
                 return None
-            return tuple(float(x) for x in vals)
+            x_iso, y, z = (float(x) for x in vals)
+            return (iso_x_to_axle_x(x_iso), y, z)
 
         if st.button("Apply changes to baseline", key="mb_mod_build", type="primary"):
             try:
@@ -1284,6 +1382,32 @@ with tab_mobility:
             st.caption(f"Deltas vs baseline: {mb_base.name} "
                        f"(GW {mb_base.gw_kg:,.0f} kg, Xcg {mb_base.xcg_mm:,.1f}, "
                        f"Ycg {mb_base.ycg_mm:,.1f}, Zcg {mb_base.zcg_mm:,.1f} mm)")
+
+        # Dual-datum CG readout: physics runs on the front-axle datum; engineers
+        # design against the front ISO twist-lock plane (1450 mm rearward).
+        xcg_iso = axle_x_to_iso_x(mb_v.xcg_mm)
+        y_side = "right of" if mb_v.ycg_mm >= 0 else "left of"
+        st.markdown(
+            f"**Analysis datum: Front axle** — XCG = {mb_v.xcg_mm:,.1f} mm  \n"
+            f"**Design datum: Front ISO twist-lock plane** — XCG = {xcg_iso:,.1f} mm  \n"
+            f"YCG = {abs(mb_v.ycg_mm):,.1f} mm {y_side} centreline  •  "
+            f"ZCG = {mb_v.zcg_mm:,.1f} mm above ground"
+        )
+        with st.expander("CG datum label (design datum O)"):
+            st.code(
+                "Datum O:\n"
+                "X = front ISO twist-lock plane\n"
+                "Y = shelter centreline\n"
+                "Z = ground level\n"
+                "\n"
+                "+X rearward\n"
+                "+Y right\n"
+                "+Z upward\n"
+                "\n"
+                f"Combined CG: ({xcg_iso:,.1f}, {mb_v.ycg_mm:,.1f}, "
+                f"{mb_v.zcg_mm:,.1f}) mm",
+                language=None,
+            )
         for w in check_cg_plausibility(mb_v):
             st.warning(w)
 
@@ -1540,7 +1664,7 @@ with tab_mobility:
 
     # ---- 7. UI Guide (floating bubble; explains how to operate the tab, never computes) ----
     render_floating_assistant(
-        "ui_guide",
+        "ui_guide_mobility",
         "🧭 Mobility UI Guide",
         "e.g. 'why is Run Analysis disabled?'",
         quickstart=[
