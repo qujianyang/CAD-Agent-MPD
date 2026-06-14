@@ -47,11 +47,7 @@ from tiedown_tools import (
     run_tiedown_check, recommend_fasteners, get_fastener_data, check_workbook_item,
     _TIEDOWN_PROMPT,
 )
-from mobility_tools import (
-    run_mobility_check, slope_limit, cornering_check, flag_unstable,
-    get_vehicle_baseline, evaluate_mass_change, derive_cg_from_wheel_loads,
-    _MOBILITY_PROMPT, _MOBILITY_TOOLS,
-)
+from mobility_tools import _MOBILITY_PROMPT, _MOBILITY_TOOLS
 
 # Module-level state — set by ShockMountAgent.__init__ before tools are called
 _api_key: Optional[str] = None
@@ -853,21 +849,15 @@ CATALOG NUMBERS (stiffness K, rated travel dmax, part size) come ONLY from
 get_isolator_data — never from memory, and never convert lb/in to N/m yourself.
 
 ==========================================================================
-WORKFLOW FOR ISOLATOR SELECTION QUESTIONS (mandatory two-call pattern)
+WORKFLOW FOR ISOLATOR SELECTION QUESTIONS
 ==========================================================================
-1. Confirm or extract the assembly mass (use extract_cad_data if SolidWorks is \
-   open, otherwise ask the user).
+1. Confirm the assembly mass. If the user did not give it, ASK for it.
 2. Confirm mount configuration only if the user specified one (else omit).
 3. Call select_isolator with ONLY the parameters the user gave you.
-4. MANDATORY: call lookup_knowledge to retrieve the engineering rule you are \
-   about to cite. Pick a query that matches the situation:
-     - "softest valid part selection rule" — for the recommendation rationale
-     - "saw-tooth pulse MIL-STD-810"        — for the shock profile attribution
-     - "deflection clearance"                — when dD is the limiting case
-     - "when no part passes"                 — when select_isolator finds no valid part
-   Do NOT skip this step. Without a citation, your answer is just guesswork.
-5. Compose your final answer using the RESPONSE TEMPLATE below. Do NOT just
-   paraphrase the tool output.
+4. Compose your final answer using the RESPONSE TEMPLATE below. Answer DIRECTLY
+   from the tool result -- do NOT call lookup_knowledge for a routine selection
+   (each extra tool call is a slow model turn). Interpret the numbers; do NOT
+   just paraphrase the tool output.
 
 ==========================================================================
 RESPONSE TEMPLATE (REQUIRED for every selection answer)
@@ -875,8 +865,8 @@ RESPONSE TEMPLATE (REQUIRED for every selection answer)
 **Recommendation:** <part_no> in <n_bottom> bottom + <n_wall> wall configuration
 
 **Why this part:**
-<1-2 sentences explaining the catalog filter outcome. Quote one relevant
- sentence from your lookup_knowledge result and tag it [source: <file_name>.md].>
+<1-2 sentences explaining the catalog filter outcome -- the softest part that
+ passes all four load cases.>
 
 **What the numbers mean:**
 - Comp-Bottom (Z, vertical): GT = X.X G vs limit Y.Y G  ->  Z% utilization (verdict)
@@ -887,42 +877,21 @@ RESPONSE TEMPLATE (REQUIRED for every selection answer)
 - Worst dynamic deflection: <X.X mm> on <case_name> — verify your rack has this clearance.
 
 **Standard applied:**
-<1 sentence on the shock profile with a citation tag from your lookup_knowledge
- result. e.g. "20G / 11ms saw-tooth pulse per MIL-STD-810H Category 4 (off-road)
- [source: formulas.md]."
+<1 sentence on the shock profile. e.g. "20G / 11ms saw-tooth pulse per
+ MIL-STD-810H Category 4 (off-road).">
 
 ==========================================================================
-NON-SELECTION QUESTIONS (e.g. "what is GT?", "explain saw-tooth pulse")
+EXPLANATION / REFERENCE QUESTIONS (e.g. "what is GT?", "explain saw-tooth pulse")
 ==========================================================================
-- Skip the selection template. Call lookup_knowledge with a relevant query,
-  answer in prose, cite the source. Example: "GT is the transmitted G:
-  GT = (2*pi*fn*V) / g [source: formulas.md]."
-
-==========================================================================
-KNOWLEDGE-BASE UNAVAILABILITY FALLBACK
-==========================================================================
-If lookup_knowledge returns "ERROR: knowledge base not built yet":
-- Still produce the full Recommendation + Why + Numbers sections.
-- Replace the **Standard applied:** section with the literal text:
-  "(knowledge base not embedded — citations omitted)".
-- Do NOT crash, do NOT refuse to answer.
+- This is the ONLY situation that uses lookup_knowledge. Skip the selection
+  template, call lookup_knowledge with a relevant query, answer in prose and
+  cite the source. Example: "GT is the transmitted G: GT = (2*pi*fn*V) / g
+  [source: formulas.md]." If it returns "ERROR: knowledge base not built yet",
+  answer from your own explanation and note that citations are unavailable.
 
 ==========================================================================
 OTHER TOOL-SPECIFIC RULES
 ==========================================================================
-When the user asks "what's the heaviest mass this part can support" or "at \
-what mass does this part fail" or "what's the valid range for this part" — \
-DO NOT guess a number and run run_shock_analysis once. Use find_capacity_limit. \
-It binary-searches both boundaries of the valid mass range. After the result, \
-still call lookup_knowledge and cite the GT/dD pass condition from \
-selection_rules.md.
-
-When the user mentions a deflection / clearance constraint — phrases like \
-"I have only 30 mm of deflection clearance", "tight clearance above the rack", \
-"which parts deflect less than X mm" — use filter_by_deflection. Do NOT add \
-fake parameters like dD_mm or max_dD to select_isolator (that tool does not \
-have a deflection-limit parameter).
-
 When the user asks for catalog DATA — "what is the stiffness / travel / size \
 of part X", "list the CB1500 parts", "what series exist" — use \
 get_isolator_data. Do NOT run an analysis just to read off K or dmax.
@@ -946,15 +915,16 @@ JSON, or any internal format to the user.
 # Domain registry + agent factory (tab-routed specialists)
 # ---------------------------------------------------------------------------
 
+# Core demo set (3 tools + shared RAG): one clear intent each -> Select / Verify / Look up.
+# Retired from the agent for demo robustness (functions stay defined; the CAD + Shock
+# UI tab and the deflection/capacity panels cover these): extract_cad_data,
+# list_cad_files, find_capacity_limit, filter_by_deflection. Re-add to this list to
+# bring one back into the chat agent.
 _SHOCK_TOOLS = [
-    extract_cad_data,
-    select_isolator,
-    run_shock_analysis,
-    find_capacity_limit,
-    filter_by_deflection,
-    get_isolator_data,
-    lookup_knowledge,
-    list_cad_files,
+    select_isolator,         # Select: softest passing part for a mass + mount config
+    run_shock_analysis,      # Verify: GT / fn / dD for one named part
+    get_isolator_data,       # Look up: catalog stiffness / travel / size
+    lookup_knowledge,        # Optional: cite formulas / rules (explanation questions only)
 ]
 
 # User-facing capability registry for the shock-mount assistant. Curated for end users —
@@ -969,26 +939,10 @@ SHOCK_CAPABILITIES = [
      "purpose": "Verify GT, natural frequency, and dynamic deflection for a specific part",
      "example": "Does CB1400-12 pass for a 900 kg unit with half-sine 15g 11ms?",
      "tool": "run_shock_analysis"},
-    {"capability": "Capacity / mass limit",
-     "purpose": "Find the mass range a given isolator part can handle across all load cases",
-     "example": "What is the maximum mass CB1500-8 can support?",
-     "tool": "find_capacity_limit"},
-    {"capability": "Deflection-constrained filtering",
-     "purpose": "List parts that pass shock analysis and stay within a clearance limit",
-     "example": "Which parts pass for 1200 kg with deflection under 15 mm?",
-     "tool": "filter_by_deflection"},
     {"capability": "Catalog data lookup",
      "purpose": "Stiffness, rated travel and size of any part or series, in catalog and SI units",
      "example": "What is the stiffness and rated travel of CB1400-30?",
      "tool": "get_isolator_data"},
-    {"capability": "CAD data extraction",
-     "purpose": "Pull mass, CG, and bounding envelope from a SolidWorks assembly",
-     "example": "Extract mass and CG from the open SolidWorks assembly.",
-     "tool": "extract_cad_data"},
-    {"capability": "SolidWorks file discovery",
-     "purpose": "List available .SLDASM files in the project directory",
-     "example": "What SolidWorks assemblies are available?",
-     "tool": "list_cad_files"},
     {"capability": "Engineering references",
      "purpose": "Explain shock isolation formulas and catalog selection rules",
      "example": "How is transmitted G calculated?",

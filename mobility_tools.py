@@ -696,24 +696,17 @@ Tool guide -- route by QUESTION TYPE:
                          twist-lock plane ("behind the front ISO plane"), pass
                          x_datum="front_iso" -- the tool converts to the
                          front-axle analysis datum internally.
-- derive_cg_from_wheel_loads : user gives FOUR wheel/weighbridge readings.
-                         Returns GW/Xcg/Ycg; Zcg is NOT derivable from static
-                         loads.
-- derive_zcg_from_tilt_tests : user gives TILT-TEST readings (inclination
-                         angles + inclined rear-axle loads). Returns Zcg per
-                         test and the average -- the missing height that
-                         completes a wheel-load-derived vehicle.
 - run_mobility_check   : FULL stability assessment of the workbook vehicle
                          (slope grid + cornering + axles): "is it stable on a
                          60% slope?", "max safe cornering speed?".
-- slope_limit          : slope SFs for a CUSTOM vehicle with user-GIVEN CG only.
-- cornering_check      : one cornering case for a CUSTOM vehicle, user-GIVEN CG only.
-- flag_unstable        : list workbook cases below a target SF.
-- lookup_knowledge     : ALWAYS pass parent_topic="mobility". Use it to cite
-                         slope formulas, cornering theory, steerability rule.
+- lookup_knowledge     : OPTIONAL, parent_topic="mobility". Call it ONLY when the
+                         user asks to EXPLAIN a formula, rule or requirement (a
+                         reference question) -- NOT for routine calcs or verdicts.
 
-When you give a verdict, cite one sentence from lookup_knowledge tagged
-[source: <file>.md]. If the knowledge base is not built, say so and continue.
+For calculation and verdict questions, answer DIRECTLY from the tool result --
+do NOT call lookup_knowledge (each extra tool call is a slow model turn). Only
+for explanation/reference questions, call lookup_knowledge and cite one sentence
+tagged [source: <file>.md]; if the knowledge base is not built, say so and continue.
 
 CONVERSATION: if the user just greets you or makes small talk ("hi", "hello",
 "what can you do"), reply in ONE short friendly sentence and offer 2-3 example
@@ -728,15 +721,15 @@ INTERPRETING RESULTS — units matter:
   meaningless). They are different quantities — report each separately.
 """
 
+# Core demo set (3 tools): one clear intent each -> Look up / Analyse / Modify.
+# Retired from the agent for demo robustness (functions stay defined; the UI
+# Custom-CG panel, workbook tabs and threshold screening cover these elsewhere):
+# flag_unstable, slope_limit, cornering_check, derive_cg_from_wheel_loads,
+# derive_zcg_from_tilt_tests. Re-add to this list to bring one back into chat.
 _MOBILITY_TOOLS = [
-    run_mobility_check,
-    get_vehicle_baseline,
-    evaluate_mass_change,
-    derive_cg_from_wheel_loads,
-    derive_zcg_from_tilt_tests,
-    slope_limit,
-    cornering_check,
-    flag_unstable,
+    get_vehicle_baseline,    # Look up: GW / CG / axle loads + limits
+    run_mobility_check,      # Analyse: full slope + cornering + axle assessment
+    evaluate_mass_change,    # Modify: add / remove / relocate one component
 ]
 
 # User-facing capability registry for the mobility assistant. Curated for end users
@@ -758,26 +751,6 @@ MOBILITY_CAPABILITIES = [
      "purpose": "Add / remove / relocate a component (X from front axle or front ISO plane) and compare CG, axle loads and stability vs baseline",
      "example": "Add a 500 kg component 3,000 mm behind the front ISO plane — does the rear axle still hold?",
      "tool": "evaluate_mass_change"},
-    {"capability": "CG from wheel loads",
-     "purpose": "Derive GW, Xcg and Ycg from four weighbridge readings",
-     "example": "Wheel loads are FL 4000, FR 3975, RL 4750, RR 5125 kg — where is the CG?",
-     "tool": "derive_cg_from_wheel_loads"},
-    {"capability": "ZCG from tilt tests",
-     "purpose": "Derive the CG height (per-test and average) from inclined-platform rear-axle readings",
-     "example": "Calculate ZCG from these four tilt-test readings: 10.2° at 10,550 kg, 12.3° at 10,700 kg, 8.2° at 10,450 kg, 6.2° at 10,300 kg.",
-     "tool": "derive_zcg_from_tilt_tests"},
-    {"capability": "Margin screening",
-     "purpose": "Find workbook cases below a selected SF",
-     "example": "Which mobility cases are below SF 2.2?",
-     "tool": "flag_unstable"},
-    {"capability": "Custom slope analysis",
-     "purpose": "Slope SF and tipping angle from a known CG and geometry",
-     "example": "For Xcg 2600 mm and Zcg 1700 mm, what is the ascending slope limit?",
-     "tool": "slope_limit"},
-    {"capability": "Custom cornering analysis",
-     "purpose": "Cornering SF and maximum safe speed",
-     "example": "Check cornering at 20 km/h with an 11 m radius.",
-     "tool": "cornering_check"},
     {"capability": "Engineering references",
      "purpose": "Explain formulas and mobility requirements",
      "example": "How is ascending slope safety factor calculated?",

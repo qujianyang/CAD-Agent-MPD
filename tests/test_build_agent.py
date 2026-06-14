@@ -1,15 +1,18 @@
 """Run: .\\mpd\\Scripts\\python.exe test_build_agent.py  (offline; inspects the registry only)"""
-SHOCK_8 = sorted([
-    "extract_cad_data", "select_isolator", "run_shock_analysis",
-    "find_capacity_limit", "filter_by_deflection", "get_isolator_data",
-    "lookup_knowledge", "list_cad_files",
+# Core demo set: 3 tools (Select / Verify / Look up) + shared lookup_knowledge.
+# Retired for demo robustness (functions stay defined; CAD + Shock UI tab and the
+# capacity/deflection panels cover these): extract_cad_data, list_cad_files,
+# find_capacity_limit, filter_by_deflection.
+SHOCK_4 = sorted([
+    "select_isolator", "run_shock_analysis", "get_isolator_data",
+    "lookup_knowledge",
 ])
 
 
-def test_shock_domain_unchanged():
+def test_shock_domain_core_demo_set():
     from agent import DOMAINS, _SYSTEM_PROMPT
     shock = DOMAINS["shock_mount"]
-    assert sorted(t.name for t in shock["tools"]) == SHOCK_8
+    assert sorted(t.name for t in shock["tools"]) == SHOCK_4
     assert shock["prompt"] is _SYSTEM_PROMPT      # exact same prompt object
 
 
@@ -35,16 +38,19 @@ def test_every_tiedown_tool_is_documented():
     assert not missing, f"Tie-down tools missing from capability guide: {missing}"
 
 
-MOBILITY_9 = sorted([
-    "run_mobility_check", "get_vehicle_baseline", "evaluate_mass_change",
-    "derive_cg_from_wheel_loads", "derive_zcg_from_tilt_tests",
-    "slope_limit", "cornering_check", "flag_unstable", "lookup_knowledge",
+# Core demo set: 3 tools (Look up / Analyse / Modify) + shared lookup_knowledge.
+# Retired for demo robustness (functions stay defined; UI panels + threshold
+# screening cover these): flag_unstable, slope_limit, cornering_check,
+# derive_cg_from_wheel_loads, derive_zcg_from_tilt_tests.
+MOBILITY_4 = sorted([
+    "get_vehicle_baseline", "run_mobility_check", "evaluate_mass_change",
+    "lookup_knowledge",
 ])
 
 
 def test_mobility_domain_wired():
     from agent import DOMAINS
-    assert sorted(t.name for t in DOMAINS["mobility"]["tools"]) == MOBILITY_9
+    assert sorted(t.name for t in DOMAINS["mobility"]["tools"]) == MOBILITY_4
 
 
 def test_every_mobility_tool_is_documented():

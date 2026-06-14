@@ -537,9 +537,26 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
             st.session_state[hist_key].append(
                 {"role": "assistant", "content": final_text, "events": collected})
 
-        if st.session_state[hist_key] and st.button("🧹 Clear", key=f"asst_{domain}_clear"):
-            st.session_state[hist_key] = []
-            st.rerun()
+        if st.session_state[hist_key]:
+            from assistant_export import history_to_markdown, history_to_html
+            from datetime import datetime as _dt
+            _ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+            _doc_title = f"{title} - chat export"
+            ex1, ex2, ex3 = st.columns(3)
+            ex1.download_button(
+                "⬇️ Markdown",
+                data=history_to_markdown(st.session_state[hist_key], title=_doc_title),
+                file_name=f"{domain}_chat_{_ts}.md", mime="text/markdown",
+                key=f"asst_{domain}_dl_md", use_container_width=True)
+            ex2.download_button(
+                "⬇️ HTML",
+                data=history_to_html(st.session_state[hist_key], title=_doc_title),
+                file_name=f"{domain}_chat_{_ts}.html", mime="text/html",
+                key=f"asst_{domain}_dl_html", use_container_width=True)
+            if ex3.button("🧹 Clear", key=f"asst_{domain}_clear",
+                          use_container_width=True):
+                st.session_state[hist_key] = []
+                st.rerun()
 
 
 def render_floating_assistant(domain: str, title: str, placeholder: str,
