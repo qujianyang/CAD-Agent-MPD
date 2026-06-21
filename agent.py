@@ -941,19 +941,19 @@ _SHOCK_TOOLS = [
 SHOCK_CAPABILITIES = [
     {"capability": "Isolator selection",
      "purpose": "Pick the softest passing part from the CB61400/CB1400/CB1500/CB1700 catalog",
-     "example": "Select an isolator for a 1500 kg rack, 6 bottom + 4 wall mounts.",
+     "example": "Select the softest passing isolator for a 1,500 kg rack using 6 bottom and 4 wall mounts under a 20G, 11 ms saw-tooth shock with 10G transmitted limit.",
      "tool": "select_isolator"},
     {"capability": "Shock analysis verification",
      "purpose": "Verify GT, natural frequency, and dynamic deflection for a specific part",
-     "example": "Does CB1400-12 pass for a 900 kg unit with half-sine 15g 11ms?",
+     "example": "Verify whether CB1400-12 passes for a 900 kg rack using 6 bottom and 4 wall mounts under a 15G, 11 ms half-sine shock with 10G transmitted limit.",
      "tool": "run_shock_analysis"},
     {"capability": "Catalog data lookup",
      "purpose": "Stiffness, rated travel and size of any part or series, in catalog and SI units",
-     "example": "What is the stiffness and rated travel of CB1400-30?",
+     "example": "What are the compression stiffness, shear stiffness, rated travel, and physical size of CB1400-30 in catalog and SI units?",
      "tool": "get_isolator_data"},
     {"capability": "Engineering references",
      "purpose": "Explain shock isolation formulas and catalog selection rules",
-     "example": "How is transmitted G calculated?",
+     "example": "Explain how transmitted G is calculated and why natural frequency affects shock isolation.",
      "tool": "lookup_knowledge"},
 ]
 
@@ -1019,6 +1019,14 @@ DOMAINS = {
 # technical answer MUST be grounded in a tool call; if a turn skips its tool we
 # retry once with a strict correction, and suppress the answer if it still does.
 _ENFORCE_TOOLUSE_DOMAINS = {"shock_mount"}
+
+# Stateless domains: each question is answered independently, with NO chat history
+# fed to the model. The UI-guide assistants ("how do I use this tab?") don't need
+# conversational memory -- dropping history is faster, cleaner, and avoids stale
+# context bleeding between unrelated how-to questions. The visible transcript and
+# export in the UI are unaffected; only the LLM input is reset each turn.
+def _is_stateless(domain: str) -> bool:
+    return (domain or "").startswith("ui_guide")
 
 # Small talk / greetings -> a tool-free reply is fine.
 _SMALLTALK_RE = re.compile(
@@ -1150,6 +1158,9 @@ class DomainAgent:
         its tool triggers ONE strict retry; if that still skips the tool, the
         (untrusted) answer is suppressed in favour of a safe notice.
         """
+        # Stateless UI-guide assistants answer each question independently.
+        if _is_stateless(self._domain):
+            chat_history = None
         messages = list(chat_history) if chat_history else []
         messages.append(("human", question))
 

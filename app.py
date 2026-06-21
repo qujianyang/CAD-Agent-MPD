@@ -773,11 +773,11 @@ with tab_quick:
         "🧭 Shock Selector UI Guide",
         "e.g. 'what does the Binding column mean?'",
         quickstart=[
-            ("Pick the best isolator (Auto mode)", "How do I use Auto mode to recommend the best isolator?"),
-            ("Verify a specific part",             "How do I verify a specific part number in Manual mode?"),
-            ("Use my SolidWorks model",            "How do I run the selection from my SolidWorks assembly instead of typing weights?"),
-            ("Set clearances and objective",       "What do the clearance X/Y/Z inputs and the selection objective do?"),
-            ("Read the results",                   "How do I read the 4 load case table and the Binding column?"),
+            ("How to use shock selector", "How do I use the shock isolator selector from start to finish?"),
+            ("What to do first",          "What should I do first to select or verify an isolator?"),
+            ("Required inputs",           "What inputs do I need before running shock isolator selection?"),
+            ("Form or assistant",         "When should I use Auto/Manual mode, and when should I ask the shock assistant?"),
+            ("Read results",             "How do I read the recommended part, GT, deflection, and load-case results?"),
         ],
     )
 
@@ -1064,11 +1064,11 @@ with tab_tiedown:
         "🧭 Tie-Down UI Guide",
         "e.g. 'which mounting surface should I pick?'",
         quickstart=[
-            ("Check one item",                 "How do I check whether one item's tie-down passes?"),
-            ("Size fasteners for a target SF", "How do I size fasteners for a target safety factor?"),
-            ("Choose the mounting surface",    "How do I choose the mounting surface, and why are front and rear equivalent?"),
-            ("Generate the Appendix G report", "How do I generate the Appendix G report section?"),
-            ("Understand PASS/FAIL",           "What do PASS/FAIL, the limiting axis and force type mean in the results?"),
+            ("How to use tie-down", "How do I use the tie-down tab from start to finish?"),
+            ("What to do first",    "What should I do first to check a secured item?"),
+            ("Required inputs",     "What inputs do I need before running a tie-down check?"),
+            ("Form or assistant",   "When should I use the form controls, and when should I ask the tie-down assistant?"),
+            ("Read results",        "How do I read safety factor, limiting axis, force type, and PASS/FAIL?"),
         ],
     )
 
@@ -1821,11 +1821,11 @@ with tab_mobility:
         "🧭 Mobility UI Guide",
         "e.g. 'why is Run Analysis disabled?'",
         quickstart=[
-            ("Analyse the existing Spinel",     "How do I analyse the existing Spinel using the workbook baseline?"),
-            ("Enter wheel-scale measurements",  "How do I enter wheel-scale measurements, and what does the Zcg source mean?"),
-            ("Study an equipment modification", "How do I study an equipment modification (add/remove/relocate a component)?"),
-            ("Use a certified CG",              "How do I use the advanced certified CG entry?"),
-            ("Understand the results",          "How do I read the mobility results and the verdict colours?"),
+            ("How to use mobility", "How do I use the mobility tab from start to finish?"),
+            ("What to do first",    "What should I do first to analyse the vehicle?"),
+            ("Required inputs",     "What inputs do I need before running mobility analysis?"),
+            ("Form or assistant",   "When should I use the workbook/forms, and when should I ask the mobility assistant?"),
+            ("Read results",        "How do I read axle load, slope stability, cornering, and final verdicts?"),
         ],
     )
 
