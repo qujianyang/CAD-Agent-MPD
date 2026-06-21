@@ -67,8 +67,28 @@ class TestEvaluateMassChange:
             {"action": "add", "mass_kg": 3000, "x_mm": 5000, "z_mm": 1500})
         assert "20,850" in out                       # new GW
         assert "13,000.0" in out and "[OVER]" in out  # rear axle over 10,600
-        assert "LIMIT EXCEEDED" in out
+        assert "FAIL structural limits" in out
         assert "baseline" in out and "modified" in out
+
+    def test_final_modified_block_is_source_of_truth(self):
+        # 3,200 kg shelter add: front/rear/GVW over, steer still OK. Regression for
+        # the agent quoting the baseline side of the "->" arrow instead of modified.
+        out = evaluate_mass_change.invoke(
+            {"action": "add", "mass_kg": 3200, "x_mm": 4000, "z_mm": 1800,
+             "description": "shelter"})
+        assert "FINAL MODIFIED RESULT" in out
+        assert "Modified vehicle: FAIL structural limits" in out
+        # per-check lines restate the MODIFIED value + verdict (no baseline adjacent)
+        assert "Front axle: 8,508.3 kg [OVER]" in out
+        assert "Rear axle: 12,541.7 kg [OVER]" in out
+        assert "GVW: 21,050 kg [OVER]" in out
+        assert "Steer (front): 40.42% [OK]" in out
+        assert "Failed checks: Front axle, Rear axle, GVW" in out
+        assert "Passed checks: Steer" in out
+        assert "Modified governing slope: ascending 60% SF=1.9651" in out
+        assert "Modified cornering SF: 3.1831" in out
+        # old misleading wording must be gone
+        assert "fails axle/GVW/steer" not in out
 
     def test_zero_mass_is_error(self):
         out = evaluate_mass_change.invoke({"action": "add", "mass_kg": 0})

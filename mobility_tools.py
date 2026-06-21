@@ -649,11 +649,36 @@ def evaluate_mass_change(
             f"(max safe {rep_b.corner.max_safe_speed_kmh:.1f} km/h)  ->  "
             f"{rep_m.corner.SF:.4f} (max safe {rep_m.corner.max_safe_speed_kmh:.1f} km/h)"
         )
-    lines.append(
-        "STRUCTURAL: " + ("all axle/GVW/steer limits OK" if am.all_ok else
-                          "LIMIT EXCEEDED -- modified vehicle fails axle/GVW/steer "
-                          "checks (see [OVER]/[FAIL] above)")
-    )
+    # FINAL MODIFIED RESULT: the single source of truth for what-if answers. Each
+    # check is restated with its MODIFIED number + verdict, baseline-free, so the
+    # model copies the answer instead of re-deriving it from the baseline column.
+    checks = [("Front axle", am.front_ok), ("Rear axle", am.rear_ok),
+              ("GVW", am.gvw_ok), ("Steer", am.steer_ok)]
+    failed = [n for n, ok in checks if not ok]
+    passed = [n for n, ok in checks if ok]
+    verdict = (f"FAIL structural limits ({len(failed)} of {len(checks)} checks failed)"
+               if failed else "PASS all structural limits")
+    lines += [
+        "",
+        "FINAL MODIFIED RESULT (answer using ONLY these lines; "
+        "ignore the baseline column above)",
+        f"Modified vehicle: {verdict}",
+        f"Front axle: {am.front_kg:,.1f} kg {_st(am.front_ok)} "
+        f"(limit {base.front_axle_limit_kg:,.0f})",
+        f"Rear axle: {am.rear_kg:,.1f} kg {_st(am.rear_ok)} "
+        f"(limit {base.rear_axle_limit_kg:,.0f})",
+        f"GVW: {mod.gw_kg:,.0f} kg {_st(am.gvw_ok)} (limit {base.gvw_limit_kg:,.0f})",
+        f"Steer (front): {am.front_pct:,.2f}% {'[OK]' if am.steer_ok else '[FAIL]'} "
+        f"(needs >= 25%)",
+        f"Failed checks: {', '.join(failed) if failed else 'none'}",
+        f"Passed checks: {', '.join(passed) if passed else 'none'}",
+        f"Modified governing slope: {gm.direction} {gm.grade_pct:.0f}% SF={gm.SF:.4f}",
+    ]
+    if rep_m.corner:
+        lines.append(
+            f"Modified cornering SF: {rep_m.corner.SF:.4f} "
+            f"(max safe {rep_m.corner.max_safe_speed_kmh:.1f} km/h)"
+        )
     for w in check_cg_plausibility(mod):
         lines.append(f"WARNING: {w}")
     return "\n".join(lines)
@@ -702,6 +727,12 @@ Tool guide -- route by QUESTION TYPE:
 - lookup_knowledge     : OPTIONAL, parent_topic="mobility". Call it ONLY when the
                          user asks to EXPLAIN a formula, rule or requirement (a
                          reference question) -- NOT for routine calcs or verdicts.
+
+For what-if (mass-change) questions, answer from the FINAL MODIFIED RESULT block at
+the end of the evaluate_mass_change result -- those are the modified values. Do NOT
+quote the baseline column or the left side of any "->" arrow. If the user asks about
+rear axle, front axle, GVW, or steer specifically, answer from that exact line in
+FINAL MODIFIED RESULT.
 
 For calculation and verdict questions, answer DIRECTLY from the tool result --
 do NOT call lookup_knowledge (each extra tool call is a slow model turn). Only
