@@ -5,6 +5,7 @@ LLM: meta/llama-3.1-70b-instruct (NVIDIA API) — supports tool calling.
 """
 import json
 import os
+import re
 from glob import glob
 from typing import Optional
 
@@ -824,6 +825,13 @@ You act as an ENGINEERING JUDGE, not a tool dispatcher. Your job is to interpret
 the numbers the tools give you, cite the engineering rule you applied, and actively \
 flag concerns the user implied but did not state. Do NOT just paraphrase the tool output.
 
+NON-NEGOTIABLE — NEVER answer from memory. You may not state a part number, GT \
+value, stiffness, deflection, pass/fail verdict, or formula unless it came from a \
+tool call in THIS turn. Tool results from earlier turns do NOT count — a new \
+question needs a new tool call, even if it looks similar to one already answered. \
+If you are about to write a recommendation or verdict without having called a tool \
+this turn, STOP and call the tool first.
+
 Your primary task: select the correct wire rope isolator (CB61400, CB1400, CB1500, \
 CB1700 series) for equipment racks given mass, mount configuration, and shock environment.
 
@@ -1004,6 +1012,58 @@ DOMAINS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Tool-use enforcement
+# ---------------------------------------------------------------------------
+# create_agent() lets the model answer directly. For these domains every
+# technical answer MUST be grounded in a tool call; if a turn skips its tool we
+# retry once with a strict correction, and suppress the answer if it still does.
+_ENFORCE_TOOLUSE_DOMAINS = {"shock_mount"}
+
+# Small talk / greetings -> a tool-free reply is fine.
+_SMALLTALK_RE = re.compile(
+    r"^\s*(hi+|hey+|hello|yo|sup|thanks|thank you|thx|good (morning|afternoon)|"
+    r"who are you|what (can|do) you|how are you|help)\b", re.IGNORECASE)
+# A technical CLAIM the model must not assert without a tool (part no., verdict,
+# GT, catalog data, etc.).
+_CLAIM_RE = re.compile(
+    r"(cb\s?\d|\bgt\b|\bpass(es|ed)?\b|\bfail(s|ed)?\b|utilization|deflection|"
+    r"recommend|% of|g vs|stiffness|rated travel|natural frequency)", re.IGNORECASE)
+# A genuine request for a missing REQUIRED input.
+_INPUT_REQ_RE = re.compile(
+    r"(mass|kg|weight|part\s*(number|no)|which part|mount|configuration|"
+    r"shock|pulse|half[\s-]?sine|saw[\s-]?tooth)", re.IGNORECASE)
+
+_TOOLUSE_CORRECTION = (
+    "You answered WITHOUT calling a tool. Every part number, GT value, stiffness, "
+    "deflection, pass/fail verdict and formula MUST come from a tool call in THIS "
+    "turn. Call exactly one of: select_isolator, run_shock_analysis, "
+    "get_isolator_data, lookup_knowledge. Do NOT answer from memory or from earlier "
+    "turns -- a new question needs a new tool call.")
+_TOOLUSE_SAFE_NOTICE = (
+    "I can't ground this in a validated tool, so I won't give numbers that might be "
+    "wrong. Please re-ask and include the key inputs (e.g. the rack mass, the part "
+    "number, or whether the pulse is half-sine).")
+
+
+def _requires_tool(question: str, answer: str) -> bool:
+    """True if a (shock-mount) answer must be backed by a tool call.
+
+    False only for (a) small talk, or (b) a genuine clarification that asks for a
+    missing required input AND makes no technical claim. A no-tool answer that
+    states a part/verdict -- e.g. "CB1500-80 passes. Want the full report?" -- has a
+    '?' but matches a claim, so it still returns True.
+    """
+    if _SMALLTALK_RE.search(question or ""):
+        return False
+    a = answer or ""
+    asks_for_input = ("?" in a) and bool(_INPUT_REQ_RE.search(a))
+    makes_claim = bool(_CLAIM_RE.search(a))
+    if asks_for_input and not makes_claim:
+        return False
+    return True
+
+
 class DomainAgent:
     """LangChain tool-calling agent for one engineering domain (focused prompt + tools)."""
 
@@ -1026,29 +1086,26 @@ class DomainAgent:
         self._agent = create_agent(llm, tools, system_prompt=system_prompt)
 
     def invoke(self, question: str, chat_history: list | None = None) -> str:
-        messages = list(chat_history) if chat_history else []
-        messages.append(("human", question))
+        """Run the agent and return the final answer text. Routes through the
+        guarded stream() so tool-use enforcement applies here too."""
         if _MLFLOW_ON:
             import mlflow  # only imported once tracing was explicitly enabled
             with mlflow.start_run(run_name=f"{self._domain}-invoke", nested=True):
                 mlflow.set_tags({"domain": self._domain, "question": question[:120]})
-                result = self._agent.invoke({"messages": messages})
-        else:
-            result = self._agent.invoke({"messages": messages})
-        last = result["messages"][-1]
-        return last.content if hasattr(last, "content") else str(last)
+                return self._collect_final(question, chat_history)
+        return self._collect_final(question, chat_history)
 
-    def stream(self, question: str, chat_history: list | None = None):
-        """
-        Stream structured events as the agent works (for Streamlit st.status).
-        Yields dicts: reasoning | tool_call | tool_result | final.
-        """
-        messages = list(chat_history) if chat_history else []
-        messages.append(("human", question))
+    def _collect_final(self, question: str, chat_history: list | None = None) -> str:
+        final = ""
+        for ev in self.stream(question, chat_history):
+            if ev["type"] == "final":
+                final = ev["content"]
+        return final
 
-        seen_tool_call_ids: set[str] = set()
-        last_ai_content: str = ""
-
+    def _drive(self, messages: list, seen_tool_call_ids: set):
+        """Stream one agent run. Yields tool_call / tool_result / reasoning events
+        live, then one terminal {"type": "_final", "content": ...}."""
+        last_ai_content = ""
         for update in self._agent.stream({"messages": messages}, stream_mode="updates"):
             for _node, node_state in update.items():
                 new_messages = node_state.get("messages", []) if isinstance(node_state, dict) else []
@@ -1082,9 +1139,46 @@ class DomainAgent:
                             }
                     elif content.strip():
                         last_ai_content = content
+        yield {"type": "_final", "content": last_ai_content}
 
-        if last_ai_content:
-            yield {"type": "final", "content": last_ai_content}
+    def stream(self, question: str, chat_history: list | None = None):
+        """
+        Stream structured events as the agent works (for Streamlit st.status).
+        Yields dicts: reasoning | tool_call | tool_result | final.
+
+        For domains in _ENFORCE_TOOLUSE_DOMAINS, a technical answer that skipped
+        its tool triggers ONE strict retry; if that still skips the tool, the
+        (untrusted) answer is suppressed in favour of a safe notice.
+        """
+        messages = list(chat_history) if chat_history else []
+        messages.append(("human", question))
+
+        seen_tool_call_ids: set[str] = set()
+        final_content = ""
+        for ev in self._drive(messages, seen_tool_call_ids):
+            if ev["type"] == "_final":
+                final_content = ev["content"]
+            else:
+                yield ev
+
+        if (not seen_tool_call_ids and self._domain in _ENFORCE_TOOLUSE_DOMAINS
+                and _requires_tool(question, final_content)):
+            retry_messages = messages + [
+                ("ai", final_content or "(no answer)"),
+                ("human", _TOOLUSE_CORRECTION),
+            ]
+            final_content = ""
+            for ev in self._drive(retry_messages, seen_tool_call_ids):
+                if ev["type"] == "_final":
+                    final_content = ev["content"]
+                else:
+                    yield ev
+            if not seen_tool_call_ids:        # retry STILL answered with no tool
+                yield {"type": "final", "content": _TOOLUSE_SAFE_NOTICE}
+                return
+
+        if final_content:
+            yield {"type": "final", "content": final_content}
 
 
 def build_agent(domain: str, api_key: str) -> DomainAgent:
@@ -1102,7 +1196,7 @@ class ShockMountAgent(DomainAgent):
 
     def __init__(self, api_key: str):
         cfg = DOMAINS["shock_mount"]
-        super().__init__(api_key, cfg["prompt"], cfg["tools"])
+        super().__init__(api_key, cfg["prompt"], cfg["tools"], domain="shock_mount")
 
 
 # ---------------------------------------------------------------------------
