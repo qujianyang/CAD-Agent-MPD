@@ -9,6 +9,30 @@ def test_run_shock_analysis_sawtooth_anchor():
     assert "sawtooth" in out
 
 
+def test_run_shock_analysis_to_ms_no_warning():
+    # to_ms=11 must reproduce the default 11 ms Excel anchor with NO substitution NOTE.
+    out = run_shock_analysis.invoke({
+        "mass_kg": 850.0, "part_no": "CB1400-15", "to_ms": 11.0,
+    })
+    assert "6.296" in out               # identical to the default-duration anchor
+    assert "18.85" in out
+    assert "NOTE" not in out            # clean pass-through, nothing substituted
+
+
+def test_run_shock_analysis_to_ms_changes_result():
+    # A different ms value must change the physics (proves to_ms is wired, not ignored).
+    out = run_shock_analysis.invoke({
+        "mass_kg": 850.0, "part_no": "CB1400-15", "to_ms": 22.0,
+    })
+    assert "6.296" not in out           # 22 ms != the 11 ms anchor
+
+
+def test_select_isolator_to_ms_no_warning():
+    out = select_isolator.invoke({"mass_kg": 850.0, "to_ms": 11.0})
+    assert "NOTE" not in out            # no invalid-parameter substitution
+    assert "RECOMMENDED:" in out        # a valid part was selected
+
+
 def test_run_shock_analysis_half_sine_harsher():
     out = run_shock_analysis.invoke({
         "mass_kg": 850.0, "part_no": "CB1400-15", "pulse_shape": "half-sine",

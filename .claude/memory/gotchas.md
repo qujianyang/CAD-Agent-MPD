@@ -40,7 +40,7 @@ formula = wb.Sheets("Sheet1").Range("E21").Formula
 
 ## The to_s=0 LLM hallucination
 
-LLM was truncating `to_s=0.011` to `to_s=0`, making physics blow up (division by zero in fn). Fixed with three-layer defense (see `conventions.md`). If you ever change a tool signature, double-check the OMIT instruction is still in the docstring.
+LLM was truncating the small decimal `to_s=0.011` to `to_s=0`, making physics blow up (division by zero in fn). **Primary fix (2026-06): the model-facing pulse-duration param is now `to_ms` in milliseconds (default `11.0`)** on all four shock tools (`select_isolator`, `run_shock_analysis`, `find_capacity_limit`, `filter_by_deflection`). Each tool converts `to_s = to_ms / 1000.0` internally; `ShockEnv.to_s` stays SI seconds. An integer-scale value is far less likely to be truncated, and this is model-agnostic. The runtime clamp + NOTE substitution is retained as a backstop (three-layer defense, see `conventions.md`). If you ever change a tool signature, double-check the OMIT instruction is still in the docstring.
 
 ## Stale Streamlit processes pile up
 

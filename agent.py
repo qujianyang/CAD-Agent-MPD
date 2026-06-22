@@ -140,7 +140,7 @@ def select_isolator(
     n_bottom: int = 6,
     n_wall: int = 4,
     Ao_G: float = 20.0,
-    to_s: float = 0.011,
+    to_ms: float = 11.0,
     GT_limit_G: float = 10.0,
     series: str = "ALL",
     pulse_shape: str = "sawtooth",
@@ -160,7 +160,7 @@ def select_isolator(
     NOT pass 0 for the shock parameters — 0 makes the physics trivial.
 
     Project defaults (used if you omit the parameter):
-        n_bottom=6, n_wall=4, Ao_G=20.0G, to_s=0.011s (11ms),
+        n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms),
         GT_limit_G=10.0G, series="ALL", pulse_shape="sawtooth",
         objective="best_isolation"
 
@@ -171,7 +171,7 @@ def select_isolator(
         n_wall     : Number of wall-mounted isolators. Default 4. OMIT unless user says.
         Ao_G       : Shock magnitude in G. Default 20.0 (MIL-STD-810H Category 4).
                      OMIT unless user explicitly gives a different shock spec.
-        to_s       : Shock pulse duration in seconds. Default 0.011 (11ms saw-tooth).
+        to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0 (11 ms saw-tooth).
                      OMIT unless user explicitly gives a different pulse duration.
         GT_limit_G : Max allowable transmitted G. Default 10.0 G. OMIT unless user says.
         series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
@@ -199,9 +199,10 @@ def select_isolator(
     if Ao_G is None or Ao_G <= 0:
         substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted default 20.0 G")
         Ao_G = 20.0
-    if to_s is None or to_s <= 0:
-        substitutions.append(f"to_s was {to_s!r} (invalid); substituted default 0.011 s (11 ms)")
-        to_s = 0.011
+    if to_ms is None or to_ms <= 0:
+        substitutions.append(f"to_ms was {to_ms!r} (invalid); substituted default 11.0 ms")
+        to_ms = 11.0
+    to_s = to_ms / 1000.0
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
         GT_limit_G = 10.0
@@ -279,7 +280,7 @@ def run_shock_analysis(
     n_bottom: int = 6,
     n_wall: int = 4,
     Ao_G: float = 20.0,
-    to_s: float = 0.011,
+    to_ms: float = 11.0,
     GT_limit_G: float = 10.0,
     pulse_shape: str = "sawtooth",
 ) -> str:
@@ -294,7 +295,7 @@ def run_shock_analysis(
     the physics trivial (every part passes).
 
     Project defaults (used if you omit the parameter):
-        n_bottom=6, n_wall=4, Ao_G=20.0G, to_s=0.011s (11ms), GT_limit_G=10.0G
+        n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms), GT_limit_G=10.0G
 
     Args:
         mass_kg    : REQUIRED. Total assembly mass in kg.
@@ -302,7 +303,7 @@ def run_shock_analysis(
         n_bottom   : Bottom-mount count. Default 6. OMIT unless user says.
         n_wall     : Wall-mount count.   Default 4. OMIT unless user says.
         Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user specifies.
-        to_s       : Shock pulse duration (seconds). Default 0.011. OMIT unless user specifies.
+        to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0. OMIT unless user specifies.
         GT_limit_G : Max allowable transmitted G. Default 10.0. OMIT unless user says.
         pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
                      names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.
@@ -321,9 +322,10 @@ def run_shock_analysis(
     if Ao_G is None or Ao_G <= 0:
         substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted default 20.0 G")
         Ao_G = 20.0
-    if to_s is None or to_s <= 0:
-        substitutions.append(f"to_s was {to_s!r} (invalid); substituted default 0.011 s (11 ms)")
-        to_s = 0.011
+    if to_ms is None or to_ms <= 0:
+        substitutions.append(f"to_ms was {to_ms!r} (invalid); substituted default 11.0 ms")
+        to_ms = 11.0
+    to_s = to_ms / 1000.0
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
         GT_limit_G = 10.0
@@ -426,7 +428,7 @@ def find_capacity_limit(
     n_bottom: int = 6,
     n_wall: int = 4,
     Ao_G: float = 20.0,
-    to_s: float = 0.011,
+    to_ms: float = 11.0,
     GT_limit_G: float = 10.0,
     pulse_shape: str = "sawtooth",
 ) -> str:
@@ -449,7 +451,7 @@ def find_capacity_limit(
         n_bottom  : Bottom-mount count. Default 6. OMIT unless user specifies.
         n_wall    : Wall-mount count.   Default 4. OMIT unless user specifies.
         Ao_G      : Shock magnitude in G. Default 20.0. OMIT unless user specifies.
-        to_s      : Shock pulse duration (s). Default 0.011. OMIT unless user specifies.
+        to_ms     : Shock pulse duration in MILLISECONDS. Default 11.0. OMIT unless user specifies.
         GT_limit_G: Max allowable transmitted G. Default 10.0. OMIT unless user specifies.
         pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
                      names a pulse shape.
@@ -470,9 +472,10 @@ def find_capacity_limit(
     if Ao_G is None or Ao_G <= 0:
         substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted default 20.0 G")
         Ao_G = 20.0
-    if to_s is None or to_s <= 0:
-        substitutions.append(f"to_s was {to_s!r} (invalid); substituted default 0.011 s")
-        to_s = 0.011
+    if to_ms is None or to_ms <= 0:
+        substitutions.append(f"to_ms was {to_ms!r} (invalid); substituted default 11.0 ms")
+        to_ms = 11.0
+    to_s = to_ms / 1000.0
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
         GT_limit_G = 10.0
@@ -599,7 +602,7 @@ def filter_by_deflection(
     n_bottom: int = 6,
     n_wall: int = 4,
     Ao_G: float = 20.0,
-    to_s: float = 0.011,
+    to_ms: float = 11.0,
     GT_limit_G: float = 10.0,
     series: str = "ALL",
     pulse_shape: str = "sawtooth",
@@ -628,7 +631,7 @@ def filter_by_deflection(
         n_bottom   : Bottom-mount count. Default 6. OMIT unless user says.
         n_wall     : Wall-mount count.   Default 4. OMIT unless user says.
         Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user says.
-        to_s       : Shock pulse duration (s). Default 0.011. OMIT unless user says.
+        to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0. OMIT unless user says.
         GT_limit_G : Maximum transmitted G. Default 10.0. OMIT unless user says.
         series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
         pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
@@ -648,9 +651,10 @@ def filter_by_deflection(
     if Ao_G is None or Ao_G <= 0:
         substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted 20.0 G")
         Ao_G = 20.0
-    if to_s is None or to_s <= 0:
-        substitutions.append(f"to_s was {to_s!r} (invalid); substituted 0.011 s")
-        to_s = 0.011
+    if to_ms is None or to_ms <= 0:
+        substitutions.append(f"to_ms was {to_ms!r} (invalid); substituted 11.0 ms")
+        to_ms = 11.0
+    to_s = to_ms / 1000.0
     if GT_limit_G is None or GT_limit_G <= 0:
         substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted 10.0 G")
         GT_limit_G = 10.0
@@ -843,10 +847,11 @@ Standard defaults (used automatically if you omit the parameter — see CRITICAL
 CRITICAL — parameter passing rule for ALL tools:
 - Only pass values for parameters the user EXPLICITLY mentions.
 - For every other parameter, OMIT it from the tool call so the project default applies.
-- Never pass 0 or "0" for shock parameters (Ao_G, to_s, GT_limit_G). Passing 0
+- Never pass 0 or "0" for shock parameters (Ao_G, to_ms, GT_limit_G). Passing 0
   makes the physics trivial and the result meaningless.
-- Numeric parameters: pass real numbers (e.g. 0.011, 20.0), never strings of
-  truncated numbers (e.g. "0" instead of "0.011").
+- Pulse duration is to_ms in MILLISECONDS (e.g. an 11 ms pulse is to_ms=11), NOT seconds.
+- Numeric parameters: pass real numbers (e.g. to_ms=11, Ao_G=20.0), never strings of
+  truncated numbers (e.g. "0" instead of 11).
 
 PULSE SHAPE: every analysis tool accepts pulse_shape ("sawtooth" default, or
 "half_sine"). Pass "half_sine" ONLY when the user says half-sine; otherwise OMIT
@@ -1028,6 +1033,20 @@ _ENFORCE_TOOLUSE_DOMAINS = {"shock_mount"}
 def _is_stateless(domain: str) -> bool:
     return (domain or "").startswith("ui_guide")
 
+# Engineering assistants (shock/tiedown/mobility) keep only the last few exchanges
+# as LLM input -- long chats otherwise grow the prompt and slow every turn. The full
+# transcript stays visible/exported in the UI; only the model input is capped.
+_MAX_HISTORY_TURNS = 3   # one "turn" = one (human, ai) exchange
+
+
+def _limit_history(chat_history: list | None,
+                   max_turns: int = _MAX_HISTORY_TURNS) -> list | None:
+    """Keep only the last `max_turns` exchanges (2*max_turns messages) of chat history.
+    None/short histories pass through unchanged. The UI transcript is unaffected."""
+    if not chat_history:
+        return chat_history
+    return chat_history[-2 * max_turns:]
+
 # Small talk / greetings -> a tool-free reply is fine.
 _SMALLTALK_RE = re.compile(
     r"^\s*(hi+|hey+|hello|yo|sup|thanks|thank you|thx|good (morning|afternoon)|"
@@ -1158,9 +1177,13 @@ class DomainAgent:
         its tool triggers ONE strict retry; if that still skips the tool, the
         (untrusted) answer is suppressed in favour of a safe notice.
         """
-        # Stateless UI-guide assistants answer each question independently.
+        # Stateless UI-guide assistants answer each question independently; the
+        # stateful engineering assistants keep only the last few turns (long chats
+        # otherwise grow the prompt and slow every turn).
         if _is_stateless(self._domain):
             chat_history = None
+        else:
+            chat_history = _limit_history(chat_history)
         messages = list(chat_history) if chat_history else []
         messages.append(("human", question))
 
@@ -1244,5 +1267,5 @@ if __name__ == "__main__":
         print(f"\nAgent: {response}\n")
         history.append(("human", q))
         history.append(("ai", response))
-        if len(history) > 6:
-            history = history[-6:]
+        if len(history) > 2 * _MAX_HISTORY_TURNS:
+            history = history[-2 * _MAX_HISTORY_TURNS:]

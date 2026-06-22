@@ -7,12 +7,15 @@ Tool docstrings must say: **"OMIT this parameter unless the user explicitly spec
 Tool functions must clamp invented / missing values to safe defaults and inject a NOTE in the return string when they substitute. Pattern from `select_isolator` / `run_shock_analysis`:
 
 ```python
-if to_s == 0 or to_s is None:
-    to_s = DEFAULT_TO_S  # 0.011
-    notes.append("NOTE: to_s was 0/None, substituted with default 0.011 s")
+if to_ms is None or to_ms <= 0:
+    notes.append("NOTE: to_ms was 0/None, substituted default 11.0 ms")
+    to_ms = 11.0
+to_s = to_ms / 1000.0   # engine works in SI seconds
 ```
 
 The note travels back to the LLM so it can flag the substitution to the user.
+
+**Pulse duration is model-facing as `to_ms` (milliseconds), not `to_s`.** The LLM kept truncating the decimal `0.011` to `0`; an integer-scale ms value avoids that. Convert to seconds inside the tool; `ShockEnv.to_s` stays SI.
 
 ## LLM provider quirk — NVIDIA single-tool-call
 
@@ -52,18 +55,25 @@ Returned object is a `CompiledStateGraph` from LangGraph.
 
 Agent exposes `stream(messages)` yielding events. UI persists events into `chat_history` so reruns show past tool calls. Don't reach for callbacks or LangChain's `AsyncIteratorCallbackHandler` — `stream_mode="updates"` on the LangGraph object is the supported path.
 
+## Chat-history policy (LLM input vs. visible transcript)
+
+`DomainAgent.stream()` is the single chokepoint for history. Two caps live there, and both touch ONLY the LLM input — the visible transcript + exports (`st.session_state[hist_key]`) are untouched:
+- **Stateless** (`ui_guide_*`): history dropped entirely (`_is_stateless`).
+- **Stateful** (shock/tiedown/mobility): keep only the last `_MAX_HISTORY_TURNS` (3) turns via `_limit_history`, so long chats don't grow the prompt and slow every turn.
+
 ## No emojis or non-ASCII symbols in source files
 
 Unless the user explicitly asks for them.
 Never use `✓ ✗ ⚠` or any Unicode symbol in `print()` statements — Windows terminals default to cp1252 which can't encode them, causing `UnicodeEncodeError` at runtime. Use plain ASCII: `[OK]` `[FAIL]` `[WARN]`.
 
-## Anti-hallucination — three-layer defense (for to_s=0)
+## Anti-hallucination — defense layers (for to_ms / shock params)
 
+0. **Interface fix (primary):** model-facing pulse duration is `to_ms` (ms, default 11.0), converted to seconds inside the tool — avoids the `0.011 -> 0` truncation entirely.
 1. System prompt rule: "never zero out a parameter you didn't receive"
 2. Tool docstring: OMIT unless user specifies
 3. Tool-level clamp with NOTE injection
 
-If you change a tool signature, double-check all three layers are still in sync.
+If you change a tool signature, double-check all layers are still in sync.
 
 ## Test → tool gap
 
