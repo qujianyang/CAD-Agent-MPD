@@ -12,6 +12,7 @@ _Last updated: 2026-05-25 (end of long session, just before compact)_
 - Physics matches Excel to 4 d.p. for the CB1400-15 / 850 kg / 6+4 case (GT=6.296 G, ΔD=18.85 mm)
 - Anti-hallucination: pulse duration is model-facing as `to_ms` (ms), converted to SI seconds inside the tool — fixes the `0.011 -> 0` truncation; runtime clamp + NOTE injection kept as backstop
 - History cap: stateful engineering assistants (shock/tiedown/mobility) feed only the last `_MAX_HISTORY_TURNS` (3) turns to the LLM via `_limit_history` in `DomainAgent.stream()`; UI transcript/export unaffected
+- CB61400 opt-in: assistant `select_isolator`/`filter_by_deflection` default `series="AUTO"` → `AUTO_SELECT_CATALOGS` (CB1400/CB1500/CB1700, excludes the soft 6-strand CB61400). `series="ALL"` or `"CB61400"` re-includes it; `get_isolator_data` still lists it. Mirrors the UI selector default.
 
 ## Test status
 

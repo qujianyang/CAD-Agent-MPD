@@ -58,7 +58,21 @@ def test_select_isolator_objective_max_clearance():
 def test_select_isolator_bad_objective_clamped():
     out = select_isolator.invoke({"mass_kg": 850.0, "objective": "fastest"})
     assert "NOTE" in out
-    assert "RECOMMENDED: CB61400-60" in out  # fell back to best_isolation
+    assert "RECOMMENDED: CB1400-60" in out   # fell back to best_isolation (AUTO default)
+    assert "CB61400" not in out              # default excludes the 6-strand series
+
+
+def test_select_isolator_default_excludes_cb61400():
+    # Default series="AUTO" must never surface a CB61400 part (opt-in only).
+    out = select_isolator.invoke({"mass_kg": 850.0})
+    assert "RECOMMENDED:" in out
+    assert "CB61400" not in out
+
+
+def test_select_isolator_all_series_includes_cb61400():
+    # Explicit opt-in still reaches the softer 6-strand series (no data lost).
+    out = select_isolator.invoke({"mass_kg": 850.0, "series": "ALL"})
+    assert "RECOMMENDED: CB61400-60" in out
 
 
 def test_get_isolator_data_part():

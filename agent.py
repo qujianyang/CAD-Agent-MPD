@@ -39,7 +39,7 @@ from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
 from physics_engine import ShockEnv, run_analysis, format_report
 from catalog import (
-    ALL_CATALOGS, SELECT_OBJECTIVES,
+    ALL_CATALOGS, AUTO_SELECT_CATALOGS, SELECT_OBJECTIVES,
     CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
     select_and_analyze, format_selection_table, selection_context_for_llm,
 )
@@ -142,12 +142,13 @@ def select_isolator(
     Ao_G: float = 20.0,
     to_ms: float = 11.0,
     GT_limit_G: float = 10.0,
-    series: str = "ALL",
+    series: str = "AUTO",
     pulse_shape: str = "sawtooth",
     objective: str = "best_isolation",
 ) -> str:
     """
-    Select the optimal wire rope isolator from the CB61400 / CB1400 / CB1500 / CB1700 catalog.
+    Select the optimal wire rope isolator. By DEFAULT scans the practical-rack range
+    CB1400 / CB1500 / CB1700; the softer 6-strand CB61400 is opt-in (pass series="ALL").
     Evaluates every matching part and recommends the best per `objective` (default:
     SOFTEST that passes = best isolation):
       - GT < GT_limit in all 3 load directions (compression vertical, lateral, shear)
@@ -161,7 +162,7 @@ def select_isolator(
 
     Project defaults (used if you omit the parameter):
         n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms),
-        GT_limit_G=10.0G, series="ALL", pulse_shape="sawtooth",
+        GT_limit_G=10.0G, series="AUTO", pulse_shape="sawtooth",
         objective="best_isolation"
 
     Args:
@@ -174,7 +175,9 @@ def select_isolator(
         to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0 (11 ms saw-tooth).
                      OMIT unless user explicitly gives a different pulse duration.
         GT_limit_G : Max allowable transmitted G. Default 10.0 G. OMIT unless user says.
-        series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
+        series     : Catalog filter. Default "AUTO" (CB1400/CB1500/CB1700 — practical
+                     19" rack range). Pass "ALL" to also include the softer 6-strand
+                     CB61400, or a single series name ("CB61400"/"CB1400"/"CB1500"/"CB1700").
         pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
                      names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.
         objective  : Tiebreak among passing parts: "best_isolation" (softest, default),
@@ -182,13 +185,14 @@ def select_isolator(
                      from any limit). OMIT unless the user states a preference.
     """
     catalog_map = {
+        "AUTO":   AUTO_SELECT_CATALOGS,   # default: practical rack range, excludes CB61400
         "CB1400": CB1400_CATALOG,
         "CB1500": CB1500_CATALOG,
         "CB61400": CB61400_CATALOG,
         "CB1700": CB1700_CATALOG,
-        "ALL":    ALL_CATALOGS,
+        "ALL":    ALL_CATALOGS,           # opt-in: adds the softer 6-strand CB61400
     }
-    catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
+    catalog = catalog_map.get(series.upper(), AUTO_SELECT_CATALOGS)
 
     if mass_kg <= 0:
         return "ERROR: mass_kg must be a positive number. Ask the user for the assembly mass in kg, or call extract_cad_data to read it from SolidWorks."
@@ -604,7 +608,7 @@ def filter_by_deflection(
     Ao_G: float = 20.0,
     to_ms: float = 11.0,
     GT_limit_G: float = 10.0,
-    series: str = "ALL",
+    series: str = "AUTO",
     pulse_shape: str = "sawtooth",
 ) -> str:
     """
@@ -633,7 +637,9 @@ def filter_by_deflection(
         Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user says.
         to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0. OMIT unless user says.
         GT_limit_G : Maximum transmitted G. Default 10.0. OMIT unless user says.
-        series     : Catalog filter. "ALL", "CB61400", "CB1400", "CB1500", or "CB1700". Default "ALL".
+        series     : Catalog filter. Default "AUTO" (CB1400/CB1500/CB1700 — practical
+                     19" rack range). Pass "ALL" to also include the softer 6-strand
+                     CB61400, or a single series name.
         pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
                      names a pulse shape.
 
@@ -663,13 +669,14 @@ def filter_by_deflection(
         substitutions.append(pulse_note)
 
     catalog_map = {
+        "AUTO":   AUTO_SELECT_CATALOGS,   # default: practical rack range, excludes CB61400
         "CB1400": CB1400_CATALOG,
         "CB1500": CB1500_CATALOG,
         "CB61400": CB61400_CATALOG,
         "CB1700": CB1700_CATALOG,
-        "ALL":    ALL_CATALOGS,
+        "ALL":    ALL_CATALOGS,           # opt-in: adds the softer 6-strand CB61400
     }
-    catalog = catalog_map.get(series.upper(), ALL_CATALOGS)
+    catalog = catalog_map.get(series.upper(), AUTO_SELECT_CATALOGS)
     env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G, pulse_shape=pulse)
 
     _, candidates = select_and_analyze(
@@ -817,6 +824,9 @@ def get_isolator_data(part_no: str = "", series: str = "") -> str:
             f"  {name:<8} {len(cat):>2} parts | K_comp {min(ks):,.0f}-{max(ks):,.0f} lb/in | "
             f"rated travel {min(ds):.0f}-{max(ds):.0f} mm"
         )
+    lines.append("Note: CB61400 (6-strand) is in the catalog but EXCLUDED from default "
+                 "auto-selection — it is too soft (large deflection) for standard racks. "
+                 "It is selected only on explicit opt-in.")
     lines.append("Give a series for its full table, or a part number for exact data.")
     return "\n".join(lines)
 
@@ -857,6 +867,12 @@ PULSE SHAPE: every analysis tool accepts pulse_shape ("sawtooth" default, or
 "half_sine"). Pass "half_sine" ONLY when the user says half-sine; otherwise OMIT
 it. A half-sine pulse is ~27% harsher for the same Ao/to (V = (2/pi)*g*Ao*to vs
 0.5*g*Ao*to) — NEVER answer a half-sine question with sawtooth numbers.
+
+DEFAULT SELECTION scans CB1400/CB1500/CB1700 (the practical 19" rack range). The
+softer 6-strand CB61400 is OPT-IN: it produces large deflections at typical rack
+masses, so OMIT series (default "AUTO") for normal requests and NEVER recommend a
+CB61400 part by default. Only pass series="ALL" (or series="CB61400") when the user
+explicitly asks for CB61400 or for the maximum-softness option.
 
 CATALOG NUMBERS (stiffness K, rated travel dmax, part size) come ONLY from
 get_isolator_data — never from memory, and never convert lb/in to N/m yourself.
@@ -945,7 +961,7 @@ _SHOCK_TOOLS = [
 # can assert complete coverage with registered - documented.
 SHOCK_CAPABILITIES = [
     {"capability": "Isolator selection",
-     "purpose": "Pick the softest passing part from the CB61400/CB1400/CB1500/CB1700 catalog",
+     "purpose": "Pick the softest passing part from the CB1400/CB1500/CB1700 catalog (CB61400 6-strand is opt-in)",
      "example": "Select the softest passing isolator for a 1,500 kg rack using 6 bottom and 4 wall mounts under a 20G, 11 ms saw-tooth shock with 10G transmitted limit.",
      "tool": "select_isolator"},
     {"capability": "Shock analysis verification",
