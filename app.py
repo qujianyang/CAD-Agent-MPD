@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 import pandas as pd
 import streamlit as st
 
+from llm_config import resolve_llm_config
 from cad_compliance_checker import _parse_cad_output
 from physics_engine import ShockEnv, _loads_per_isolator, run_analysis, _NO_CLEARANCE_MM
 from catalog import (
@@ -63,7 +64,16 @@ from streamlit_float import float_init, float_css_helper
 float_init()
 
 load_dotenv()
-API_KEY = (os.environ.get("NVIDIA_API_KEY") or "").strip()
+try:
+    LLM_CONFIG = resolve_llm_config()
+    LLM_CONFIG_ERROR = ""
+except ValueError as e:
+    LLM_CONFIG = None
+    LLM_CONFIG_ERROR = str(e)
+API_KEY = LLM_CONFIG.api_key if LLM_CONFIG else ""
+API_KEY_ENV = LLM_CONFIG.api_key_env if LLM_CONFIG else "OPENAI_API_KEY or NVIDIA_API_KEY"
+LLM_PROVIDER = LLM_CONFIG.provider if LLM_CONFIG else "invalid"
+LLM_MODEL = LLM_CONFIG.model if LLM_CONFIG else "invalid"
 
 SERIES_MAP = {
     "All series (CB1400 + CB1500 + CB1700)":            AUTO_SELECT_CATALOGS,
@@ -421,9 +431,14 @@ def _render_selection_result(report, candidates):
 st.title("🔧 CAD Agent — Shock Mount Selection")
 st.caption("Wire rope isolator selection for chassis-mounted shelter equipment · FYP 2026")
 
-if not API_KEY:
+if LLM_CONFIG_ERROR:
     st.warning(
-        "⚠ `NVIDIA_API_KEY` not set in your environment / `.env` file. "
+        f"Assistant provider config error: {LLM_CONFIG_ERROR} "
+        "Calculators and report generators still work."
+    )
+elif not API_KEY:
+    st.warning(
+        f"`{API_KEY_ENV}` not set in your environment / `.env` file. "
         "All calculators and report generators work without it; "
         "only the in-tab **assistants** require it."
     )
@@ -433,7 +448,7 @@ if not API_KEY:
 # Per-tab scoped assistant (collapsible widget)
 # ----------------------------------------------------------------------------
 @st.cache_resource
-def _get_domain_agent(domain: str, key: str):
+def _get_domain_agent(domain: str, provider: str, model: str, key: str):
     """One cached agent per domain (~4 tools each → reliable routing)."""
     from agent import build_agent
     return build_agent(domain, key)
@@ -468,10 +483,11 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                 st.caption("Internal tools: " +
                            ", ".join(f"`{c['tool']}`" for c in capabilities))
         if not API_KEY:
-            st.info("Set `NVIDIA_API_KEY` in `.env` to enable the assistant.")
+            st.info(f"Set `{API_KEY_ENV}` in `.env` to enable the assistant.")
             return
         try:
-            agent_obj = _get_domain_agent(domain, API_KEY)
+            agent_obj = _get_domain_agent(
+                domain, LLM_PROVIDER, LLM_MODEL, API_KEY)
         except Exception as e:
             st.error(f"Failed to initialize assistant: {e}")
             return
@@ -596,10 +612,11 @@ def render_floating_assistant(domain: str, title: str, placeholder: str,
                 st.rerun()
 
             if not API_KEY:
-                st.info("Set `NVIDIA_API_KEY` in `.env` to enable.")
+                st.info(f"Set `{API_KEY_ENV}` in `.env` to enable.")
             else:
                 try:
-                    agent_obj = _get_domain_agent(domain, API_KEY)
+                    agent_obj = _get_domain_agent(
+                        domain, LLM_PROVIDER, LLM_MODEL, API_KEY)
                 except Exception as e:
                     st.error(f"Init failed: {e}")
                     agent_obj = None

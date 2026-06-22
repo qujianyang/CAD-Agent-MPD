@@ -37,6 +37,7 @@ from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 
+from llm_config import LLMConfig, resolve_llm_config
 from physics_engine import ShockEnv, run_analysis, format_report
 from catalog import (
     ALL_CATALOGS, AUTO_SELECT_CATALOGS, SELECT_OBJECTIVES,
@@ -1089,6 +1090,32 @@ _TOOLUSE_SAFE_NOTICE = (
     "number, or whether the pulse is half-sine).")
 
 
+def _build_chat_model(cfg: LLMConfig):
+    if not cfg.api_key:
+        raise RuntimeError(f"{cfg.api_key_env} is not set.")
+
+    if cfg.provider == "openai":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=cfg.model,
+            api_key=cfg.api_key,
+            temperature=0.1,
+            max_tokens=2048,
+        )
+
+    if cfg.provider == "nvidia":
+        return ChatNVIDIA(
+            model=cfg.model,
+            api_key=cfg.api_key,
+            temperature=0.1,
+            max_tokens=2048,
+            # NVIDIA's hosted Llama 3.1 70B only allows ONE tool call per turn.
+            parallel_tool_calls=False,
+        )
+
+    raise RuntimeError(f"Unsupported LLM provider: {cfg.provider}")
+
+
 def _requires_tool(question: str, answer: str) -> bool:
     """True if a (shock-mount) answer must be backed by a tool call.
 
@@ -1113,19 +1140,16 @@ class DomainAgent:
     def __init__(self, api_key: str, system_prompt: str, tools: list,
                  domain: str = "unknown"):
         global _api_key
-        _api_key = api_key
+        cfg = resolve_llm_config()
+        if cfg.provider == "nvidia":
+            _api_key = cfg.api_key or api_key
+        else:
+            _api_key = (os.environ.get("NVIDIA_API_KEY") or "").strip() or None
         self.system_prompt = system_prompt
         self.tools = tools
         self._domain = domain
 
-        llm = ChatNVIDIA(
-            model=os.environ.get("NVIDIA_MODEL") or "meta/llama-3.1-70b-instruct",
-            api_key=api_key,
-            temperature=0.1,
-            max_tokens=2048,
-            # NVIDIA's hosted Llama 3.1 70B only allows ONE tool call per turn.
-            parallel_tool_calls=False,
-        )
+        llm = _build_chat_model(cfg)
         self._agent = create_agent(llm, tools, system_prompt=system_prompt)
 
     def invoke(self, question: str, chat_history: list | None = None) -> str:
@@ -1258,9 +1282,11 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
-    api_key = os.environ.get("NVIDIA_API_KEY")
+    llm_cfg = resolve_llm_config()
+    api_key = llm_cfg.api_key
     if not api_key:
-        raise SystemExit("ERROR: Set NVIDIA_API_KEY in your .env file or environment.")
+        raise SystemExit(
+            f"ERROR: Set {llm_cfg.api_key_env} in your .env file or environment.")
 
     domain = sys.argv[1] if len(sys.argv) > 1 else "shock_mount"
     if domain not in DOMAINS:
