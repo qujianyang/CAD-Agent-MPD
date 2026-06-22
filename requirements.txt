@@ -1,44 +1,38 @@
 # CAD Agent — Shock Mount Selection
-# Pinned to versions verified to work end-to-end on Windows + NVIDIA API.
+# Linux-safe runtime requirements (Streamlit Community Cloud, Python 3.12).
+# Pins match the verified `mpd` venv; all have manylinux + cp312 wheels.
 #
 # Install:
 #   pip install -r requirements.txt
 #
-# Activate venv (Windows PowerShell):
-#   .\mpd\Scripts\Activate.ps1
-#
 # Run app:
 #   streamlit run app.py
-#   # or, LAN-accessible:
-#   streamlit run app.py --server.port 8501 --server.address 0.0.0.0
 #
 # Notes:
-#   - pywin32 is only needed if you run the SolidWorks COM extraction
-#     (test_assembly.py / cad_compliance_checker.py). On a Linux server
-#     that won't talk to SolidWorks, you can omit it.
-#   - sentence-transformers is a fallback for setup_knowledge.py --local;
-#     skip it if you only use the NVIDIA API for embeddings.
-#   - pymupdf / pymupdf4llm are only needed by setup_rag.py (the legacy
-#     MIL-STD PDF ingestion). The new hierarchical knowledge base
-#     (setup_knowledge.py) doesn't need them.
+#   - pywin32 is Windows-only (SolidWorks COM, used only by test_assembly.py as a
+#     subprocess). It carries a platform marker so Linux installs skip it; the CAD
+#     extraction tab self-disables on non-Windows.
+#   - Optional, NOT needed to run the app — install separately if you use them:
+#       PyMuPDF, pymupdf4llm   -> legacy MIL-STD PDF ingestion (setup_rag.py)
+#       sentence-transformers  -> local embedding fallback (setup_knowledge.py --local)
 
 # --- Core runtime ---
 streamlit==1.57.0
+streamlit-float==0.4.0
 python-dotenv==1.2.2
 requests==2.34.2
 numpy==2.2.6
+pandas==2.3.3
+
+# --- Excel + Word I/O (engine workbooks + report export) ---
+xlrd==2.0.2          # .xls  (mobility + shock workbooks; imported at startup)
+openpyxl==3.1.5      # .xlsx (tie-down workbook)
+python-docx==1.2.0   # SAR / Appendix-G report export
 
 # --- LangChain agent + NVIDIA endpoint ---
 langchain==1.3.1
 langchain-core==1.4.0
 langchain-nvidia-ai-endpoints==1.3.0
 
-# --- SolidWorks COM (Windows only — comment out on Linux server) ---
-pywin32==311
-
-# --- Optional: legacy MIL-STD PDF ingestion (setup_rag.py) ---
-PyMuPDF==1.27.2.3
-pymupdf4llm==1.27.2.3
-
-# --- Optional: local embedding fallback (setup_knowledge.py --local) ---
-sentence-transformers==5.5.0
+# --- SolidWorks COM (Windows only; skipped on Linux/Cloud) ---
+pywin32==311; platform_system == "Windows"
