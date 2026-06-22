@@ -15,12 +15,19 @@ Run on a server (LAN-accessible):
 import os
 import sys
 import math
+import socket
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 
 import pandas as pd
 import streamlit as st
+
+# The NVIDIA client posts with no request timeout, so a dropped connection would
+# otherwise block a worker thread for ~an hour (slow stop/hang). A default socket
+# timeout makes a stalled call fail in <=120s; the chat loops surface it as an
+# "Agent error". Tornado's websocket is non-blocking, so this doesn't affect it.
+socket.setdefaulttimeout(120)
 
 from cad_compliance_checker import _parse_cad_output
 from physics_engine import ShockEnv, _loads_per_isolator, run_analysis, _NO_CLEARANCE_MM
@@ -439,6 +446,69 @@ def _get_domain_agent(domain: str, key: str):
     return build_agent(domain, key)
 
 
+# --- Fast Demo Mode --------------------------------------------------------
+# The validated tool result is computed BEFORE the slow second model call that
+# writes the prose. Fast mode surfaces that result as the headline answer the
+# instant it arrives, so you're not waiting silently on the prose. Same numbers,
+# same model output — only the render order changes. Toggle is per-domain:
+# st.session_state[f"asst_{domain}_fast_mode"] (default True).
+def _primary_tool_result(events) -> str:
+    """The last tool_result content among events (the validated headline), or ''."""
+    hits = [e.get("content", "") for e in (events or []) if e.get("type") == "tool_result"]
+    return hits[-1] if hits else ""
+
+
+def _render_validated(validated: str):
+    if validated:
+        st.markdown("**✅ Validated engine result**")
+        st.code(validated, language="text")
+
+
+def _render_agent_turn(agent_obj, q, hist, *, fast: bool = True, full_trace: bool = True):
+    """Stream one agent turn live. In fast mode, render the latest tool_result into
+    a headline container the instant it arrives (above the trace), then the prose
+    below. Returns (final_text, collected_events)."""
+    headline = st.empty()                 # st.empty -> last tool_result replaces prior
+    collected, final_text, n_tools = [], "", 0
+    with st.status("Working…", expanded=full_trace) as status:
+        try:
+            for ev in agent_obj.stream(q, chat_history=hist or None):
+                t = ev["type"]
+                if t != "final":
+                    collected.append(ev)
+                if t == "reasoning":
+                    if full_trace:
+                        st.markdown(f"💭 *{ev['content']}*")
+                elif t == "tool_call":
+                    n_tools += 1
+                    if full_trace:
+                        ap = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
+                        ap = ap if len(ap) <= 120 else ap[:120] + "…"
+                        st.markdown(f"🔧 **`{ev['name']}`**({ap})")
+                    else:
+                        st.markdown(f"🔧 `{ev['name']}`")
+                elif t == "tool_result":
+                    if fast:
+                        with headline.container():
+                            _render_validated(ev["content"])
+                    if full_trace:
+                        c = ev["content"]
+                        c = c if len(c) <= 400 else c[:400] + f"… ({len(ev['content'])-400} more)"
+                        st.markdown(f"✅ `{ev['name']}` returned:"); st.code(c, language="text")
+                elif t == "final":
+                    final_text = ev["content"]
+            status.update(label=f"Done — {n_tools} tool call(s)",
+                          state="complete", expanded=False)
+        except Exception as e:
+            final_text = f"Agent error: {e}"
+            status.update(label="Failed", state="error", expanded=True)
+    if final_text:
+        if fast and any(e["type"] == "tool_result" for e in collected):
+            st.markdown("**💬 Engineer's interpretation**")
+        st.markdown(final_text)
+    return final_text, collected
+
+
 def render_domain_assistant(domain: str, title: str, placeholder: str,
                             *, expanded: bool = False,
                             capabilities=None, examples=None):
@@ -493,14 +563,23 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                         st.markdown(f"**{i}. ✅ result from `{ev['name']}`**")
                         st.code(c, language="text")
 
+        fast_key = f"asst_{domain}_fast_mode"
+        fast = st.session_state.get(fast_key, True)
         for msg in st.session_state[hist_key]:
             with st.chat_message(msg["role"]):
                 if msg.get("events"):
+                    if fast:
+                        _render_validated(_primary_tool_result(msg["events"]))
                     _trace(msg["events"])
                 st.markdown(msg["content"])
 
         if examples:
             st.caption("Try:  •  " + "  •  ".join(examples))
+        st.checkbox("⚡ Fast mode (show validated result first)", value=fast,
+                    key=fast_key,
+                    help="Surface the validated engine result immediately, before the "
+                         "slower written explanation.")
+        fast = st.session_state.get(fast_key, True)   # refresh after the widget
         q = st.chat_input(placeholder, key=f"asst_{domain}_input")
         if q:
             st.session_state[hist_key].append({"role": "user", "content": q})
@@ -509,31 +588,8 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
             hist = [("human" if m["role"] == "user" else "ai", m["content"])
                     for m in st.session_state[hist_key][:-1]]
             with st.chat_message("assistant"):
-                collected, final_text = [], ""
-                with st.status("Working…", expanded=True) as status:
-                    try:
-                        for ev in agent_obj.stream(q, chat_history=hist or None):
-                            if ev["type"] == "reasoning":
-                                st.markdown(f"💭 *{ev['content']}*"); collected.append(ev)
-                            elif ev["type"] == "tool_call":
-                                ap = ", ".join(f"{k}={v!r}" for k, v in ev["args"].items())
-                                ap = ap if len(ap) <= 120 else ap[:120] + "…"
-                                st.markdown(f"🔧 **`{ev['name']}`**({ap})"); collected.append(ev)
-                            elif ev["type"] == "tool_result":
-                                c = ev["content"]
-                                c = c if len(c) <= 400 else c[:400] + f"… ({len(ev['content'])-400} more)"
-                                st.markdown(f"✅ `{ev['name']}` returned:"); st.code(c, language="text")
-                                collected.append(ev)
-                            elif ev["type"] == "final":
-                                final_text = ev["content"]
-                        status.update(
-                            label=f"Done — {len([e for e in collected if e['type']=='tool_call'])} tool call(s)",
-                            state="complete", expanded=False)
-                    except Exception as e:
-                        final_text = f"Agent error: {e}"
-                        status.update(label="Failed", state="error", expanded=True)
-                if final_text:
-                    st.markdown(final_text)
+                final_text, collected = _render_agent_turn(
+                    agent_obj, q, hist, fast=fast, full_trace=True)
             st.session_state[hist_key].append(
                 {"role": "assistant", "content": final_text, "events": collected})
 
@@ -604,8 +660,12 @@ def render_floating_assistant(domain: str, title: str, placeholder: str,
                     st.error(f"Init failed: {e}")
                     agent_obj = None
 
+                # Fast mode is shared per-domain with the tab assistant's toggle.
+                fast = st.session_state.get(f"asst_{domain}_fast_mode", True)
                 for msg in st.session_state[hist_key]:
                     with st.chat_message(msg["role"]):
+                        if fast and msg.get("events"):
+                            _render_validated(_primary_tool_result(msg["events"]))
                         st.markdown(msg["content"])
 
                 if agent_obj and not st.session_state[hist_key] and quickstart:
@@ -625,22 +685,10 @@ def render_floating_assistant(domain: str, title: str, placeholder: str,
                     hist = [("human" if m["role"] == "user" else "ai", m["content"])
                             for m in st.session_state[hist_key][:-1]]
                     with st.chat_message("assistant"):
-                        final_text = ""
-                        with st.status("Working…", expanded=False) as status:
-                            try:
-                                for ev in agent_obj.stream(q, chat_history=hist or None):
-                                    if ev["type"] == "tool_call":
-                                        st.markdown(f"🔧 `{ev['name']}`")
-                                    elif ev["type"] == "final":
-                                        final_text = ev["content"]
-                                status.update(label="Done", state="complete")
-                            except Exception as e:
-                                final_text = f"Agent error: {e}"
-                                status.update(label="Failed", state="error")
-                        if final_text:
-                            st.markdown(final_text)
+                        final_text, collected = _render_agent_turn(
+                            agent_obj, q, hist, fast=fast, full_trace=False)
                     st.session_state[hist_key].append(
-                        {"role": "assistant", "content": final_text})
+                        {"role": "assistant", "content": final_text, "events": collected})
                     st.rerun()
             css = float_css_helper(
                 width="380px", height="560px", bottom="24px", right="24px",

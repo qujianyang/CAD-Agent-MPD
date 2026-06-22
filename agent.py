@@ -1122,7 +1122,9 @@ class DomainAgent:
             model=os.environ.get("NVIDIA_MODEL") or "meta/llama-3.1-70b-instruct",
             api_key=api_key,
             temperature=0.1,
-            max_tokens=2048,
+            # 1536 fits the templated answers; bounds the tail and avoids the
+            # deprecated `max_tokens` warning.
+            max_completion_tokens=1536,
             # NVIDIA's hosted Llama 3.1 70B only allows ONE tool call per turn.
             parallel_tool_calls=False,
         )
