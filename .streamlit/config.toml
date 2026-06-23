@@ -1,0 +1,6 @@
+# Faster startup / reruns. Equivalent to passing
+#   --server.fileWatcherType none --server.runOnSave false
+# on the command line, made persistent.
+[server]
+fileWatcherType = "none"
+runOnSave = false

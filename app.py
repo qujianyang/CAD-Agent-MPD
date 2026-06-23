@@ -73,6 +73,10 @@ except ValueError as e:
 API_KEY = LLM_CONFIG.api_key if LLM_CONFIG else ""
 API_KEY_ENV = LLM_CONFIG.api_key_env if LLM_CONFIG else "OPENAI_API_KEY or NVIDIA_API_KEY"
 LLM_PROVIDER = LLM_CONFIG.provider if LLM_CONFIG else "invalid"
+
+# SolidWorks COM extraction needs Windows (pywin32 + a tkinter file dialog). On
+# Linux (e.g. Streamlit Cloud) the CAD tab self-disables — see the CAD + Shock tab.
+_SOLIDWORKS_AVAILABLE = (os.name == "nt")
 LLM_MODEL = LLM_CONFIG.model if LLM_CONFIG else "invalid"
 
 SERIES_MAP = {
@@ -811,6 +815,12 @@ with tab_cad:
 
     with col_left:
         st.markdown("**CAD source**")
+        if not _SOLIDWORKS_AVAILABLE:
+            st.info(
+                "🪟 SolidWorks CAD extraction is only available on Windows. "
+                "On Streamlit Cloud, use the **Shock Mount** tab or enter the mass "
+                "manually."
+            )
         cad_mode = st.radio(
             "Where to extract from:",
             ["Use active SolidWorks document", "Specify a file path"],
@@ -820,12 +830,13 @@ with tab_cad:
         )
         cad_file_override: str | None = None
         if cad_mode == "Specify a file path":
-            browse_col, _ = st.columns([1, 4])
-            if browse_col.button("📂 Browse…", key="browse_cad"):
-                picked = _browse_cad_file()
-                if picked:
-                    st.session_state["cad_file_path_input"] = picked
-                    st.session_state.last_cad_path = picked
+            if _SOLIDWORKS_AVAILABLE:
+                browse_col, _ = st.columns([1, 4])
+                if browse_col.button("📂 Browse…", key="browse_cad"):
+                    picked = _browse_cad_file()
+                    if picked:
+                        st.session_state["cad_file_path_input"] = picked
+                        st.session_state.last_cad_path = picked
             cad_file_override = st.text_input(
                 "Path to .SLDASM or .SLDPRT",
                 value=st.session_state.get("last_cad_path", ""),
@@ -846,15 +857,20 @@ with tab_cad:
         st.markdown("**Installation clearance**")
         clr_x_cad, clr_y_cad, clr_z_cad = _clearance_widget("cad")
 
-        if st.button("🔌 Extract from SolidWorks", type="primary",
-                     use_container_width=True, key="cad_extract"):
-            with st.spinner("Talking to SolidWorks via COM..."):
-                props, raw, err, rc = run_solidworks_extraction(file_path=cad_file_override)
-                st.session_state.cad_props          = props
-                st.session_state.raw_output         = raw
-                st.session_state.raw_stderr         = err
-                st.session_state.extract_returncode = rc
-                st.session_state.extract_attempted  = True
+        if _SOLIDWORKS_AVAILABLE:
+            if st.button("🔌 Extract from SolidWorks", type="primary",
+                         use_container_width=True, key="cad_extract"):
+                with st.spinner("Talking to SolidWorks via COM..."):
+                    props, raw, err, rc = run_solidworks_extraction(file_path=cad_file_override)
+                    st.session_state.cad_props          = props
+                    st.session_state.raw_output         = raw
+                    st.session_state.raw_stderr         = err
+                    st.session_state.extract_returncode = rc
+                    st.session_state.extract_attempted  = True
+        else:
+            st.button("🔌 Extract from SolidWorks", type="primary",
+                      use_container_width=True, key="cad_extract", disabled=True)
+            st.caption("Disabled on non-Windows — SolidWorks COM is unavailable here.")
 
     with col_right:
         props = st.session_state.cad_props
