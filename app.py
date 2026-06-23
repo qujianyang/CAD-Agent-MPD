@@ -33,7 +33,7 @@ from catalog import (
 from tiedown_engine import MountFace, Item, analyze_item, run_tiedown_analysis
 from fastener_catalog import make_fastener, size_fasteners, BOLT_CLASSES, BOLT_SIZES, NON_BOLTS
 from tiedown_import import import_workbook, WB_DEFAULT
-from mobility_engine import Vehicle, Aero, run_mobility_analysis, format_mobility_report, format_slope_table
+from mobility_engine import Vehicle, Aero, run_mobility_analysis
 from mobility_import import (
     vehicle_measured, vehicle_theory, approach_departure_angles,
     measurement_measured, measurement_unladen, shelter_cg, WB_DEFAULT as MB_DEFAULT,
@@ -55,7 +55,7 @@ from mobility_scenarios import (
 # Page config + environment
 # ----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="CAD Agent — Shock Mount",
+    page_title="MCP Agent",
     page_icon="🔧",
     layout="wide",
 )
@@ -428,8 +428,8 @@ def _render_selection_result(report, candidates):
 # ----------------------------------------------------------------------------
 # Header
 # ----------------------------------------------------------------------------
-st.title("🔧 CAD Agent — Shock Mount Selection")
-st.caption("Wire rope isolator selection for chassis-mounted shelter equipment · FYP 2026")
+st.title("🔧 MCP Agent")
+st.caption("Inspired and Guided By Mr Han Tyng Chour")
 
 if LLM_CONFIG_ERROR:
     st.warning(
@@ -674,7 +674,7 @@ def render_floating_assistant(domain: str, title: str, placeholder: str,
 # Tabs
 # ----------------------------------------------------------------------------
 tab_quick, tab_cad, tab_tiedown, tab_mobility = st.tabs([
-    "📐 Quick Selector",
+    "📐 Shock Mount",
     "🔌 CAD + Shock",
     "🔗 Tie-Down",
     "🚗 Mobility",
@@ -1096,10 +1096,10 @@ with tab_tiedown:
 with tab_mobility:
     st.subheader("Mobility & Stability Workspace")
     st.caption(
-        "Workflow: select/derive vehicle state -> review CG source -> set analysis "
-        "conditions -> run full analysis -> compare against structural and OEM limits. "
-        "All SFs from the validated engine (22/22 vs workbook within 0.3% -- "
-        "exact grade angles vs Excel's rounded angles)."
+        "This workspace helps engineers assess whether a vehicle-mounted shelter is "
+        "stable before road trial. Users can load vehicle data, review the CG source, "
+        "set slope and cornering conditions, then run axle load, slope stability and "
+        "cornering checks against structural and OEM limits."
     )
 
     def _mb_set_vehicle(v, prov, approach=None, base=None):
@@ -1160,9 +1160,9 @@ with tab_mobility:
                 st.error(f"Workbook read failed: {e}")
     elif mb_mode == "Wheel-load measurement":
         st.caption(
-            "Derive GW / Xcg / Ycg from four weighbridge readings (SAR Appendix B "
-            "moment balance), then Zcg from inclined-platform tilt tests (or enter "
-            "a verified value). Spinel vendor axle/GVW limits apply by default."
+            "Calculate gross weight and CG from measured wheel loads.\n"
+            "Use tilt-test data or a verified value for ZCG.\n"
+            "Vehicle axle and GVW limits are loaded automatically."
         )
         wl1, wl2, wl3, wl4 = st.columns(4)
         wl_fl = wl1.number_input("FL (kg)", value=4000.0, min_value=0.0, step=25.0, key="mb_wl_fl")
@@ -1751,11 +1751,6 @@ with tab_mobility:
                 f"Fw x h = {c.over_wind_Nm:,.0f} Nm = {c.over_total_Nm:,.0f} Nm  |  "
                 f"Resist = {c.resist_Nm:,.0f} Nm  (Y' = {c.yprime_mm:.0f} mm)"
             )
-
-        with st.expander("Console-style full report"):
-            st.code(format_mobility_report(mb_rep), language="text")
-        with st.expander("Slope SF grid (console format)"):
-            st.code(format_slope_table(mb_rep), language="text")
 
     st.divider()
 

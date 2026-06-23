@@ -10,7 +10,11 @@ import sys
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
-from mil_std_rag import MILStandardRAG
+# NOTE: `from mil_std_rag import MILStandardRAG` is intentionally NOT imported here.
+# It pulls in torch + transformers, and the only code that needs it is the CLI demo
+# in the __main__ block below. Importing it at module top would load the whole ML
+# stack on every Streamlit startup (app.py imports _parse_cad_output from here), even
+# though the app never uses MILStandardRAG. It is imported lazily where it's used.
 
 
 def extract_cad_data(
@@ -165,8 +169,9 @@ if __name__ == "__main__":
         )
         print(f"  Using default: {question}")
 
-    # Step 3: RAG query
+    # Step 3: RAG query  (heavy import deferred to here — see note at top of file)
     print("\n[3/3] Querying RAG engine...")
+    from mil_std_rag import MILStandardRAG
     rag = MILStandardRAG(API_KEY)
     response = rag.query_compliance(cad_props, question)
 
