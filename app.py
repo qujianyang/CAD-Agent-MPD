@@ -430,6 +430,33 @@ def _render_selection_result(report, candidates):
                    "`deflection (clearance)` means the neighbouring-equipment gap — "
                    "not the mount's own travel — is the limiting factor.")
 
+    # Road-vibration check for the recommended part (vendor Vibration Average K)
+    if rec and rec.entry.k_vib_comp_lbin is not None:
+        from vibration_engine import vibration_check_for_entry
+        vib = vibration_check_for_entry(rec.entry, rec.comp_bottom.m_kg)
+        if vib:
+            with st.expander("🚚 Road-vibration check (chassis PSD)",
+                             expanded=vib.resonance_flag):
+                v1, v2, v3 = st.columns(3)
+                v1.metric("fn (vibration K)", f"{vib.fn_Hz:.1f} Hz")
+                v2.metric("g_rms in → out",
+                          f"{vib.grms_in:.2f} → {vib.grms_out:.2f} g")
+                v3.metric("Attenuation", f"×{vib.attenuation:.2f}",
+                          "isolating" if vib.attenuation < 1 else "amplifying",
+                          delta_color="off")
+                if vib.resonance_flag:
+                    st.warning(
+                        f"⚠ Resonance risk: this mount's vibration natural frequency "
+                        f"({vib.fn_Hz:.1f} Hz) sits on a dominant band of the truck "
+                        f"chassis PSD (peak 3.6–4.3 Hz). Shock performance is fine, "
+                        f"but sustained road vibration will be amplified (Q ≈ "
+                        f"{1/(2*vib.zeta):.0f}). Consider a stiffer part or verify "
+                        f"with the vendor."
+                    )
+                st.caption("Method per SPF_Vibration.xls: damped transmissibility "
+                           "(ζ=0.12) over the heavy-duty-truck chassis PSD, using the "
+                           "vendor's Vibration Average K (small-amplitude stiffness).")
+
     # Full catalog comparison
     with st.expander("📊 Full multi-series matrix"):
         st.code(format_selection_table(candidates), language="text")
