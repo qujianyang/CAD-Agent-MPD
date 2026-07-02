@@ -11,6 +11,13 @@ from typing import Optional
 # so leaving clearance unset reproduces the original (travel-limited) behaviour.
 _NO_CLEARANCE_MM = 1.0e9
 
+# The velocity-shock formula V = coeff*g*Ao*to treats the pulse as an ideal
+# impulse, valid only while the pulse is short next to the mount's natural
+# period: fn*to <= 0.25 (i.e. to <= T/4). Outside this the computed GT/dD are
+# unreliable — results are flagged, not failed (the reference Excel has no
+# such check and its cases all sit at fn*to = 0.07-0.12).
+IMPULSE_VALIDITY_RATIO = 0.25
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -23,6 +30,9 @@ class IsolatorSpec:
     k_shear_Nm: float     # Shear/roll stiffness [N/m]
     d_max_comp_mm: float  # Max deflection, compression [mm]
     d_max_shear_mm: float # Max deflection, shear [mm]
+    # Vendor "Max Static F" in compression [daN] (Helical_English catalog).
+    # None = not published for this part (e.g. CB61400 series).
+    max_static_comp_daN: Optional[float] = None
 
 
 @dataclass
@@ -44,6 +54,7 @@ class DirectionResult:
     delta_mm: float       # Dynamic deflection [mm]
     GT_limit: float
     delta_limit_mm: float
+    impulse_valid: bool = True   # fn*to <= IMPULSE_VALIDITY_RATIO
 
     @property
     def GT_ok(self) -> bool:
@@ -83,6 +94,7 @@ CB1400_15 = IsolatorSpec(
     k_shear_Nm=189_136.987, # 1080 lb/in
     d_max_comp_mm=35.56,    # 1.4 in
     d_max_shear_mm=40.64,   # 1.6 in
+    max_static_comp_daN=416.0,  # Helical_English p.30
 )
 
 DEFAULT_ISOLATOR = CB1400_15
@@ -138,6 +150,7 @@ def _calc_direction(
         label=label, k_Nm=k_Nm, m_kg=m_kg,
         V_ms=V, fn_Hz=fn, GT_G=GT, delta_mm=dD,
         GT_limit=env.GT_limit_G, delta_limit_mm=d_max_mm,
+        impulse_valid=(fn * env.to_s <= IMPULSE_VALIDITY_RATIO),
     )
 
 
@@ -276,6 +289,22 @@ def run_analysis(
                 "Consider vertical stabiliser bars or reduced top-heavy loading."
             )
 
+    # Static load vs vendor Max Static F (bottom mounts carry the full weight
+    # in compression; wall mounts are statically unloaded in this model).
+    static_load_daN = (mass_kg / n_bottom) * g / 10.0
+    if spec.max_static_comp_daN is not None:
+        if static_load_daN > spec.max_static_comp_daN:
+            warnings.append(
+                f"FAIL [static]: {static_load_daN:.0f} daN/mount exceeds Max Static F "
+                f"{spec.max_static_comp_daN:.0f} daN for {spec.name} (Helical catalog)."
+            )
+    else:
+        warnings.append(
+            f"No published static load rating for {spec.name}; static load is "
+            f"{static_load_daN:.0f} daN/mount — verify against vendor "
+            f"load-deflection data."
+        )
+
     # GT failure
     for d in directions:
         if not d.GT_ok:
@@ -285,6 +314,12 @@ def run_analysis(
         if not d.delta_ok:
             warnings.append(
                 f"FAIL [{d.label}]: ΔD = {d.delta_mm:.1f} mm exceeds limit {d.delta_limit_mm} mm."
+            )
+        if not d.impulse_valid:
+            warnings.append(
+                f"[{d.label}] impulse approximation invalid: fn·t₀ = "
+                f"{d.fn_Hz * env.to_s:.2f} > {IMPULSE_VALIDITY_RATIO} — GT/ΔD figures "
+                f"unreliable for this pulse/stiffness combination."
             )
 
     return PhysicsReport(

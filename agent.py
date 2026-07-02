@@ -597,6 +597,17 @@ def find_capacity_limit(
         f"  UPPER bound = {M_max:.0f} kg",
         f"    Above this, part FAILS: {M_max_reason}",
     ]
+
+    # Impulse-approximation validity at the lower bound: at small masses fn is
+    # high and the velocity-shock formula (fn*t0 <= 0.25) stops being valid —
+    # flag so the bound is read as indicative, not exact.
+    _, r_at_min = _eval(max(M_min, SEARCH_LO))
+    if r_at_min and any(not d.impulse_valid for d in r_at_min.directions):
+        lines += [
+            "",
+            "NOTE: at the LOWER bound the impulse approximation (fn*t0 <= 0.25) is "
+            "no longer valid — treat the lower limit as indicative only.",
+        ]
     return "\n".join(lines)
 
 

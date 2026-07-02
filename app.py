@@ -378,11 +378,21 @@ def _render_selection_result(report, candidates):
         st.success(f"**Recommended: {rec.entry.part_no}** "
                    f"(Series {rec.entry.series}, "
                    f"worst GT = {rec.worst_GT_ratio*100:.0f}% of limit)")
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("K_comp",  f"{rec.entry.k_comp_lbin} lb/in")
         m2.metric("K_shear", f"{rec.entry.k_shear_lbin} lb/in")
         m3.metric("Size",    f"H={rec.entry.H_in}\" W={rec.entry.W_in}\"")
         m4.metric("Worst dD ratio", f"{rec.worst_delta_ratio*100:.0f}%")
+        if rec.static_rating_daN is not None:
+            m5.metric("Static/mount",
+                      f"{rec.static_load_daN:.0f}/{rec.static_rating_daN:.0f} daN",
+                      f"{rec.static_util:.0%} of Max Static F", delta_color="off")
+        else:
+            m5.metric("Static/mount", f"{rec.static_load_daN:.0f} daN", "no rating")
+            st.warning(f"⚠ {rec.entry.part_no} has no published static load rating "
+                       f"(absent from the Helical catalog). Static load is "
+                       f"{rec.static_load_daN:.0f} daN per bottom mount — verify "
+                       f"against vendor load-deflection data before committing.")
     else:
         st.error("No valid part found in the selected catalog. Try more mounts, "
                  "a larger series, or a looser GT limit.")

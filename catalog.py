@@ -48,6 +48,15 @@ class CatalogEntry:
     k_shear_lbin: float     # Shock Average K — Shear/Roll [lb/in]
     d_max_comp_in: float    # Max Rated Dynamic Travel — Compression [in]
     d_max_shear_in: float   # Max Rated Dynamic Travel — Shear/Roll [in]
+    # Vendor "Max Static F" [daN] per mounting mode (Helical_English pp.30/32/36).
+    # None = not published (CB61400 series; CB1400-10/-25). Shear is informational;
+    # the static gate uses compression (bottom mounts carry the weight).
+    max_static_comp_daN: Optional[float] = None
+    max_static_shear_daN: Optional[float] = None
+    # "Vibration Average K" [lb/in] (helical.pdf) — small-amplitude stiffness,
+    # 2–3x the shock K. Used by vibration_engine for the road-PSD check.
+    k_vib_comp_lbin: Optional[float] = None
+    k_vib_shear_lbin: Optional[float] = None
 
     @property
     def series(self) -> str:
@@ -64,6 +73,14 @@ class CatalogEntry:
     @property
     def d_max_shear_mm(self) -> float: return self.d_max_shear_in * _IN_TO_MM
 
+    @property
+    def k_vib_comp_Nm(self) -> Optional[float]:
+        return None if self.k_vib_comp_lbin is None else self.k_vib_comp_lbin * _LB_IN_TO_N_M
+
+    @property
+    def k_vib_shear_Nm(self) -> Optional[float]:
+        return None if self.k_vib_shear_lbin is None else self.k_vib_shear_lbin * _LB_IN_TO_N_M
+
     def to_isolator_spec(self) -> IsolatorSpec:
         return IsolatorSpec(
             name=self.part_no,
@@ -71,6 +88,7 @@ class CatalogEntry:
             k_shear_Nm=self.k_shear_Nm,
             d_max_comp_mm=self.d_max_comp_mm,
             d_max_shear_mm=self.d_max_shear_mm,
+            max_static_comp_daN=self.max_static_comp_daN,
         )
 
 
@@ -79,15 +97,17 @@ class CatalogEntry:
 # Same physical size as CB1400 but ~25% softer due to 6-strand construction.
 # Supervisor explicitly provided this series for inclusion.
 # ---------------------------------------------------------------------------
+# Column order after dShear: staticComp[daN], staticShear[daN], KvibComp, KvibShear [lb/in]
+# CB61400: no Max Static F published (series absent from Helical_English) -> None.
 CB61400_CATALOG: list[CatalogEntry] = [
-    #                            part_no          H      W    Kcomp  Kshear  dComp  dShear
-    CatalogEntry("CB61400-15", 3.25, 4.00,  1990,   810,  1.40,  1.60),
-    CatalogEntry("CB61400-17", 3.50, 4.13,  1570,   650,  1.60,  1.80),
-    CatalogEntry("CB61400-20", 3.75, 4.75,  1025,   555,  2.00,  2.00),
-    CatalogEntry("CB61400-30", 4.25, 5.25,   680,   315,  2.40,  2.40),
-    CatalogEntry("CB61400-40", 4.90, 5.65,   500,   240,  2.80,  2.80),
-    CatalogEntry("CB61400-50", 5.40, 6.13,   375,   195,  3.20,  3.20),
-    CatalogEntry("CB61400-60", 6.10, 7.10,   200,   110,  4.00,  3.60),
+    #                            part_no        H     W    Kcomp Kshear dComp dShear  stC   stS   KvC   KvS
+    CatalogEntry("CB61400-15", 3.25, 4.00,  1990,   810,  1.40,  1.60, None, None,  4895, 1105),
+    CatalogEntry("CB61400-17", 3.50, 4.13,  1570,   650,  1.60,  1.80, None, None,  3750,  805),
+    CatalogEntry("CB61400-20", 3.75, 4.75,  1025,   555,  2.00,  2.00, None, None,  2740,  555),
+    CatalogEntry("CB61400-30", 4.25, 5.25,   680,   315,  2.40,  2.40, None, None,  1690,  420),
+    CatalogEntry("CB61400-40", 4.90, 5.65,   500,   240,  2.80,  2.80, None, None,  1275,  320),
+    CatalogEntry("CB61400-50", 5.40, 6.13,   375,   195,  3.20,  3.20, None, None,   940,  285),
+    CatalogEntry("CB61400-60", 6.10, 7.10,   200,   110,  4.00,  3.60, None, None,   395,  125),
 ]
 
 # ---------------------------------------------------------------------------
@@ -95,31 +115,35 @@ CB61400_CATALOG: list[CatalogEntry] = [
 # Note: -10, -12, -25 variants are from REV:5 datasheet; the Helical PDF
 # supplied by supervisor only lists -15 through -60. Kept for completeness.
 # ---------------------------------------------------------------------------
+# Static F from Helical_English p.30; vibration K from helical.pdf p.15.
+# -10/-25 appear in neither source -> None (REV:5-only variants).
+# -12 static from Helical_English; its vibration K is unpublished -> None.
 CB1400_CATALOG: list[CatalogEntry] = [
-    #                          part_no        H      W     Kcomp  Kshear  dComp  dShear
-    CatalogEntry("CB1400-10", 3.00, 3.31,  3515,  1801,  1.10,  1.10),
-    CatalogEntry("CB1400-12", 3.00, 3.63,  3145,  1531,  1.20,  1.20),
-    CatalogEntry("CB1400-15", 3.25, 4.00,  2650,  1080,  1.40,  1.60),
-    CatalogEntry("CB1400-17", 3.50, 4.13,  2090,   865,  1.60,  1.80),
-    CatalogEntry("CB1400-20", 3.75, 4.75,  1365,   740,  2.00,  2.00),
-    CatalogEntry("CB1400-25", 4.00, 5.00,  1135,   580,  2.20,  2.20),
-    CatalogEntry("CB1400-30", 4.25, 5.25,   905,   420,  2.40,  2.40),
-    CatalogEntry("CB1400-40", 4.90, 5.65,   665,   320,  2.80,  2.80),
-    CatalogEntry("CB1400-50", 5.40, 6.13,   500,   260,  3.20,  3.20),
-    CatalogEntry("CB1400-60", 6.10, 7.10,   265,   145,  4.00,  3.60),
+    #                          part_no      H     W    Kcomp Kshear dComp dShear  stC   stS   KvC   KvS
+    CatalogEntry("CB1400-10", 3.00, 3.31,  3515,  1801,  1.10,  1.10, None, None,  None, None),
+    CatalogEntry("CB1400-12", 3.00, 3.63,  3145,  1531,  1.20,  1.20,  496,  248,  None, None),
+    CatalogEntry("CB1400-15", 3.25, 4.00,  2650,  1080,  1.40,  1.60,  416,  208,  6525, 1475),
+    CatalogEntry("CB1400-17", 3.50, 4.13,  2090,   865,  1.60,  1.80,  396,  198,  5000, 1075),
+    CatalogEntry("CB1400-20", 3.75, 4.75,  1365,   740,  2.00,  2.00,  301,  151,  3650,  740),
+    CatalogEntry("CB1400-25", 4.00, 5.00,  1135,   580,  2.20,  2.20, None, None,  None, None),
+    CatalogEntry("CB1400-30", 4.25, 5.25,   905,   420,  2.40,  2.40,  261,  130,  2250,  560),
+    CatalogEntry("CB1400-40", 4.90, 5.65,   665,   320,  2.80,  2.80,  237,  119,  1700,  425),
+    CatalogEntry("CB1400-50", 5.40, 6.13,   500,   260,  3.20,  3.20,  206,  103,  1250,  380),
+    CatalogEntry("CB1400-60", 6.10, 7.10,   265,   145,  4.00,  3.60,  162,   81,   525,  165),
 ]
 
 # ---------------------------------------------------------------------------
 # CB1500 — 5/8" wire rope  (6 variants, datasheet REV:6 / VMC catalog 706-C)
 # ---------------------------------------------------------------------------
+# Static F from Helical_English p.32; vibration K from helical.pdf p.16.
 CB1500_CATALOG: list[CatalogEntry] = [
-    #                          part_no        H      W     Kcomp  Kshear  dComp  dShear
-    CatalogEntry("CB1500-12", 3.50, 4.00,  5375,  2735,  1.20,  1.20),
-    CatalogEntry("CB1500-15", 3.90, 4.40,  3655,  1870,  1.40,  1.40),
-    CatalogEntry("CB1500-20", 4.30, 5.30,  2585,  1250,  1.80,  1.80),
-    CatalogEntry("CB1500-30", 4.70, 6.00,  1610,   800,  2.20,  2.20),
-    CatalogEntry("CB1500-40", 5.00, 6.50,  1155,   560,  2.40,  2.40),
-    CatalogEntry("CB1500-50", 5.30, 7.00,   795,   410,  3.20,  3.20),
+    #                          part_no      H     W    Kcomp Kshear dComp dShear  stC   stS    KvC   KvS
+    CatalogEntry("CB1500-12", 3.50, 4.00,  5375,  2735,  1.20,  1.20,  846,  423, 12625, 2950),
+    CatalogEntry("CB1500-15", 3.90, 4.40,  3655,  1870,  1.40,  1.40,  731,  366,  8095, 2100),
+    CatalogEntry("CB1500-20", 4.30, 5.30,  2585,  1250,  1.80,  1.80,  518,  259,  5525, 1350),
+    CatalogEntry("CB1500-30", 4.70, 6.00,  1610,   800,  2.20,  2.20,  421,  210,  3425, 1060),
+    CatalogEntry("CB1500-40", 5.00, 6.50,  1155,   560,  2.40,  2.40,  367,  183,  2450,  750),
+    CatalogEntry("CB1500-50", 5.30, 7.00,   795,   410,  3.20,  3.20,  323,  162,  1700,  550),
 ]
 
 # ---------------------------------------------------------------------------
@@ -127,13 +151,14 @@ CB1500_CATALOG: list[CatalogEntry] = [
 # Replaces CB1800 which does not appear in the official Helical catalog.
 # Supervisor's stated range is "C1260 to CB1700" — this is the heaviest series.
 # ---------------------------------------------------------------------------
+# Static F from Helical_English p.36; vibration K from helical.pdf p.16.
 CB1700_CATALOG: list[CatalogEntry] = [
-    #                           part_no          H      W    Kcomp  Kshear  dComp  dShear
-    CatalogEntry("CB1700-15", 5.25, 5.50,  7565,  3890,  2.00,  2.00),
-    CatalogEntry("CB1700-17", 6.00, 6.50,  5815,  2795,  2.40,  2.40),
-    CatalogEntry("CB1700-20", 6.25, 7.00,  3695,  1775,  2.80,  2.80),
-    CatalogEntry("CB1700-30", 7.50, 8.25,  1925,   900,  3.60,  3.60),
-    CatalogEntry("CB1700-40", 8.50, 9.25,  1285,   545,  4.00,  4.00),
+    #                          part_no      H     W    Kcomp Kshear dComp dShear   stC   stS    KvC   KvS
+    CatalogEntry("CB1700-15", 5.25, 5.50,  7565,  3890,  2.00,  2.00, 1528,  764, 20000, 3750),
+    CatalogEntry("CB1700-17", 6.00, 6.50,  5815,  2795,  2.40,  2.40, 1176,  588, 14000, 2675),
+    CatalogEntry("CB1700-20", 6.25, 7.00,  3695,  1775,  2.80,  2.80, 1045,  522,  8500, 1550),
+    CatalogEntry("CB1700-30", 7.50, 8.25,  1925,   900,  3.60,  3.60,  804,  402,  4750,  815),
+    CatalogEntry("CB1700-40", 8.50, 9.25,  1285,   545,  4.00,  4.00,  672,  336,  3650,  600),
 ]
 
 # Auto-select default — matches supervisor's stated range (CB1400 to CB1700).
@@ -160,10 +185,28 @@ class CatalogCandidate:
     comp_wall:   DirectionResult   # Y-axis lateral     (K_comp, wall mounts)
     roll_wall:   DirectionResult   # X,Z-axis shear     (K_shear, wall mounts)
     roll_bottom: DirectionResult   # X,Y-axis shear     (K_shear, bottom mounts)
+    # Static gravity load per bottom mount [daN] vs vendor Max Static F.
+    static_load_daN: float = 0.0
+    static_rating_daN: Optional[float] = None
+
+    @property
+    def static_ok(self) -> Optional[bool]:
+        """True/False against the vendor rating; None when no rating published."""
+        if self.static_rating_daN is None:
+            return None
+        return self.static_load_daN <= self.static_rating_daN
+
+    @property
+    def static_util(self) -> Optional[float]:
+        """Static load as a fraction of the rating (None if unrated)."""
+        if self.static_rating_daN is None:
+            return None
+        return self.static_load_daN / self.static_rating_daN
 
     @property
     def valid(self) -> bool:
-        return all(d.passed for d in self._dirs)
+        # Unknown static rating (None) does not hard-fail — it warns instead.
+        return all(d.passed for d in self._dirs) and self.static_ok is not False
 
     @property
     def worst_GT_ratio(self) -> float:
@@ -251,6 +294,10 @@ def select_isolator(
     if catalog is None:
         catalog = ALL_CATALOGS
 
+    # Static gravity load per bottom mount: m_comp_bottom_kg IS M/n_bottom,
+    # the mass each bottom mount carries at rest. 1 daN = 10 N.
+    static_load_daN = m_comp_bottom_kg * g / 10.0
+
     candidates = []
     for entry in catalog:
         spec = entry.to_isolator_spec()
@@ -276,7 +323,11 @@ def select_isolator(
             "Roll - Bottom (X,Y-axis)",
             spec.k_shear_Nm, m_roll_bottom_kg,  lim_roll_bottom,  env, g,
         )
-        candidates.append(CatalogCandidate(entry, comp_bottom, comp_wall, roll_wall, roll_bottom))
+        candidates.append(CatalogCandidate(
+            entry, comp_bottom, comp_wall, roll_wall, roll_bottom,
+            static_load_daN=static_load_daN,
+            static_rating_daN=entry.max_static_comp_daN,
+        ))
 
     # Sort: valid PASS entries first, then per the chosen objective.
     candidates.sort(key=_objective_sort_key(objective))
@@ -351,7 +402,7 @@ def format_selection_table(candidates: list[CatalogCandidate]) -> str:
     header = (
         f"{'Part':<14} {'Series':<8} {'Kcomp':>7} {'Kshear':>7} | "
         f"{'C-Bot GT':>8} | {'C-Wal GT':>8} | {'R-Wal GT':>8} | {'R-Bot GT':>8} | "
-        f"{'maxGT':>6} {'STATUS':>6}"
+        f"{'maxGT':>6} {'Static':>7} {'STATUS':>6}"
     )
     sep = "-" * len(header)
 
@@ -361,7 +412,7 @@ def format_selection_table(candidates: list[CatalogCandidate]) -> str:
         f"MULTI-SERIES SELECTION MATRIX ({env_str}) — 4 load cases per Excel",
         f"{'':14} {'':8} {'lb/in':>7} {'lb/in':>7} | "
         f"{'[G]':>8} | {'[G]':>8} | {'[G]':>8} | {'[G]':>8} | "
-        f"{'[G]':>6}",
+        f"{'[G]':>6} {'util%':>7}",
         header,
         sep,
     ]
@@ -370,15 +421,23 @@ def format_selection_table(candidates: list[CatalogCandidate]) -> str:
         cb, cw, rw, rb = c.comp_bottom, c.comp_wall, c.roll_wall, c.roll_bottom
         worst = max(cb.GT_G, cw.GT_G, rw.GT_G, rb.GT_G)
         status = "PASS" if c.valid else "FAIL"
+        if c.static_util is None:
+            static_str = "n/a"
+        elif c.static_ok:
+            static_str = f"{c.static_util:.0%}"
+        else:
+            static_str = "OVER"
         lines.append(
             f"{c.entry.part_no:<14} "
             f"{c.entry.series:<8} "
             f"{c.entry.k_comp_lbin:>7.0f} "
             f"{c.entry.k_shear_lbin:>7.0f} | "
             f"{cb.GT_G:>8.3f} | {cw.GT_G:>8.3f} | {rw.GT_G:>8.3f} | {rb.GT_G:>8.3f} | "
-            f"{worst:>6.2f} {status:>6}"
+            f"{worst:>6.2f} {static_str:>7} {status:>6}"
         )
     lines.append("=" * len(header))
+    lines.append("Static = gravity load per bottom mount vs vendor Max Static F "
+                 "(n/a = no published rating — verify with vendor).")
 
     valid_list = [c for c in candidates if c.valid]
     if valid_list:
