@@ -90,6 +90,43 @@ Replaces CB1800 which does not appear in the official Helical catalog.
 
 ---
 
+## Max Static F — vendor static load ratings (daN, compression)
+
+Source: Helical_English catalog pp.30/32/36. The static gate rejects any part
+whose gravity load per bottom mount, `(M/n_bottom)·g`, exceeds this rating.
+1 daN = 10 N ≈ 1.02 kg-force. Shear ratings are exactly half of compression.
+
+| Model | CB1400 | CB1500 | CB1700 |
+|-------|--------|--------|--------|
+| -12   | 496    | 846    | —      |
+| -15   | 416    | 731    | 1528   |
+| -17   | 396    | 640    | 1176   |
+| -20   | 301    | 518    | 1045   |
+| -30   | 261    | 421    | 804    |
+| -40   | 237    | 367    | 672    |
+| -50   | 206    | 323    | —      |
+| -60   | 162    | —      | —      |
+
+**No published static rating**: the entire CB61400 series and CB1400-10/-25.
+These stay selectable but the tool warns — verify against vendor
+load-deflection data before committing to them.
+
+Worked example: a 1500 kg rack on 6 bottom mounts puts 245 daN on each mount —
+over CB1400-50's 206 daN rating (excluded) but within CB1400-30's 261 daN.
+
+---
+
+## Vibration Average K — small-amplitude stiffness (lb/in)
+
+The datasheets publish a second stiffness column, **Vibration Average K**,
+2–3× the Shock Average K (wire rope stiffens at small amplitudes). Example:
+CB1400-15 is 2650 lb/in in shock but **6525 lb/in** in vibration. The
+road-vibration check uses this K — using the shock K would underestimate the
+vibration natural frequency by ~40%. Values are in `catalog.py`
+(`k_vib_comp_lbin` / `k_vib_shear_lbin`); unpublished for CB1400-10/-12/-25.
+
+---
+
 ## Unit conversions used in selection
 
 - 1 lb/in = 175.1268 N/m
