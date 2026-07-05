@@ -147,8 +147,11 @@ T1_PROFILE = VehicleProfile(
         AxleGroup("Front group", ("Axle 1", "Axle 2"), 0.0, 16000.0),
         AxleGroup("Rear group", ("Axle 3", "Axle 4"), 5250.0, 20000.0),
     ),
+    # SAR rounded slope angles (verified vs stored SFs to 1e-9): 60% -> 31 deg,
+    # side 30% -> 16.7, side 25% -> 14.0. Longitudinal 50% is left to exact
+    # atan (the workbook does not round it), so it is intentionally absent.
     longitudinal_angle_deg={60.0: 31.0},
-    side_angle_deg={30.0: 16.7},
+    side_angle_deg={30.0: 16.7, 25.0: 14.0},
     trig_dp=3,
     iso_plane_offset_mm=2400.0,   # AFE N1 spec: front axle -> front ISO plane
     # T1 SAR states OEM recommended slope SF = 1.5 for all directions

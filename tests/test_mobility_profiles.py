@@ -69,6 +69,16 @@ def test_t1_make_vehicle_reproduces_slope_sfs():
 def test_slope_kwargs_uses_rounded_sar_angles():
     assert slope_kwargs_for(T1_PROFILE, "ascending", 60) == {"angle_deg": 31.0, "trig_dp": 3}
     assert slope_kwargs_for(T1_PROFILE, "kerbside", 30) == {"angle_deg": 16.7, "trig_dp": 3}
+    # side 25% is also a rounded SAR angle (14.0 deg), verified vs stored SFs
+    assert slope_kwargs_for(T1_PROFILE, "kerbside", 25) == {"angle_deg": 14.0, "trig_dp": 3}
+
+
+def test_side_25_reproduces_stored_sf():
+    """T1 side 25% at 14.0 deg reproduces the workbook kerb25/road25 SFs."""
+    v = T1_PROFILE.make_vehicle("T1 laden", T1_GW, T1_X, T1_Y, T1_Z)
+    kw = slope_kwargs_for(T1_PROFILE, "kerbside", 25)
+    assert abs(side_slope_stability(v, 25, "kerbside", **kw).SF - 2.3745821642653673) < 1e-9
+    assert abs(side_slope_stability(v, 25, "roadside", **kw).SF - 2.4342911935408993) < 1e-9
 
 
 def test_e2_profile_preserved():
