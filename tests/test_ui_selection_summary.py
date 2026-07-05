@@ -3,6 +3,7 @@ from physics_engine import DirectionResult
 from ui_selection_summary import (
     build_candidate_comparison_rows,
     build_load_case_rows,
+    build_review_next_rows,
     build_shock_selection_key,
     describe_selection_key_changes,
     format_assessment_context,
@@ -71,6 +72,22 @@ def test_summary_highlights_recommendation_and_binding_constraint():
     assert summary.limiting_util_pct == 70
     assert summary.static_status == "rated"
     assert "Use CB1400-15" in summary.next_action
+
+
+def test_review_next_rows_turn_summary_into_decision_checklist():
+    summary = summarize_selection([_candidate()])
+
+    rows = build_review_next_rows(summary)
+
+    assert [row["Review"] for row in rows] == [
+        "Chosen part",
+        "Limiting case",
+        "Engineering check",
+    ]
+    assert rows[0]["Focus"] == "CB1400-15"
+    assert "Roll - Bottom" in rows[1]["Focus"]
+    assert "70% used" in rows[1]["Focus"]
+    assert rows[2]["Focus"] == "Review all four load cases"
 
 
 def test_summary_flags_unrated_static_load_as_vendor_check():

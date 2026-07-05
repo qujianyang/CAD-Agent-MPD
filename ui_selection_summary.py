@@ -160,6 +160,45 @@ def build_load_case_rows(candidate) -> list[dict]:
     return rows
 
 
+def build_review_next_rows(summary: SelectionSummary) -> list[dict]:
+    """Return a short decision-review checklist for the selected result."""
+    if summary.verdict != "PASS":
+        return [
+            {
+                "Review": "Blocking constraint",
+                "Focus": summary.support_line,
+                "Why it matters": "This is the closest catalog option and the reason it still fails.",
+            },
+            {
+                "Review": "Next action",
+                "Focus": summary.next_action,
+                "Why it matters": "Change the setup before relying on this selection.",
+            },
+        ]
+
+    limit_focus = (
+        f"{summary.limiting_case} - {summary.limiting_constraint}, "
+        f"{summary.limiting_util_pct}% used"
+    )
+    return [
+        {
+            "Review": "Chosen part",
+            "Focus": summary.recommended_part,
+            "Why it matters": "This is the catalog part selected from the passing candidates.",
+        },
+        {
+            "Review": "Limiting case",
+            "Focus": limit_focus,
+            "Why it matters": "This is the constraint closest to failing.",
+        },
+        {
+            "Review": "Engineering check",
+            "Focus": "Review all four load cases",
+            "Why it matters": "Confirm every orientation passes before committing the part.",
+        },
+    ]
+
+
 def _format_pct(ratio: float) -> str:
     return f"{_pct(ratio)}%"
 

@@ -1,4 +1,9 @@
-from ui_copy import MAIN_TAB_LABELS
+from ui_copy import (
+    CLEAR_RESULT_LABEL,
+    MAIN_TAB_LABELS,
+    REVIEW_NEXT_LABEL,
+    UPDATE_RESULT_LABEL,
+)
 from pathlib import Path
 
 
@@ -32,3 +37,15 @@ def test_app_uses_current_streamlit_width_api():
     app_source = Path("app.py").read_text(encoding="utf-8")
 
     assert "use_container_width" not in app_source
+
+
+def test_shock_result_has_actionable_stale_controls_and_no_floating_guide():
+    app_source = Path("app.py").read_text(encoding="utf-8")
+
+    assert UPDATE_RESULT_LABEL == "Update result"
+    assert CLEAR_RESULT_LABEL == "Clear result"
+    assert REVIEW_NEXT_LABEL == "Review next"
+    assert "UPDATE_RESULT_LABEL" in app_source
+    assert "CLEAR_RESULT_LABEL" in app_source
+    assert "REVIEW_NEXT_LABEL" in app_source
+    assert "render_floating_assistant(" not in app_source

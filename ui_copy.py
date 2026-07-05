@@ -11,6 +11,9 @@ CHAT_EXPORT_TITLE = "CAD Safety Assistant - Chat Export"
 EXPORT_MARKDOWN_LABEL = "Download Markdown"
 EXPORT_HTML_LABEL = "Download HTML"
 CLEAR_CHAT_LABEL = "Clear chat"
+UPDATE_RESULT_LABEL = "Update result"
+CLEAR_RESULT_LABEL = "Clear result"
+REVIEW_NEXT_LABEL = "Review next"
 
 CLEARANCE_HELP_TEXT = (
     "Set the free gap to nearby equipment or rack walls. "

@@ -33,6 +33,7 @@ from catalog import (
 from ui_selection_summary import (
     build_candidate_comparison_rows,
     build_load_case_rows,
+    build_review_next_rows,
     build_shock_selection_key,
     describe_selection_key_changes,
     format_assessment_context,
@@ -40,6 +41,7 @@ from ui_selection_summary import (
 )
 from ui_copy import (
     CHAT_EXPORT_TITLE,
+    CLEAR_RESULT_LABEL,
     CLEAR_CHAT_LABEL,
     CLEARANCE_HELP_TEXT,
     EXPORT_HTML_LABEL,
@@ -47,7 +49,9 @@ from ui_copy import (
     FULL_PHYSICS_REPORT_LABEL,
     MAIN_TAB_LABELS,
     ROAD_VIBRATION_LABEL,
+    REVIEW_NEXT_LABEL,
     SHOCK_ASSISTANT_LABEL,
+    UPDATE_RESULT_LABEL,
 )
 from tiedown_engine import MountFace, Item, analyze_item, run_tiedown_analysis
 from fastener_catalog import make_fastener, size_fasteners, BOLT_CLASSES, BOLT_SIZES, NON_BOLTS
@@ -89,9 +93,6 @@ st.set_page_config(
     page_icon="CS",
     layout="wide",
 )
-
-from streamlit_float import float_init, float_css_helper
-float_init()
 
 load_dotenv()
 try:
@@ -441,9 +442,10 @@ def _render_selection_result(report, candidates):
                 )
             else:
                 m5.metric("Static/mount", f"{rec.static_load_daN:.0f} daN", "vendor check")
-            st.info(summary.next_action)
             if summary.static_status == "unrated":
                 st.warning(summary.static_text)
+            st.markdown(f"**{REVIEW_NEXT_LABEL}**")
+            st.table(build_review_next_rows(summary))
 
         k1, k2, k3 = st.columns(3)
         k1.metric("Compression K", f"{rec.entry.k_comp_lbin} lb/in")
@@ -463,7 +465,8 @@ def _render_selection_result(report, candidates):
                 pulse_shape=report.shock_env.pulse_shape,
             )
         )
-        st.info(summary.next_action)
+        st.markdown(f"**{REVIEW_NEXT_LABEL}**")
+        st.table(build_review_next_rows(summary))
 
     # 4-case table for the recommended part
     if rec:
@@ -667,99 +670,6 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                 st.rerun()
 
 
-def render_floating_assistant(domain: str, title: str, placeholder: str,
-                              *, quickstart=None):
-    """
-    Floating corner chat bubble (Tidio-style) for one domain, via streamlit-float.
-    Collapsed = a 💬 button bottom-right; expanded = a chat panel.
-    Same domain-scoped agent as the expander version (~4 tools).
-
-    Optional `quickstart` is a list of (label, seed_question) tuples. When the panel
-    is open and the chat is empty, the labels render as buttons that seed the question
-    into the same submit path as typing it.
-    """
-    open_key = f"float_{domain}_open"
-    hist_key = f"asst_{domain}_history"
-    pend_key = f"float_{domain}_pending"
-    st.session_state.setdefault(open_key, False)
-    st.session_state.setdefault(hist_key, [])
-
-    box = st.container()
-    with box:
-        if not st.session_state[open_key]:
-            # collapsed → round button
-            if st.button("💬", key=f"float_{domain}_btn", help=title):
-                st.session_state[open_key] = True
-                st.rerun()
-            css = float_css_helper(
-                width="56px", height="56px", bottom="24px", right="24px",
-                css="border-radius:50%; box-shadow:0 4px 14px rgba(0,0,0,.4);",
-            )
-        else:
-            # expanded → chat panel
-            hc1, hc2 = st.columns([5, 1])
-            hc1.markdown(f"**{title}**")
-            if hc2.button("✖", key=f"float_{domain}_close"):
-                st.session_state[open_key] = False
-                st.rerun()
-
-            if not API_KEY:
-                st.info(f"Set `{API_KEY_ENV}` in `.env` to enable.")
-            else:
-                try:
-                    agent_obj = _get_domain_agent(
-                        domain, LLM_PROVIDER, LLM_MODEL, API_KEY)
-                except Exception as e:
-                    st.error(f"Init failed: {e}")
-                    agent_obj = None
-
-                for msg in st.session_state[hist_key]:
-                    with st.chat_message(msg["role"]):
-                        st.markdown(msg["content"])
-
-                if agent_obj and not st.session_state[hist_key] and quickstart:
-                    st.caption("Quick start:")
-                    for i, (label, seed) in enumerate(quickstart):
-                        if st.button(label, key=f"float_{domain}_qs{i}",
-                                     width="stretch"):
-                            st.session_state[pend_key] = seed
-                            st.rerun()
-
-                q = st.chat_input(placeholder, key=f"float_{domain}_input") if agent_obj else None
-                q = q or st.session_state.pop(pend_key, None)   # seeded quick-start question
-                if q:
-                    st.session_state[hist_key].append({"role": "user", "content": q})
-                    with st.chat_message("user"):
-                        st.markdown(q)
-                    hist = [("human" if m["role"] == "user" else "ai", m["content"])
-                            for m in st.session_state[hist_key][:-1]]
-                    with st.chat_message("assistant"):
-                        final_text = ""
-                        with st.status("Working…", expanded=False) as status:
-                            try:
-                                for ev in agent_obj.stream(q, chat_history=hist or None):
-                                    if ev["type"] == "tool_call":
-                                        st.markdown(f"🔧 `{ev['name']}`")
-                                    elif ev["type"] == "final":
-                                        final_text = ev["content"]
-                                status.update(label="Done", state="complete")
-                            except Exception as e:
-                                final_text = f"Agent error: {e}"
-                                status.update(label="Failed", state="error")
-                        if final_text:
-                            st.markdown(final_text)
-                    st.session_state[hist_key].append(
-                        {"role": "assistant", "content": final_text})
-                    st.rerun()
-            css = float_css_helper(
-                width="380px", height="560px", bottom="24px", right="24px",
-                css="padding:14px 16px; border-radius:14px; overflow-y:auto; "
-                    "background-color:#1a1d24; "          # solid: was var(--background-color) → transparent
-                    "border:1px solid rgba(255,255,255,.25); "
-                    "box-shadow:0 8px 32px rgba(0,0,0,.6); "
-                    "z-index:9999;",
-            )
-    box.float(css)
 
 
 # ----------------------------------------------------------------------------
@@ -839,11 +749,10 @@ with tab_quick:
         part_no=None if sel_mode == "Auto (recommend best part)" else chosen_part_no,
     )
 
-    btn_label = "Select best isolator" if sel_mode == "Auto (recommend best part)" else "Run analysis"
-    if st.button(btn_label, type="primary", width="stretch", key="q_run"):
+    def _run_quick_selector():
         if sel_mode == "Auto (recommend best part)":
             with st.spinner("Running 4-case selection..."):
-                report, candidates = select_and_analyze(
+                return select_and_analyze(
                     mass_kg   = mass_kg,
                     n_bottom  = n_bot,
                     n_wall    = n_wall,
@@ -855,29 +764,34 @@ with tab_quick:
                     clr_z_mm  = clr_z,
                     objective = objective,
                 )
-        else:
-            with st.spinner("Computing 4 load cases..."):
-                entry = all_part_options[chosen_part_no]
-                loads = _loads_per_isolator(mass_kg, n_bot, n_wall)
-                candidates = select_isolator(
-                    m_comp_bottom_kg = loads["m_comp_bottom_kg"],
-                    m_comp_wall_kg   = loads["m_comp_wall_kg"],
-                    m_roll_wall_kg   = loads["m_roll_wall_kg"],
-                    m_roll_bottom_kg = loads["m_roll_bottom_kg"],
-                    env              = env,
-                    catalog          = [entry],
-                    clr_x_mm         = clr_x,
-                    clr_y_mm         = clr_y,
-                    clr_z_mm         = clr_z,
-                )
-                report = run_analysis(
-                    mass_kg, n_bot, n_wall,
-                    shock_env = env,
-                    isolator  = entry.to_isolator_spec(),
-                    clr_x_mm  = clr_x,
-                    clr_y_mm  = clr_y,
-                    clr_z_mm  = clr_z,
-                )
+
+        with st.spinner("Computing 4 load cases..."):
+            entry = all_part_options[chosen_part_no]
+            loads = _loads_per_isolator(mass_kg, n_bot, n_wall)
+            candidates = select_isolator(
+                m_comp_bottom_kg = loads["m_comp_bottom_kg"],
+                m_comp_wall_kg   = loads["m_comp_wall_kg"],
+                m_roll_wall_kg   = loads["m_roll_wall_kg"],
+                m_roll_bottom_kg = loads["m_roll_bottom_kg"],
+                env              = env,
+                catalog          = [entry],
+                clr_x_mm         = clr_x,
+                clr_y_mm         = clr_y,
+                clr_z_mm         = clr_z,
+            )
+            report = run_analysis(
+                mass_kg, n_bot, n_wall,
+                shock_env = env,
+                isolator  = entry.to_isolator_spec(),
+                clr_x_mm  = clr_x,
+                clr_y_mm  = clr_y,
+                clr_z_mm  = clr_z,
+            )
+            return report, candidates
+
+    btn_label = "Select best isolator" if sel_mode == "Auto (recommend best part)" else "Run analysis"
+    if st.button(btn_label, type="primary", width="stretch", key="q_run"):
+        report, candidates = _run_quick_selector()
         st.session_state.q_selection_result = (report, candidates)
         st.session_state.q_selection_key = q_selection_key
 
@@ -890,6 +804,25 @@ with tab_quick:
             st.warning(
                 f"{changed_text} Run the selection again to refresh the result."
             )
+            stale_left, stale_right, _ = st.columns([1, 1, 4])
+            if stale_left.button(
+                UPDATE_RESULT_LABEL,
+                type="primary",
+                width="stretch",
+                key="q_update_result",
+            ):
+                report, candidates = _run_quick_selector()
+                st.session_state.q_selection_result = (report, candidates)
+                st.session_state.q_selection_key = q_selection_key
+                st.rerun()
+            if stale_right.button(
+                CLEAR_RESULT_LABEL,
+                width="stretch",
+                key="q_clear_result",
+            ):
+                st.session_state.q_selection_result = None
+                st.session_state.q_selection_key = None
+                st.rerun()
         stored_report, stored_candidates = st.session_state.q_selection_result
         _render_selection_result(stored_report, stored_candidates)
 
@@ -903,19 +836,6 @@ with tab_quick:
         examples=[c["example"] for c in SHOCK_CAPABILITIES[:5]],
     )
 
-    # ---- UI Guide (floating bubble; explains how to operate the tab, never computes) ----
-    render_floating_assistant(
-        "ui_guide_shock",
-        "🧭 Shock Selector UI Guide",
-        "e.g. 'what does the Binding column mean?'",
-        quickstart=[
-            ("How to use shock selector", "How do I use the shock isolator selector from start to finish?"),
-            ("What to do first",          "What should I do first to select or verify an isolator?"),
-            ("Required inputs",           "What inputs do I need before running shock isolator selection?"),
-            ("Form or assistant",         "When should I use Auto/Manual mode, and when should I ask the shock assistant?"),
-            ("Read results",             "How do I read the recommended part, GT, deflection, and load-case results?"),
-        ],
-    )
 
 
 # =============================================================================
@@ -1206,19 +1126,6 @@ with tab_tiedown:
         examples=[c["example"] for c in TIEDOWN_CAPABILITIES[:5]],
     )
 
-    # ---- UI Guide (floating bubble; explains how to operate the tab, never computes) ----
-    render_floating_assistant(
-        "ui_guide_tiedown",
-        "🧭 Tie-Down UI Guide",
-        "e.g. 'which mounting surface should I pick?'",
-        quickstart=[
-            ("How to use tie-down", "How do I use the tie-down tab from start to finish?"),
-            ("What to do first",    "What should I do first to check a secured item?"),
-            ("Required inputs",     "What inputs do I need before running a tie-down check?"),
-            ("Form or assistant",   "When should I use the form controls, and when should I ask the tie-down assistant?"),
-            ("Read results",        "How do I read safety factor, limiting axis, force type, and PASS/FAIL?"),
-        ],
-    )
 
 
 # =============================================================================
@@ -2165,19 +2072,6 @@ with tab_mobility:
         examples=[c["example"] for c in MOBILITY_CAPABILITIES[:5]],
     )
 
-    # ---- 7. UI Guide (floating bubble; explains how to operate the tab, never computes) ----
-    render_floating_assistant(
-        "ui_guide_mobility",
-        "🧭 Mobility UI Guide",
-        "e.g. 'why is Run Analysis disabled?'",
-        quickstart=[
-            ("How to use mobility", "How do I use the mobility tab from start to finish?"),
-            ("What to do first",    "What should I do first to analyse the vehicle?"),
-            ("Required inputs",     "What inputs do I need before running mobility analysis?"),
-            ("Form or assistant",   "When should I use the workbook/forms, and when should I ask the mobility assistant?"),
-            ("Read results",        "How do I read axle load, slope stability, cornering, and final verdicts?"),
-        ],
-    )
 
 
 # ----------------------------------------------------------------------------
