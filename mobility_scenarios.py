@@ -181,6 +181,118 @@ def vehicle_from_wheel_loads(
 
 
 # ---------------------------------------------------------------------------
+# Use case 2b: four-axle (T1) wheel-load measurement
+#
+# The T1 is an 8x8 with four axles; the validated two-support-line engine
+# treats axles 1+2 as the "front axle" and 3+4 as the "rear axle". This layer
+# collapses eight measured left/right wheel-group loads into that two-group
+# model and derives the same Vehicle the workbook uses, while retaining the
+# per-axle and per-side totals for UI explanation.
+#
+#   front_group = axle1 + axle2 ;  rear_group = axle3 + axle4
+#   GW  = sum of all eight loads
+#   Xcg = wheelbase * rear_group / GW          (moment about the front group)
+#   Ycg = track * (right_side / GW - 0.5)      (+toward driverside / right)
+# ---------------------------------------------------------------------------
+
+# T1 vendor grouped limits (mobility_profiles.T1_PROFILE); kept here so this
+# module has no import cycle with the profile layer.
+DEFAULT_T1_FRONT_GROUP_LIMIT_KG = 16000.0
+DEFAULT_T1_REAR_GROUP_LIMIT_KG = 20000.0
+DEFAULT_T1_GVW_LIMIT_KG = 36000.0
+
+
+@dataclass(frozen=True)
+class FourAxleWheelLoadSummary:
+    """Derived Vehicle plus the per-axle / per-side breakdown that produced it."""
+    vehicle: Vehicle
+    axle_totals_kg: Tuple[float, float, float, float]
+    front_group_left_kg: float
+    front_group_right_kg: float
+    rear_group_left_kg: float
+    rear_group_right_kg: float
+    front_group_kg: float
+    rear_group_kg: float
+    left_side_kg: float
+    right_side_kg: float
+
+
+def derive_4axle_wheel_load_summary(
+    a1_left_kg: float,
+    a1_right_kg: float,
+    a2_left_kg: float,
+    a2_right_kg: float,
+    a3_left_kg: float,
+    a3_right_kg: float,
+    a4_left_kg: float,
+    a4_right_kg: float,
+    wheelbase_mm: float,
+    track_mm: float,
+    zcg_mm: float,
+    zcg_source: str,
+    name: str = "4-axle wheel-load derived",
+    rstat_mm: float = DEFAULT_RSTAT_MM,
+    front_group_limit_kg: float = DEFAULT_T1_FRONT_GROUP_LIMIT_KG,
+    rear_group_limit_kg: float = DEFAULT_T1_REAR_GROUP_LIMIT_KG,
+    gvw_limit_kg: float = DEFAULT_T1_GVW_LIMIT_KG,
+) -> FourAxleWheelLoadSummary:
+    """
+    Collapse eight T1 wheel-group loads (kg) into the two-support-line Vehicle.
+
+    Zcg cannot be derived from static wheel loads; the caller must supply a
+    verified value with a non-empty `zcg_source` provenance label. Raises
+    ValueError on any non-positive load/dimension or a missing source.
+    """
+    a1l = _require_positive(a1_left_kg, "axle1 left load")
+    a1r = _require_positive(a1_right_kg, "axle1 right load")
+    a2l = _require_positive(a2_left_kg, "axle2 left load")
+    a2r = _require_positive(a2_right_kg, "axle2 right load")
+    a3l = _require_positive(a3_left_kg, "axle3 left load")
+    a3r = _require_positive(a3_right_kg, "axle3 right load")
+    a4l = _require_positive(a4_left_kg, "axle4 left load")
+    a4r = _require_positive(a4_right_kg, "axle4 right load")
+    wb = _require_positive(wheelbase_mm, "wheelbase")
+    tr = _require_positive(track_mm, "track")
+    z = _require_positive(zcg_mm, "Zcg")
+    src = _require_label(zcg_source, "Zcg source")
+
+    front_left = a1l + a2l
+    front_right = a1r + a2r
+    rear_left = a3l + a4l
+    rear_right = a3r + a4r
+    front_group = front_left + front_right
+    rear_group = rear_left + rear_right
+    left_side = front_left + rear_left
+    right_side = front_right + rear_right
+    gw = front_group + rear_group
+
+    xcg = wb * rear_group / gw
+    ycg = tr * (right_side / gw - 0.5)   # +toward driverside/right
+
+    vehicle = Vehicle(
+        name=f"{name} (Zcg: {src})",
+        gw_kg=gw, xcg_mm=xcg, ycg_mm=ycg, zcg_mm=z,
+        wheelbase_mm=wb, track_mm=tr, rstat_mm=rstat_mm,
+        front_axle_limit_kg=front_group_limit_kg,
+        rear_axle_limit_kg=rear_group_limit_kg,
+        gvw_limit_kg=gvw_limit_kg,
+    )
+    return FourAxleWheelLoadSummary(
+        vehicle=vehicle,
+        axle_totals_kg=(a1l + a1r, a2l + a2r, a3l + a3r, a4l + a4r),
+        front_group_left_kg=front_left, front_group_right_kg=front_right,
+        rear_group_left_kg=rear_left, rear_group_right_kg=rear_right,
+        front_group_kg=front_group, rear_group_kg=rear_group,
+        left_side_kg=left_side, right_side_kg=right_side,
+    )
+
+
+def vehicle_from_4axle_wheel_loads(**kwargs) -> Vehicle:
+    """Convenience: the derived Vehicle only (see derive_4axle_wheel_load_summary)."""
+    return derive_4axle_wheel_load_summary(**kwargs).vehicle
+
+
+# ---------------------------------------------------------------------------
 # Tilt-test Zcg derivation (four-test SAR method)
 # ---------------------------------------------------------------------------
 
