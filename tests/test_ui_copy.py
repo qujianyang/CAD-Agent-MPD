@@ -26,3 +26,9 @@ def test_shock_selector_copy_avoids_clipped_or_decorative_labels():
     assert "🚚 Road-vibration check" not in app_source
     assert "🔬 Full physics report" not in app_source
     assert "💬 Ask the shock-isolation assistant" not in app_source
+
+
+def test_app_uses_current_streamlit_width_api():
+    app_source = Path("app.py").read_text(encoding="utf-8")
+
+    assert "use_container_width" not in app_source

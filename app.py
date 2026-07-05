@@ -468,7 +468,7 @@ def _render_selection_result(report, candidates):
     # 4-case table for the recommended part
     if rec:
         st.subheader("4 Load Cases (all must pass)")
-        st.dataframe(build_load_case_rows(rec), use_container_width=True, hide_index=True)
+        st.dataframe(build_load_case_rows(rec), width="stretch", hide_index=True)
         st.caption("**Binding** = the constraint closest to failing in each case. "
                    "`deflection (clearance)` means the neighbouring-equipment gap — "
                    "not the mount's own travel — is the limiting factor.")
@@ -504,7 +504,7 @@ def _render_selection_result(report, candidates):
     with st.expander("Catalog comparison"):
         st.dataframe(
             build_candidate_comparison_rows(candidates),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         with st.expander("Raw selection matrix"):
@@ -565,7 +565,7 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
 
     with st.expander(title, expanded=expanded):
         if capabilities:
-            with st.popover("ℹ️ What can this assistant do?", use_container_width=False):
+            with st.popover("ℹ️ What can this assistant do?", width="content"):
                 st.markdown(
                     "| Capability | Purpose | Example question |\n|---|---|---|\n" +
                     "\n".join(
@@ -655,14 +655,14 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                 EXPORT_MARKDOWN_LABEL,
                 data=history_to_markdown(st.session_state[hist_key], title=_doc_title),
                 file_name=f"{domain}_chat_{_ts}.md", mime="text/markdown",
-                key=f"asst_{domain}_dl_md", use_container_width=True)
+                key=f"asst_{domain}_dl_md", width="stretch")
             ex2.download_button(
                 EXPORT_HTML_LABEL,
                 data=history_to_html(st.session_state[hist_key], title=_doc_title),
                 file_name=f"{domain}_chat_{_ts}.html", mime="text/html",
-                key=f"asst_{domain}_dl_html", use_container_width=True)
+                key=f"asst_{domain}_dl_html", width="stretch")
             if ex3.button(CLEAR_CHAT_LABEL, key=f"asst_{domain}_clear",
-                          use_container_width=True):
+                          width="stretch"):
                 st.session_state[hist_key] = []
                 st.rerun()
 
@@ -721,7 +721,7 @@ def render_floating_assistant(domain: str, title: str, placeholder: str,
                     st.caption("Quick start:")
                     for i, (label, seed) in enumerate(quickstart):
                         if st.button(label, key=f"float_{domain}_qs{i}",
-                                     use_container_width=True):
+                                     width="stretch"):
                             st.session_state[pend_key] = seed
                             st.rerun()
 
@@ -840,7 +840,7 @@ with tab_quick:
     )
 
     btn_label = "Select best isolator" if sel_mode == "Auto (recommend best part)" else "Run analysis"
-    if st.button(btn_label, type="primary", use_container_width=True, key="q_run"):
+    if st.button(btn_label, type="primary", width="stretch", key="q_run"):
         if sel_mode == "Auto (recommend best part)":
             with st.spinner("Running 4-case selection..."):
                 report, candidates = select_and_analyze(
@@ -974,7 +974,7 @@ with tab_cad:
 
         if _SOLIDWORKS_AVAILABLE:
             if st.button("🔌 Extract from SolidWorks", type="primary",
-                         use_container_width=True, key="cad_extract"):
+                         width="stretch", key="cad_extract"):
                 with st.spinner("Talking to SolidWorks via COM..."):
                     props, raw, err, rc = run_solidworks_extraction(file_path=cad_file_override)
                     st.session_state.cad_props          = props
@@ -984,7 +984,7 @@ with tab_cad:
                     st.session_state.extract_attempted  = True
         else:
             st.button("🔌 Extract from SolidWorks", type="primary",
-                      use_container_width=True, key="cad_extract", disabled=True)
+                      width="stretch", key="cad_extract", disabled=True)
             st.caption("Disabled on non-Windows — SolidWorks COM is unavailable here.")
 
     with col_right:
@@ -1125,7 +1125,7 @@ with tab_tiedown:
                              key="td_tgt",
                              help="Pass if the minimum SF across the 3 axes >= this. "
                                   "MIL-STD-209K design factor is 1.5.")
-    if st.button("Check tie-down", type="primary", use_container_width=True, key="td_check_btn"):
+    if st.button("Check tie-down", type="primary", width="stretch", key="td_check_btn"):
         res = analyze_item(Item(td_fastener.name, td_wt, _FACE_LABELS[td_face_label],
                                 td_fastener, int(td_qty)))
         if res.min_SF >= td_tgt:
@@ -1139,7 +1139,7 @@ with tab_tiedown:
               "Force type": a.force_type, "Per fastener [N]": round(a.exp_force_N, 1),
               "Yield [N]": round(a.yield_force_N, 1), "Safety factor": round(a.SF, 3)}
              for a in res.axes],
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
         st.caption(f"Fastener: **{td_fastener.name}** · tensile {td_fastener.tensile_force_N:.0f} N / "
                    f"shear {td_fastener.shear_force_N:.0f} N per fastener")
@@ -1153,14 +1153,14 @@ with tab_tiedown:
     td_sface_label = s2.selectbox("Mounting surface", list(_FACE_LABELS.keys()),
                                   key="td_sface", help=_FACE_HELP)
     td_stgt = s3.number_input("Target SF", value=2.0, min_value=0.1, max_value=20.0, step=0.5, key="td_stgt")
-    if st.button("Recommend fasteners", use_container_width=True, key="td_size_btn"):
+    if st.button("Recommend fasteners", width="stretch", key="td_size_btn"):
         opts = size_fasteners(td_swt, _FACE_LABELS[td_sface_label], target_SF=td_stgt)
         best = opts[0]
         st.success(f"Smallest valid: **{best.fastener.name} x{best.qty}**  (achieved min SF {best.min_SF:.2f})")
         st.dataframe(
             [{"Fastener": o.fastener.name, "Qty": o.qty, "Achieved min SF": round(o.min_SF, 2)}
              for o in opts[:6]],
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
     st.divider()
@@ -1174,7 +1174,7 @@ with tab_tiedown:
     td_rg_tgt = rg2.number_input("Required SF", value=1.5, min_value=0.1, max_value=20.0,
                                  step=0.5, key="td_rg_tgt",
                                  help="MIL-STD-209K design factor is 1.5.")
-    if st.button("Generate Appendix G", type="primary", use_container_width=True, key="td_rg_btn"):
+    if st.button("Generate Appendix G", type="primary", width="stretch", key="td_rg_btn"):
         try:
             from tiedown_report import generate_appendix_g
             items = import_workbook(td_rg_path)
@@ -1434,7 +1434,7 @@ with tab_mobility:
                  {"Angle (deg)": 12.3, "Inclined rear load (kg)": 10700.0},
                  {"Angle (deg)": 8.2,  "Inclined rear load (kg)": 10450.0},
                  {"Angle (deg)": 6.2,  "Inclined rear load (kg)": 10300.0}],
-                num_rows="dynamic", use_container_width=True, key="mb_wl_tilt",
+                num_rows="dynamic", width="stretch", key="mb_wl_tilt",
                 column_config={
                     "Angle (deg)": st.column_config.NumberColumn(
                         "Angle (deg)", min_value=0.0, max_value=89.9),
@@ -1593,7 +1593,7 @@ with tab_mobility:
                     "Z from ground (mm)": round(c.z_shelter_mm + mod_dz, 1),
                 } for c in filtered])
                 ev = st.dataframe(
-                    comp_df, height=320, hide_index=True, use_container_width=True,
+                    comp_df, height=320, hide_index=True, width="stretch",
                     on_select="rerun", selection_mode="single-row", key="mb_mod_list",
                 )
                 st.caption(
@@ -1616,7 +1616,7 @@ with tab_mobility:
                     )
                     sb1, sb2 = st.columns(2)
                     if sb1.button("Relocate component", key="mb_mod_btn_rel",
-                                  use_container_width=True):
+                                  width="stretch"):
                         _mb_mod_append({
                             "Action": "relocate", "Description": sc.description,
                             "Mass (kg)": sc.total_mass_kg,
@@ -1627,7 +1627,7 @@ with tab_mobility:
                         st.toast(f"Relocate row added for {sc.description} -- "
                                  "enter the New X/Y/Z below.")
                     if sb2.button("Remove component", key="mb_mod_btn_rem",
-                                  use_container_width=True):
+                                  width="stretch"):
                         _mb_mod_append({
                             "Action": "remove", "Description": sc.description,
                             "Mass (kg)": sc.total_mass_kg,
@@ -1647,7 +1647,7 @@ with tab_mobility:
         mod_edit = st.data_editor(
             seed_df,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key=f"mb_mod_table_{ss.mb_mod_rev}",
             column_config={
                 "Action": st.column_config.SelectboxColumn(
@@ -1994,7 +1994,7 @@ with tab_mobility:
                  "Unit": "%",
                  "Status": "[OK]" if ax.steer_ok else "[FAIL]"},
             ],
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
         )
 
         # Slope SF table with 3-tier verdicts
@@ -2008,7 +2008,7 @@ with tab_mobility:
                  "Verdict": vd}
                 for r, vd in zip(mb_rep.slope_results, slope_verdicts)
             ],
-            hide_index=True, use_container_width=True,
+            hide_index=True, width="stretch",
         )
         if gov:
             st.info(f"Governing case: {gov.direction} {gov.grade_pct:.0f}% -- "
@@ -2076,7 +2076,7 @@ with tab_mobility:
                  "SF": round(a.SF, 2),
                  "Status": "[OK]" if a.passed else "[FAIL]"}
                 for a in tl_rep.axes
-            ], hide_index=True, use_container_width=True)
+            ], hide_index=True, width="stretch")
             if tl_rep.all_passed:
                 st.success(f"All {tl_rep.n_locks} twist-locks pass "
                            f"(min SF = {tl_rep.min_SF:.2f}).")
