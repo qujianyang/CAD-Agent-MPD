@@ -160,7 +160,7 @@ def test_selection_key_changes_when_inputs_change():
         clr_y_mm=0.0,
         clr_z_mm=0.0,
         catalog_label="All series",
-        objective="balanced",
+        objective="max_clearance",
         part_no=None,
     )
     changed = build_shock_selection_key(
@@ -176,7 +176,7 @@ def test_selection_key_changes_when_inputs_change():
         clr_y_mm=0.0,
         clr_z_mm=0.0,
         catalog_label="All series",
-        objective="balanced",
+        objective="max_clearance",
         part_no=None,
     )
 
@@ -252,7 +252,7 @@ def test_selection_key_change_description_names_changed_inputs():
         clr_y_mm=0.0,
         clr_z_mm=0.0,
         catalog_label="All series",
-        objective="balanced",
+        objective="max_clearance",
         part_no=None,
     )
     new = build_shock_selection_key(
@@ -268,7 +268,7 @@ def test_selection_key_change_description_names_changed_inputs():
         clr_y_mm=0.0,
         clr_z_mm=0.0,
         catalog_label="All series",
-        objective="balanced",
+        objective="max_clearance",
         part_no=None,
     )
 

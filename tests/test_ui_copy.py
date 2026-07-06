@@ -39,7 +39,19 @@ def test_app_uses_current_streamlit_width_api():
     assert "use_container_width" not in app_source
 
 
-def test_shock_result_has_actionable_stale_controls_and_no_floating_guide():
+def test_selection_objective_copy_is_clearance_first_without_balanced():
+    app_source = Path("app.py").read_text(encoding="utf-8")
+    catalog_source = Path("catalog.py").read_text(encoding="utf-8")
+    agent_source = Path("agent.py").read_text(encoding="utf-8")
+
+    assert '"Least movement / max clearance": "max_clearance"' in app_source
+    assert '"Lowest transmitted shock": "best_isolation"' in app_source
+    assert "Balanced (furthest from any limit)" not in app_source
+    assert "balanced" not in catalog_source
+    assert "balanced" not in agent_source
+
+
+def test_shock_result_has_actionable_stale_controls_and_floating_guide():
     app_source = Path("app.py").read_text(encoding="utf-8")
 
     assert UPDATE_RESULT_LABEL == "Update result"
@@ -48,4 +60,8 @@ def test_shock_result_has_actionable_stale_controls_and_no_floating_guide():
     assert "UPDATE_RESULT_LABEL" in app_source
     assert "CLEAR_RESULT_LABEL" in app_source
     assert "REVIEW_NEXT_LABEL" in app_source
-    assert "render_floating_assistant(" not in app_source
+    assert "from streamlit_float import float_init, float_css_helper" in app_source
+    assert "def render_floating_assistant(" in app_source
+    assert "ui_guide_shock" in app_source
+    assert "ui_guide_tiedown" in app_source
+    assert "ui_guide_mobility" in app_source

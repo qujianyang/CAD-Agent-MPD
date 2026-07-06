@@ -33,6 +33,11 @@ def test_select_isolator_to_ms_no_warning():
     assert "RECOMMENDED:" in out        # a valid part was selected
 
 
+def test_select_isolator_default_uses_max_clearance():
+    out = select_isolator.invoke({"mass_kg": 850.0})
+    assert "RECOMMENDED: CB1700-20" in out   # default is stiffest valid -> least movement
+
+
 def test_run_shock_analysis_half_sine_harsher():
     out = run_shock_analysis.invoke({
         "mass_kg": 850.0, "part_no": "CB1400-15", "pulse_shape": "half-sine",
@@ -58,8 +63,14 @@ def test_select_isolator_objective_max_clearance():
 def test_select_isolator_bad_objective_clamped():
     out = select_isolator.invoke({"mass_kg": 850.0, "objective": "fastest"})
     assert "NOTE" in out
-    assert "RECOMMENDED: CB1400-60" in out   # fell back to best_isolation (AUTO default)
+    assert "RECOMMENDED: CB1700-20" in out   # fell back to max_clearance (AUTO default)
     assert "CB61400" not in out              # default excludes the 6-strand series
+
+
+def test_select_isolator_balanced_objective_removed():
+    out = select_isolator.invoke({"mass_kg": 850.0, "objective": "balanced"})
+    assert "NOTE" in out
+    assert "RECOMMENDED: CB1700-20" in out
 
 
 def test_select_isolator_default_excludes_cb61400():
@@ -72,7 +83,7 @@ def test_select_isolator_default_excludes_cb61400():
 def test_select_isolator_all_series_includes_cb61400():
     # Explicit opt-in still reaches the softer 6-strand series (no data lost).
     out = select_isolator.invoke({"mass_kg": 850.0, "series": "ALL"})
-    assert "RECOMMENDED: CB61400-60" in out
+    assert "CB61400-60" in out
 
 
 def test_get_isolator_data_part():

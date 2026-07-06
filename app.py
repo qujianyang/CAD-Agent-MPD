@@ -94,6 +94,9 @@ st.set_page_config(
     layout="wide",
 )
 
+from streamlit_float import float_init, float_css_helper
+float_init()
+
 load_dotenv()
 try:
     LLM_CONFIG = resolve_llm_config()
@@ -129,9 +132,8 @@ PULSE_MAP = {
 # Clearance is a hard gate in ALL modes; the objective only breaks ties among
 # the parts that already pass all four cases.
 OBJECTIVE_MAP = {
-    "Balanced (furthest from any limit)": "balanced",
-    "Best isolation (softest, lowest G)": "best_isolation",
-    "Max clearance (stiffest, least travel)": "max_clearance",
+    "Least movement / max clearance": "max_clearance",
+    "Lowest transmitted shock": "best_isolation",
 }
 
 
@@ -670,6 +672,100 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                 st.rerun()
 
 
+def render_floating_assistant(domain: str, title: str, placeholder: str,
+                              *, quickstart=None):
+    """
+    Floating corner chat bubble (Tidio-style) for one domain, via streamlit-float.
+    Collapsed = a 💬 button bottom-right; expanded = a chat panel.
+    Same domain-scoped agent as the expander version (~4 tools).
+
+    Optional `quickstart` is a list of (label, seed_question) tuples. When the panel
+    is open and the chat is empty, the labels render as buttons that seed the question
+    into the same submit path as typing it.
+    """
+    open_key = f"float_{domain}_open"
+    hist_key = f"asst_{domain}_history"
+    pend_key = f"float_{domain}_pending"
+    st.session_state.setdefault(open_key, False)
+    st.session_state.setdefault(hist_key, [])
+
+    box = st.container()
+    with box:
+        if not st.session_state[open_key]:
+            # collapsed -> round button
+            if st.button("💬", key=f"float_{domain}_btn", help=title):
+                st.session_state[open_key] = True
+                st.rerun()
+            css = float_css_helper(
+                width="56px", height="56px", bottom="24px", right="24px",
+                css="border-radius:50%; box-shadow:0 4px 14px rgba(0,0,0,.4);",
+            )
+        else:
+            hc1, hc2 = st.columns([5, 1])
+            hc1.markdown(f"**{title}**")
+            if hc2.button("X", key=f"float_{domain}_close"):
+                st.session_state[open_key] = False
+                st.rerun()
+
+            if not API_KEY:
+                st.info(f"Set `{API_KEY_ENV}` in `.env` to enable.")
+            else:
+                try:
+                    agent_obj = _get_domain_agent(
+                        domain, LLM_PROVIDER, LLM_MODEL, API_KEY)
+                except Exception as e:
+                    st.error(f"Init failed: {e}")
+                    agent_obj = None
+
+                for msg in st.session_state[hist_key]:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+
+                if agent_obj and not st.session_state[hist_key] and quickstart:
+                    st.caption("Quick start:")
+                    for i, (label, seed) in enumerate(quickstart):
+                        if st.button(label, key=f"float_{domain}_qs{i}",
+                                     width="stretch"):
+                            st.session_state[pend_key] = seed
+                            st.rerun()
+
+                q = st.chat_input(placeholder, key=f"float_{domain}_input") if agent_obj else None
+                q = q or st.session_state.pop(pend_key, None)
+                if q:
+                    st.session_state[hist_key].append({"role": "user", "content": q})
+                    with st.chat_message("user"):
+                        st.markdown(q)
+                    hist = [("human" if m["role"] == "user" else "ai", m["content"])
+                            for m in st.session_state[hist_key][:-1]]
+                    with st.chat_message("assistant"):
+                        final_text = ""
+                        with st.status("Working...", expanded=False) as status:
+                            try:
+                                for ev in agent_obj.stream(q, chat_history=hist or None):
+                                    if ev["type"] == "tool_call":
+                                        st.markdown(f"`{ev['name']}`")
+                                    elif ev["type"] == "final":
+                                        final_text = ev["content"]
+                                status.update(label="Done", state="complete")
+                            except Exception as e:
+                                final_text = f"Agent error: {e}"
+                                status.update(label="Failed", state="error")
+                        if final_text:
+                            st.markdown(final_text)
+                    st.session_state[hist_key].append(
+                        {"role": "assistant", "content": final_text})
+                    st.rerun()
+            css = float_css_helper(
+                width="380px", height="560px", bottom="24px", right="24px",
+                css="padding:14px 16px; border-radius:14px; overflow-y:auto; "
+                    "background-color:#1a1d24; "
+                    "border:1px solid rgba(255,255,255,.25); "
+                    "box-shadow:0 8px 32px rgba(0,0,0,.6); "
+                    "z-index:9999;",
+            )
+    box.float(css)
+
+
 
 
 # ----------------------------------------------------------------------------
@@ -834,6 +930,19 @@ with tab_quick:
         "e.g. 'select an isolator for a 1500 kg rack, 6 bottom + 4 wall'",
         capabilities=SHOCK_CAPABILITIES,
         examples=[c["example"] for c in SHOCK_CAPABILITIES[:5]],
+    )
+
+    render_floating_assistant(
+        "ui_guide_shock",
+        "Shock Selector UI Guide",
+        "e.g. 'what does the Binding column mean?'",
+        quickstart=[
+            ("How to use shock selector", "How do I use the shock isolator selector from start to finish?"),
+            ("What to do first", "What should I do first to select or verify an isolator?"),
+            ("Required inputs", "What inputs do I need before running shock isolator selection?"),
+            ("Form or assistant", "When should I use Auto/Manual mode, and when should I ask the shock assistant?"),
+            ("Read results", "How do I read the recommended part, GT, deflection, and load-case results?"),
+        ],
     )
 
 
@@ -1124,6 +1233,19 @@ with tab_tiedown:
         "e.g. 'how many M12 bolts to floor-mount a 1269 kg generator at SF 2?'",
         capabilities=TIEDOWN_CAPABILITIES,
         examples=[c["example"] for c in TIEDOWN_CAPABILITIES[:5]],
+    )
+
+    render_floating_assistant(
+        "ui_guide_tiedown",
+        "Tie-Down UI Guide",
+        "e.g. 'which mounting surface should I pick?'",
+        quickstart=[
+            ("How to use tie-down", "How do I use the tie-down tab from start to finish?"),
+            ("What to do first", "What should I do first to check a secured item?"),
+            ("Required inputs", "What inputs do I need before running a tie-down check?"),
+            ("Form or assistant", "When should I use the form controls, and when should I ask the tie-down assistant?"),
+            ("Read results", "How do I read safety factor, limiting axis, force type, and PASS/FAIL?"),
+        ],
     )
 
 
@@ -2070,6 +2192,19 @@ with tab_mobility:
         "e.g. 'is the Spinel E2 stable on a 60% slope?'",
         capabilities=MOBILITY_CAPABILITIES,
         examples=[c["example"] for c in MOBILITY_CAPABILITIES[:5]],
+    )
+
+    render_floating_assistant(
+        "ui_guide_mobility",
+        "Mobility UI Guide",
+        "e.g. 'why is Run Analysis disabled?'",
+        quickstart=[
+            ("How to use mobility", "How do I use the mobility tab from start to finish?"),
+            ("What to do first", "What should I do first to analyse the vehicle?"),
+            ("Required inputs", "What inputs do I need before running mobility analysis?"),
+            ("Form or assistant", "When should I use the workbook/forms, and when should I ask the mobility assistant?"),
+            ("Read results", "How do I read axle load, slope stability, cornering, and final verdicts?"),
+        ],
     )
 
 

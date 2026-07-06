@@ -79,6 +79,19 @@ def test_axle_context_describes_grouping():
     assert "Axle 1" in txt and "Axle 3" in txt
 
 
+def test_t1_report_headline_matches_ui():
+    """Regression for the Streamlit T1 tab headline: with the profile's default
+    radius (14 m) the governing slope is kerbside 30% (SF 1.9775) and cornering
+    SF is 3.6015 -- the exact figures the Mobility tab displays for measured T1."""
+    rep = run_profile_mobility_analysis(V_MEAS, T1_PROFILE)  # radius_m=None -> 14 m
+    gov = rep.governing_slope()
+    assert (gov.grade_pct, gov.direction) == (30, "kerbside")
+    assert abs(gov.SF - 1.9774906808241164) < 1e-9
+    assert abs(rep.corner.SF - 3.601540982344649) < 1e-9
+    assert abs(rep.axle.front_kg - 12625.0) < 1e-6
+    assert abs(rep.axle.rear_kg - 13550.0) < 1e-6
+
+
 def test_axle_context_with_wheel_summary():
     s = derive_4axle_wheel_load_summary(
         a1_left_kg=3000, a1_right_kg=2950, a2_left_kg=3350, a2_right_kg=3325,

@@ -145,13 +145,13 @@ def select_isolator(
     GT_limit_G: float = 10.0,
     series: str = "AUTO",
     pulse_shape: str = "sawtooth",
-    objective: str = "best_isolation",
+    objective: str = "max_clearance",
 ) -> str:
     """
     Select the optimal wire rope isolator. By DEFAULT scans the practical-rack range
     CB1400 / CB1500 / CB1700; the softer 6-strand CB61400 is opt-in (pass series="ALL").
     Evaluates every matching part and recommends the best per `objective` (default:
-    SOFTEST that passes = best isolation):
+    STIFFEST that passes = least movement / max clearance):
       - GT < GT_limit in all 3 load directions (compression vertical, lateral, shear)
       - Dynamic deflection < isolator's rated travel in all 3 directions
     Returns the full selection table plus mathematical proof for the recommended part.
@@ -164,7 +164,7 @@ def select_isolator(
     Project defaults (used if you omit the parameter):
         n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms),
         GT_limit_G=10.0G, series="AUTO", pulse_shape="sawtooth",
-        objective="best_isolation"
+        objective="max_clearance"
 
     Args:
         mass_kg    : REQUIRED. Total assembly mass in kg. Get from extract_cad_data
@@ -181,9 +181,9 @@ def select_isolator(
                      CB61400, or a single series name ("CB61400"/"CB1400"/"CB1500"/"CB1700").
         pulse_shape: "sawtooth" (default) or "half_sine". OMIT unless the user
                      names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.
-        objective  : Tiebreak among passing parts: "best_isolation" (softest, default),
-                     "max_clearance" (smallest deflection), or "balanced" (furthest
-                     from any limit). OMIT unless the user states a preference.
+        objective  : Tiebreak among passing parts: "max_clearance" (smallest
+                     deflection, default) or "best_isolation" (softest / lowest
+                     transmitted shock). OMIT unless the user states a preference.
     """
     catalog_map = {
         "AUTO":   AUTO_SELECT_CATALOGS,   # default: practical rack range, excludes CB61400
@@ -216,8 +216,8 @@ def select_isolator(
         substitutions.append(pulse_note)
     if objective not in SELECT_OBJECTIVES:
         substitutions.append(f"objective was {objective!r} (unknown); substituted default "
-                             f"'best_isolation' (valid: {', '.join(SELECT_OBJECTIVES)})")
-        objective = "best_isolation"
+                             f"'max_clearance' (valid: {', '.join(SELECT_OBJECTIVES)})")
+        objective = "max_clearance"
 
     env = ShockEnv(Ao_G=Ao_G, to_s=to_s, GT_limit_G=GT_limit_G, pulse_shape=pulse)
 
@@ -937,10 +937,11 @@ When the user asks for catalog DATA — "what is the stiffness / travel / size \
 of part X", "list the CB1500 parts", "what series exist" — use \
 get_isolator_data. Do NOT run an analysis just to read off K or dmax.
 
-When the user states a selection PREFERENCE — "best isolation" (default), \
-"maximum clearance margin" / "smallest deflection", or "balanced margins" — \
-pass objective="best_isolation" / "max_clearance" / "balanced" to \
-select_isolator. OMIT objective when the user states no preference.
+When the user states a selection PREFERENCE — "least movement", \
+"maximum clearance margin", or "smallest deflection" (default) — pass \
+objective="max_clearance" to select_isolator. When the user asks for \
+"lowest transmitted shock" or "best isolation", pass objective="best_isolation". \
+OMIT objective when the user states no preference.
 
 Always show key numbers. Never invent stiffness values or GT results — \
 call the tools to compute them.

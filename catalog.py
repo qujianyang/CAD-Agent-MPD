@@ -13,8 +13,8 @@ Data sources (all from Helical / Aeroflex datasheet PDF supplied by supervisor):
 Selection logic:
   - GT must be below GT_limit for ALL directions (compression + shear)
   - Dynamic deflection must be below isolator's max travel for ALL directions
-  - Among all valid candidates, prefer the SOFTEST (lowest K) that still passes.
-    Softer = lower transmitted G = better isolation.
+  - Among all valid candidates, prefer the STIFFEST (highest K) that still passes.
+    Stiffer = less movement / deflection = better clearance margin.
   - By default all four series are scanned; pass catalog=CB1400_CATALOG etc. to restrict.
 """
 import math
@@ -32,7 +32,7 @@ _IN_TO_MM     = 25.4        # 1 inch  = 25.4 mm
 
 # Valid selection objectives (tiebreak among parts that pass all 4 cases).
 # _NO_CLEARANCE_MM is imported from physics_engine (single source of truth).
-SELECT_OBJECTIVES = ("best_isolation", "max_clearance", "balanced")
+SELECT_OBJECTIVES = ("max_clearance", "best_isolation")
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +219,7 @@ class CatalogCandidate:
 
     @property
     def worst_overall_ratio(self) -> float:
-        """Worst of GT-ratio and deflection-ratio across all cases.
-        Lower = more comfortably clear of *every* limit. Used by the
-        'balanced' selection objective."""
+        """Worst utilization across GT and deflection limits."""
         return max(self.worst_GT_ratio, self.worst_delta_ratio)
 
     @property
@@ -240,16 +238,13 @@ class CatalogCandidate:
 def _objective_sort_key(objective: str):
     """Return a sort key putting valid parts first, then ordering them per objective.
 
-    - best_isolation : softest K first  -> lowest GT (today's default behaviour)
     - max_clearance  : stiffest K first -> smallest deflection / biggest clearance margin
-    - balanced       : smallest worst_overall_ratio first -> furthest from ANY limit
+    - best_isolation : softest K first  -> lowest GT
     """
-    if objective == "max_clearance":
-        return lambda c: (not c.valid, -c.entry.k_comp_lbin)
-    if objective == "balanced":
-        return lambda c: (not c.valid, c.worst_overall_ratio)
-    # default / "best_isolation"
-    return lambda c: (not c.valid, c.entry.k_comp_lbin)
+    if objective == "best_isolation":
+        return lambda c: (not c.valid, c.entry.k_comp_lbin)
+    # default / "max_clearance"
+    return lambda c: (not c.valid, -c.entry.k_comp_lbin)
 
 
 def select_isolator(
@@ -263,7 +258,7 @@ def select_isolator(
     clr_x_mm: float = _NO_CLEARANCE_MM,
     clr_y_mm: float = _NO_CLEARANCE_MM,
     clr_z_mm: float = _NO_CLEARANCE_MM,
-    objective: str = "best_isolation",
+    objective: str = "max_clearance",
 ) -> list[CatalogCandidate]:
     """
     Evaluate every catalog entry against the FOUR load cases from the Excel reference.
@@ -345,7 +340,7 @@ def select_and_analyze(
     clr_x_mm: float = _NO_CLEARANCE_MM,
     clr_y_mm: float = _NO_CLEARANCE_MM,
     clr_z_mm: float = _NO_CLEARANCE_MM,
-    objective: str = "best_isolation",
+    objective: str = "max_clearance",
 ) -> tuple[PhysicsReport, list[CatalogCandidate]]:
     """
     Full pipeline:
