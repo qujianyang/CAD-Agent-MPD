@@ -52,6 +52,45 @@ _SELECTION_KEY_LABELS = (
 )
 
 
+_LOAD_CASE_COPY = {
+    "Comp - Bottom (Z-axis)": "Bottom mounts in vertical compression",
+    "Comp - Wall (Y-axis)": "Wall mounts in Y-axis compression",
+    "Roll - Wall (X,Z-axis)": "Wall mounts in X/Z shear during roll",
+    "Roll - Bottom (X,Y-axis)": "Bottom mounts in X/Y shear during roll",
+}
+
+
+def readable_load_case(label: str) -> str:
+    """Return a plain-language load-case label for result summaries."""
+    return _LOAD_CASE_COPY.get(label, label)
+
+
+def readable_constraint(constraint: str) -> str:
+    """Return a plain-language constraint name."""
+    if constraint == "GT":
+        return "transmitted shock (GT)"
+    if constraint == "deflection":
+        return "movement"
+    return constraint
+
+
+def format_limit_check(direction, constraint: str) -> str:
+    """Return the actual/allowed check with units and percent utilization."""
+    if constraint == "GT":
+        ratio = direction.GT_G / direction.GT_limit
+        return (
+            f"{readable_load_case(direction.label)}: "
+            f"{readable_constraint(constraint)} = {direction.GT_G:.2f} / "
+            f"{direction.GT_limit:.1f} G ({_pct(ratio)}% of allowed)"
+        )
+    ratio = direction.delta_mm / direction.delta_limit_mm
+    return (
+        f"{readable_load_case(direction.label)}: "
+        f"{readable_constraint(constraint)} = {direction.delta_mm:.1f} / "
+        f"{direction.delta_limit_mm:.1f} mm ({_pct(ratio)}% of allowed)"
+    )
+
+
 def build_shock_selection_key(
     *,
     mode: str,
@@ -176,10 +215,7 @@ def build_review_next_rows(summary: SelectionSummary) -> list[dict]:
             },
         ]
 
-    limit_focus = (
-        f"{summary.limiting_case} - {summary.limiting_constraint}, "
-        f"{summary.limiting_util_pct}% used"
-    )
+    limit_focus = summary.support_line.replace("Closest-to-fail check: ", "")
     return [
         {
             "Review": "Chosen part",
@@ -187,9 +223,9 @@ def build_review_next_rows(summary: SelectionSummary) -> list[dict]:
             "Why it matters": "This is the catalog part selected from the passing candidates.",
         },
         {
-            "Review": "Limiting case",
+            "Review": "Closest-to-fail check",
             "Focus": limit_focus,
-            "Why it matters": "This is the constraint closest to failing.",
+            "Why it matters": "This has the smallest pass margin; if mass or shock increases, it fails first.",
         },
         {
             "Review": "Engineering check",
@@ -197,6 +233,29 @@ def build_review_next_rows(summary: SelectionSummary) -> list[dict]:
             "Why it matters": "Confirm every orientation passes before committing the part.",
         },
     ]
+
+
+def build_axis_clearance_requirements(candidate) -> dict[str, float]:
+    """Return required free movement per UI clearance axis for a candidate."""
+    return {
+        "X": round(max(candidate.roll_wall.delta_mm, candidate.roll_bottom.delta_mm), 1),
+        "Y": round(max(candidate.comp_wall.delta_mm, candidate.roll_bottom.delta_mm), 1),
+        "Z": round(max(candidate.comp_bottom.delta_mm, candidate.roll_wall.delta_mm), 1),
+    }
+
+
+def _format_axis_requirements(candidate) -> str:
+    req = build_axis_clearance_requirements(candidate)
+    return ", ".join(f"{axis} >= {req[axis]:.1f} mm" for axis in ("X", "Y", "Z"))
+
+
+def format_clearance_hint(candidate) -> str:
+    """Return live guidance for the X/Y/Z clearance inputs."""
+    return (
+        "Estimated movement for the current recommendation: "
+        f"{_format_axis_requirements(candidate)}. "
+        "Enter at least these gaps, or 0 to ignore clearance on an axis."
+    )
 
 
 def _format_pct(ratio: float) -> str:
@@ -286,12 +345,29 @@ def _failed_candidate_detail(candidate) -> tuple[str, str]:
         detail = f"static load uses {pct}% of its catalog rating."
         action = "Try more bottom mounts, a part with a higher static rating, or a lighter supported mass."
     elif constraint == "GT":
-        detail = f"{direction.label}; GT uses {pct}% of its limit."
+        detail = format_limit_check(direction, constraint) + "."
         action = "Try more mounts, a stiffer/larger series, or confirm a higher allowable GT limit."
+    elif _is_clearance_limited(candidate, direction):
+        detail = (
+            f"{readable_load_case(direction.label)}; movement is clearance-limited. "
+            f"Required clearance: {_format_axis_requirements(candidate)}."
+        )
+        action = (
+            "Increase the listed clearance values, add mounts/use a stiffer part, "
+            "or set an axis to 0 to ignore that clearance."
+        )
     else:
-        detail = f"{direction.label}; deflection uses {pct}% of its limit."
+        detail = format_limit_check(direction, constraint) + "."
         action = "Try more installation clearance, more mounts, or a stiffer/larger part."
     return detail, action
+
+
+def _is_clearance_limited(candidate, direction) -> bool:
+    if direction in (candidate.comp_bottom, candidate.comp_wall):
+        mount_travel_mm = candidate.entry.d_max_comp_mm
+    else:
+        mount_travel_mm = candidate.entry.d_max_shear_mm
+    return direction.delta_limit_mm < mount_travel_mm - 1e-6
 
 
 def _static_summary(candidate) -> tuple[str, str]:
@@ -358,8 +434,9 @@ def summarize_selection(candidates) -> SelectionSummary:
         series=rec.entry.series,
         headline=f"{part_no} passes all four shock load cases.",
         support_line=(
-            f"Limiting case: {direction.label}; {constraint} uses {limiting_pct}% of its limit. "
-            f"Worst GT is {worst_gt_pct}% and worst deflection is {worst_delta_pct}%."
+            f"Closest-to-fail check: {format_limit_check(direction, constraint)}. "
+            f"Worst transmitted shock is {worst_gt_pct}% of allowed; "
+            f"worst movement is {worst_delta_pct}% of allowed."
         ),
         next_action=next_action,
         worst_gt_pct=worst_gt_pct,

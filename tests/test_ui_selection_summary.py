@@ -1,12 +1,17 @@
 from catalog import CatalogCandidate, CatalogEntry
 from physics_engine import DirectionResult
 from ui_selection_summary import (
+    build_axis_clearance_requirements,
     build_candidate_comparison_rows,
     build_load_case_rows,
     build_review_next_rows,
     build_shock_selection_key,
     describe_selection_key_changes,
+    format_limit_check,
     format_assessment_context,
+    format_clearance_hint,
+    readable_constraint,
+    readable_load_case,
     summarize_selection,
 )
 
@@ -72,6 +77,9 @@ def test_summary_highlights_recommendation_and_binding_constraint():
     assert summary.limiting_util_pct == 70
     assert summary.static_status == "rated"
     assert "Use CB1400-15" in summary.next_action
+    assert "Closest-to-fail check" in summary.support_line
+    assert "Bottom mounts in X/Y shear during roll" in summary.support_line
+    assert "movement = 28.0 / 40.0 mm" in summary.support_line
 
 
 def test_review_next_rows_turn_summary_into_decision_checklist():
@@ -81,12 +89,13 @@ def test_review_next_rows_turn_summary_into_decision_checklist():
 
     assert [row["Review"] for row in rows] == [
         "Chosen part",
-        "Limiting case",
+        "Closest-to-fail check",
         "Engineering check",
     ]
     assert rows[0]["Focus"] == "CB1400-15"
-    assert "Roll - Bottom" in rows[1]["Focus"]
-    assert "70% used" in rows[1]["Focus"]
+    assert "Bottom mounts in X/Y shear during roll" in rows[1]["Focus"]
+    assert "70% of allowed" in rows[1]["Focus"]
+    assert "smallest pass margin" in rows[1]["Why it matters"]
     assert rows[2]["Focus"] == "Review all four load cases"
 
 
@@ -141,9 +150,53 @@ def test_no_valid_summary_names_closest_part_and_blocking_constraint():
     summary = summarize_selection([worse, closer])
 
     assert "CB1500-15" in summary.support_line
-    assert "Comp - Bottom" in summary.support_line
-    assert "GT" in summary.support_line
-    assert "110%" in summary.support_line
+    assert "Bottom mounts in vertical compression" in summary.support_line
+    assert "transmitted shock (GT)" in summary.support_line
+    assert "11.00 / 10.0 G" in summary.support_line
+
+
+def test_limit_check_copy_explains_cases_constraints_and_units():
+    direction = _direction("Comp - Wall (Y-axis)", gt=8.6, delta=10.0)
+
+    assert readable_load_case("Comp - Wall (Y-axis)") == "Wall mounts in Y-axis compression"
+    assert readable_constraint("GT") == "transmitted shock (GT)"
+    assert readable_constraint("deflection") == "movement"
+    assert (
+        format_limit_check(direction, "GT")
+        == "Wall mounts in Y-axis compression: transmitted shock (GT) = 8.60 / 10.0 G (86% of allowed)"
+    )
+
+
+def test_axis_clearance_requirements_follow_load_case_mapping():
+    req = build_axis_clearance_requirements(_candidate())
+
+    assert req == {"X": 28.0, "Y": 28.0, "Z": 12.0}
+
+    hint = format_clearance_hint(_candidate())
+
+    assert "X >= 28.0 mm" in hint
+    assert "Y >= 28.0 mm" in hint
+    assert "Z >= 12.0 mm" in hint
+    assert "0 to ignore" in hint
+
+
+def test_no_valid_summary_explains_clearance_driven_failure():
+    failed = _candidate(
+        directions=[
+            _direction("Comp - Bottom (Z-axis)", gt=5.0, delta=12.0, delta_limit=1.0),
+            _direction("Comp - Wall (Y-axis)", gt=4.0, delta=10.0, delta_limit=1.0),
+            _direction("Roll - Wall (X,Z-axis)", gt=3.0, delta=8.0, delta_limit=1.0),
+            _direction("Roll - Bottom (X,Y-axis)", gt=6.0, delta=28.0, delta_limit=1.0),
+        ]
+    )
+
+    summary = summarize_selection([failed])
+
+    assert "clearance" in summary.support_line.lower()
+    assert "X >= 28.0 mm" in summary.support_line
+    assert "Y >= 28.0 mm" in summary.support_line
+    assert "Z >= 12.0 mm" in summary.support_line
+    assert "set an axis to 0" in summary.next_action.lower()
 
 
 def test_selection_key_changes_when_inputs_change():

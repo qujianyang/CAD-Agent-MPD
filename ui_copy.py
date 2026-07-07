@@ -16,9 +16,10 @@ CLEAR_RESULT_LABEL = "Clear result"
 REVIEW_NEXT_LABEL = "Review next"
 
 CLEARANCE_HELP_TEXT = (
-    "Set the free gap to nearby equipment or rack walls. "
-    "Use 0 for no extra clearance limit."
+    "Clearance is allowed movement before contact with nearby equipment or rack walls, "
+    "not manufacturing tolerance. 1 mm is usually too small under shock. "
+    "Use 0 to ignore clearance on an axis."
 )
-ROAD_VIBRATION_LABEL = "Road-vibration check (chassis PSD)"
-FULL_PHYSICS_REPORT_LABEL = "Full physics report"
+ROAD_VIBRATION_LABEL = "Road vibration check"
+FULL_PHYSICS_REPORT_LABEL = "Detailed calculation report for selected part"
 SHOCK_ASSISTANT_LABEL = "Ask the shock-isolation assistant"

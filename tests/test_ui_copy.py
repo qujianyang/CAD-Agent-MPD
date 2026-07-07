@@ -1,7 +1,9 @@
 from ui_copy import (
     CLEAR_RESULT_LABEL,
+    CLEARANCE_HELP_TEXT,
     MAIN_TAB_LABELS,
     REVIEW_NEXT_LABEL,
+    ROAD_VIBRATION_LABEL,
     UPDATE_RESULT_LABEL,
 )
 from pathlib import Path
@@ -49,6 +51,28 @@ def test_selection_objective_copy_is_clearance_first_without_balanced():
     assert "Balanced (furthest from any limit)" not in app_source
     assert "balanced" not in catalog_source
     assert "balanced" not in agent_source
+
+
+def test_clearance_help_text_explains_gap_scale_and_zero_bypass():
+    app_source = Path("app.py").read_text(encoding="utf-8")
+
+    assert "allowed movement before contact" in CLEARANCE_HELP_TEXT
+    assert "1 mm is usually too small" in CLEARANCE_HELP_TEXT
+    assert "Use 0 to ignore" in CLEARANCE_HELP_TEXT
+    assert "format_clearance_hint(" in app_source
+
+
+def test_road_vibration_panel_explains_engineering_meaning():
+    app_source = Path("app.py").read_text(encoding="utf-8")
+
+    assert ROAD_VIBRATION_LABEL == "Road vibration check"
+    assert "Road vibration: {vibration_state}" in app_source
+    assert "reduces continuous road vibration" in app_source
+    assert "Transfer ratio" in app_source
+    assert "Below 1.0 means isolation" in app_source
+    assert "Calculation details" in app_source
+    assert "fn (vibration K)" not in app_source
+    assert "g_rms in" not in app_source
 
 
 def test_shock_result_has_actionable_stale_controls_and_floating_guide():

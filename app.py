@@ -37,6 +37,8 @@ from ui_selection_summary import (
     build_shock_selection_key,
     describe_selection_key_changes,
     format_assessment_context,
+    format_clearance_hint,
+    readable_constraint,
     summarize_selection,
 )
 from ui_copy import (
@@ -225,6 +227,32 @@ def _clearance_widget(prefix: str) -> tuple[float, float, float]:
     return conv(cx), conv(cy), conv(cz)
 
 
+def _clearance_hint_candidate(
+    *,
+    mass_kg: float,
+    n_bottom: int,
+    n_wall: int,
+    env: ShockEnv,
+    catalog,
+    objective: str = "max_clearance",
+):
+    """Return the no-clearance valid candidate used to estimate required movement."""
+    loads = _loads_per_isolator(mass_kg, n_bottom, n_wall)
+    candidates = select_isolator(
+        m_comp_bottom_kg=loads["m_comp_bottom_kg"],
+        m_comp_wall_kg=loads["m_comp_wall_kg"],
+        m_roll_wall_kg=loads["m_roll_wall_kg"],
+        m_roll_bottom_kg=loads["m_roll_bottom_kg"],
+        env=env,
+        catalog=catalog,
+        clr_x_mm=_NO_CLEARANCE_MM,
+        clr_y_mm=_NO_CLEARANCE_MM,
+        clr_z_mm=_NO_CLEARANCE_MM,
+        objective=objective,
+    )
+    return next((candidate for candidate in candidates if candidate.valid), None)
+
+
 def _objective_widget(prefix: str) -> str:
     """Render the selection-objective selectbox; return the catalog objective key."""
     label = st.selectbox(
@@ -410,6 +438,10 @@ def _render_selection_result(report, candidates):
     summary = summarize_selection(candidates)
 
     if rec:
+        directions = [rec.comp_bottom, rec.comp_wall, rec.roll_wall, rec.roll_bottom]
+        worst_gt = max(directions, key=lambda d: d.GT_G / d.GT_limit)
+        worst_movement = max(directions, key=lambda d: d.delta_mm / d.delta_limit_mm)
+
         with st.container(border=True):
             st.success(summary.headline)
             st.caption(summary.support_line)
@@ -428,22 +460,36 @@ def _render_selection_result(report, candidates):
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Recommended part", rec.entry.part_no, rec.entry.series)
             m2.metric(
-                "Limiting constraint",
-                f"{summary.limiting_util_pct}% used",
-                summary.limiting_constraint,
+                "Closest-to-fail check",
+                f"{summary.limiting_util_pct}% of allowed",
+                readable_constraint(summary.limiting_constraint),
                 delta_color="off",
             )
-            m3.metric("Worst GT", f"{summary.worst_gt_pct}% of limit")
-            m4.metric("Worst deflection", f"{summary.worst_delta_pct}% of limit")
+            m3.metric(
+                "Worst transmitted shock",
+                f"{worst_gt.GT_G:.2f} / {worst_gt.GT_limit:.1f} G",
+                f"{summary.worst_gt_pct}% of allowed",
+                delta_color="off",
+            )
+            m4.metric(
+                "Worst movement",
+                f"{worst_movement.delta_mm:.1f} / {worst_movement.delta_limit_mm:.1f} mm",
+                f"{summary.worst_delta_pct}% of allowed",
+                delta_color="off",
+            )
             if rec.static_rating_daN is not None:
                 m5.metric(
-                    "Static/mount",
-                    f"{rec.static_load_daN:.0f}/{rec.static_rating_daN:.0f} daN",
+                    "Static load / mount",
+                    f"{rec.static_load_daN * 0.01:.2f} / {rec.static_rating_daN * 0.01:.2f} kN",
                     f"{rec.static_util:.0%} of rating",
                     delta_color="off",
                 )
             else:
-                m5.metric("Static/mount", f"{rec.static_load_daN:.0f} daN", "vendor check")
+                m5.metric("Static load / mount", f"{rec.static_load_daN * 0.01:.2f} kN", "vendor check")
+            st.caption(
+                "GT is transmitted shock in G. Values are actual / allowed; below 100% passes. "
+                "Static load is shown in kN; catalog daN values are converted with 1 daN = 10 N."
+            )
             if summary.static_status == "unrated":
                 st.warning(summary.static_text)
             st.markdown(f"**{REVIEW_NEXT_LABEL}**")
@@ -483,27 +529,75 @@ def _render_selection_result(report, candidates):
         from vibration_engine import vibration_check_for_entry
         vib = vibration_check_for_entry(rec.entry, rec.comp_bottom.m_kg)
         if vib:
-            with st.expander(ROAD_VIBRATION_LABEL,
-                             expanded=vib.resonance_flag):
+            vibration_state = "isolating" if vib.attenuation < 1 else "amplifying"
+            with st.expander(f"Road vibration: {vibration_state}",
+                             expanded=vib.resonance_flag or vib.attenuation >= 1):
+                if vib.attenuation < 1:
+                    reduction_pct = (1.0 - vib.attenuation) * 100.0
+                    st.success(
+                        f"This mount reduces continuous road vibration by about "
+                        f"{reduction_pct:.0f}%."
+                    )
+                    st.write(
+                        f"The equipment sees {vib.grms_out:.2f} g RMS instead of "
+                        f"the {vib.grms_in:.2f} g RMS chassis input."
+                    )
+                    st.caption(
+                        "This vibration check is acceptable on transfer ratio. "
+                        "Keep reviewing the shock load cases because shock and "
+                        "road vibration are separate checks."
+                    )
+                else:
+                    amplification_pct = (vib.attenuation - 1.0) * 100.0
+                    st.warning(
+                        f"This mount amplifies continuous road vibration by about "
+                        f"{amplification_pct:.0f}%."
+                    )
+                    st.write(
+                        f"The equipment sees {vib.grms_out:.2f} g RMS from "
+                        f"the {vib.grms_in:.2f} g RMS chassis input."
+                    )
+
                 v1, v2, v3 = st.columns(3)
-                v1.metric("fn (vibration K)", f"{vib.fn_Hz:.1f} Hz")
-                v2.metric("g_rms in → out",
-                          f"{vib.grms_in:.2f} → {vib.grms_out:.2f} g")
-                v3.metric("Attenuation", f"×{vib.attenuation:.2f}",
-                          "isolating" if vib.attenuation < 1 else "amplifying",
+                v1.metric("Natural frequency", f"{vib.fn_Hz:.1f} Hz")
+                v1.caption(
+                    "Mounted system vibration frequency using vendor vibration "
+                    "stiffness."
+                )
+                v2.metric("Equipment vibration", f"{vib.grms_out:.2f} g RMS")
+                v2.caption(f"From {vib.grms_in:.2f} g RMS chassis input.")
+                v3.metric("Transfer ratio", f"{vib.attenuation:.2f}x",
+                          vibration_state,
                           delta_color="off")
+                v3.caption(
+                    f"Below 1.0 means isolation; output is "
+                    f"{vib.attenuation * 100.0:.0f}% of input."
+                )
+
+                st.info(
+                    "Interpretation: a transfer ratio below 1.0 means the mount "
+                    "reduces vibration; above 1.0 means it amplifies vibration. "
+                    "Natural frequency is used to check resonance risk. This "
+                    "does not prove the equipment survives vibration unless an "
+                    "equipment vibration limit is provided."
+                )
+
                 if vib.resonance_flag:
                     st.warning(
-                        f"⚠ Resonance risk: this mount's vibration natural frequency "
+                        f"Resonance risk: this mount's vibration natural frequency "
                         f"({vib.fn_Hz:.1f} Hz) sits on a dominant band of the truck "
-                        f"chassis PSD (peak 3.6–4.3 Hz). Shock performance is fine, "
-                        f"but sustained road vibration will be amplified (Q ≈ "
+                        f"chassis PSD (peak 3.6 to 4.3 Hz). Shock performance is fine, "
+                        f"but sustained road vibration will be amplified (Q about "
                         f"{1/(2*vib.zeta):.0f}). Consider a stiffer part or verify "
                         f"with the vendor."
                     )
-                st.caption("Method per SPF_Vibration.xls: damped transmissibility "
-                           "(ζ=0.12) over the heavy-duty-truck chassis PSD, using the "
-                           "vendor's Vibration Average K (small-amplitude stiffness).")
+                with st.expander("Calculation details"):
+                    st.caption(
+                        f"{ROAD_VIBRATION_LABEL}: method per SPF_Vibration.xls: "
+                        "damped transmissibility "
+                        "(zeta=0.12) over the heavy-duty-truck chassis PSD, using the "
+                        "vendor's Vibration Average K (small-amplitude stiffness)."
+                    )
 
     # Full catalog comparison
     with st.expander("Catalog comparison"):
@@ -827,6 +921,25 @@ with tab_quick:
 
     st.markdown("**Installation clearance**")
     clr_x, clr_y, clr_z = _clearance_widget("q")
+    if sel_mode == "Auto (recommend best part)":
+        hint_candidate = _clearance_hint_candidate(
+            mass_kg=mass_kg,
+            n_bottom=n_bot,
+            n_wall=n_wall,
+            env=env,
+            catalog=SERIES_MAP[series_label],
+            objective=objective,
+        )
+    else:
+        hint_candidate = _clearance_hint_candidate(
+            mass_kg=mass_kg,
+            n_bottom=n_bot,
+            n_wall=n_wall,
+            env=env,
+            catalog=[all_part_options[chosen_part_no]],
+        )
+    if hint_candidate:
+        st.info(format_clearance_hint(hint_candidate))
 
     q_selection_key = build_shock_selection_key(
         mode=sel_mode,
@@ -1000,6 +1113,19 @@ with tab_cad:
 
         st.markdown("**Installation clearance**")
         clr_x_cad, clr_y_cad, clr_z_cad = _clearance_widget("cad")
+        cad_props_for_hint = st.session_state.get("cad_props")
+        cad_mass_for_hint = (cad_props_for_hint or {}).get("mass_kg")
+        if cad_mass_for_hint:
+            hint_candidate_cad = _clearance_hint_candidate(
+                mass_kg=cad_mass_for_hint,
+                n_bottom=n_bot_cad,
+                n_wall=n_wall_cad,
+                env=env_cad,
+                catalog=AUTO_SELECT_CATALOGS,
+                objective=objective_cad,
+            )
+            if hint_candidate_cad:
+                st.info(format_clearance_hint(hint_candidate_cad))
 
         if _SOLIDWORKS_AVAILABLE:
             if st.button("🔌 Extract from SolidWorks", type="primary",
