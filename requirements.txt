@@ -22,6 +22,7 @@ python-dotenv==1.2.2
 requests==2.34.2
 numpy==2.2.6
 pandas==2.3.3
+plotly==6.0.0        # interactive 3D mount-layout visualizer (mount_layout_viz.py)
 
 # --- Excel + Word I/O (engine workbooks + report export) ---
 xlrd==2.0.2          # .xls  (mobility + shock workbooks; imported at startup)
