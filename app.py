@@ -227,6 +227,71 @@ def _clearance_widget(prefix: str) -> tuple[float, float, float]:
     return conv(cx), conv(cy), conv(cz)
 
 
+def _layout_box_widget(prefix: str) -> tuple[float, float, float]:
+    """Render manual enclosure dimensions for the mount-layout visualizer."""
+    c1, c2, c3 = st.columns(3)
+    width_mm = c1.number_input(
+        "Width X [mm]",
+        value=600.0,
+        min_value=1.0,
+        max_value=10000.0,
+        step=50.0,
+        key=f"{prefix}_layout_width",
+        help="Equipment or enclosure width along the X axis.",
+    )
+    depth_mm = c2.number_input(
+        "Depth Y [mm]",
+        value=800.0,
+        min_value=1.0,
+        max_value=10000.0,
+        step=50.0,
+        key=f"{prefix}_layout_depth",
+        help="Equipment or enclosure depth along the Y axis.",
+    )
+    height_mm = c3.number_input(
+        "Height Z [mm]",
+        value=1200.0,
+        min_value=1.0,
+        max_value=10000.0,
+        step=50.0,
+        key=f"{prefix}_layout_height",
+        help="Equipment or enclosure height along the Z axis.",
+    )
+    return float(width_mm), float(depth_mm), float(height_mm)
+
+
+def _wall_face_widget(prefix: str) -> str:
+    """Choose the vertical face used for wall mounts in the layout drawing."""
+    return st.selectbox(
+        "Wall mount face for drawing",
+        ["back", "front", "left", "right"],
+        index=0,
+        key=f"{prefix}_layout_wall_face",
+        format_func=lambda v: {
+            "back": "Back face (+Y)",
+            "front": "Front face (-Y)",
+            "left": "Left face (-X)",
+            "right": "Right face (+X)",
+        }[v],
+        help="Only affects the visual layout. Shock calculations still use the bottom/wall mount counts.",
+    )
+
+
+def _layout_box_from_cad_props(props) -> tuple[float, float, float] | None:
+    """Extract positive W/D/H dimensions from SolidWorks properties."""
+    if not props:
+        return None
+    try:
+        width_mm = float(props.get("width_mm"))
+        depth_mm = float(props.get("depth_mm"))
+        height_mm = float(props.get("height_mm"))
+    except (TypeError, ValueError):
+        return None
+    if width_mm <= 0 or depth_mm <= 0 or height_mm <= 0:
+        return None
+    return width_mm, depth_mm, height_mm
+
+
 def _clearance_hint_candidate(
     *,
     mass_kg: float,
@@ -431,11 +496,81 @@ def _export_html(chat_history: list[dict]) -> str:
 </html>"""
 
 
-def _render_selection_result(report, candidates):
+def _render_mount_layout_panel(
+    rec,
+    *,
+    layout_box_mm: tuple[float, float, float] | None,
+    clearances: tuple[float, float, float],
+    n_bottom: int,
+    n_wall: int,
+    wall_face: str,
+):
+    """Render deterministic Layer 1 mount layout for the selected candidate."""
+    if not layout_box_mm:
+        return
+
+    from mount_layout_viz import build_layout_figure, layout_summary
+
+    width_mm, depth_mm, height_mm = layout_box_mm
+    summary = layout_summary(
+        width_mm,
+        depth_mm,
+        height_mm,
+        n_bottom,
+        n_wall,
+        deflections=rec,
+        clearances=clearances,
+        wall_face=wall_face,
+    )
+    fig = build_layout_figure(
+        width_mm,
+        depth_mm,
+        height_mm,
+        n_bottom,
+        n_wall,
+        deflections=rec,
+        clearances=clearances,
+        wall_face=wall_face,
+        title=f"{rec.entry.part_no}: {n_bottom} bottom + {n_wall} wall mounts",
+    )
+    fig.update_layout(height=460)
+
+    with st.expander("Mount layout and movement envelope", expanded=True):
+        st.caption(
+            "Deterministic drawing from the selected part and your inputs. "
+            "Blue markers are bottom mounts, orange markers are wall mounts, "
+            "green/red dotted box is the shock movement envelope, and grey box "
+            "is the entered clearance envelope."
+        )
+        st.plotly_chart(fig, config={"displaylogo": False})
+
+        box = summary["box_mm"]
+        sway = summary["sway_mm"]
+        st.caption(
+            f"Box: {box['width']:.0f} x {box['depth']:.0f} x {box['height']:.0f} mm. "
+            f"Dynamic sway: X {sway['X']:.1f} mm, Y {sway['Y']:.1f} mm, "
+            f"Z {sway['Z']:.1f} mm. Wall mounts shown on the {wall_face} face."
+        )
+        if summary["any_interference"]:
+            st.error(
+                "Movement envelope exceeds at least one entered clearance. "
+                "Increase clearance, add mounts, or choose a stiffer/larger part."
+            )
+
+
+def _render_selection_result(
+    report,
+    candidates,
+    *,
+    layout_box_mm: tuple[float, float, float] | None = None,
+    clearances: tuple[float, float, float] | None = None,
+    wall_face: str = "back",
+):
     """Render the selection result section: recommended part, then per-case table."""
     valid = [c for c in candidates if c.valid]
     rec   = valid[0] if valid else None
     summary = summarize_selection(candidates)
+    clearances = clearances or (_NO_CLEARANCE_MM, _NO_CLEARANCE_MM, _NO_CLEARANCE_MM)
 
     if rec:
         directions = [rec.comp_bottom, rec.comp_wall, rec.roll_wall, rec.roll_bottom]
@@ -523,6 +658,14 @@ def _render_selection_result(report, candidates):
         st.caption("**Binding** = the constraint closest to failing in each case. "
                    "`deflection (clearance)` means the neighbouring-equipment gap — "
                    "not the mount's own travel — is the limiting factor.")
+        _render_mount_layout_panel(
+            rec,
+            layout_box_mm=layout_box_mm,
+            clearances=clearances,
+            n_bottom=report.n_bottom,
+            n_wall=report.n_wall,
+            wall_face=wall_face,
+        )
 
     # Road-vibration check for the recommended part (vendor Vibration Average K)
     if rec and rec.entry.k_vib_comp_lbin is not None:
@@ -915,6 +1058,10 @@ with tab_quick:
 
     st.markdown("**Mount configuration**")
     n_bot, n_wall = _mount_widget("q", default_bot=6, default_wall=4)
+    wall_face = _wall_face_widget("q")
+
+    st.markdown("**Enclosure dimensions for layout**")
+    layout_box_mm = _layout_box_widget("q")
 
     st.markdown("**Shock environment**")
     env = _shock_env_widget("q")
@@ -1033,7 +1180,13 @@ with tab_quick:
                 st.session_state.q_selection_key = None
                 st.rerun()
         stored_report, stored_candidates = st.session_state.q_selection_result
-        _render_selection_result(stored_report, stored_candidates)
+        _render_selection_result(
+            stored_report,
+            stored_candidates,
+            layout_box_mm=layout_box_mm,
+            clearances=(clr_x, clr_y, clr_z),
+            wall_face=wall_face,
+        )
 
     # ---- Shock-isolation assistant (collapsible, consistent with other tabs) ----
     from agent import SHOCK_CAPABILITIES
@@ -1105,6 +1258,7 @@ with tab_cad:
 
         st.markdown("**Mount configuration**")
         n_bot_cad, n_wall_cad = _mount_widget("cad", default_bot=6, default_wall=4)
+        wall_face_cad = _wall_face_widget("cad")
 
         objective_cad = _objective_widget("cad")
 
@@ -1231,7 +1385,13 @@ with tab_cad:
             clr_z_mm  = clr_z_cad,
             objective = objective_cad,
         )
-        _render_selection_result(report, candidates)
+        _render_selection_result(
+            report,
+            candidates,
+            layout_box_mm=_layout_box_from_cad_props(st.session_state.cad_props),
+            clearances=(clr_x_cad, clr_y_cad, clr_z_cad),
+            wall_face=wall_face_cad,
+        )
 
 
 # =============================================================================
@@ -1984,6 +2144,26 @@ with tab_mobility:
             st.caption("The 4-axle vehicle is reduced to two support lines; the "
                        "validated engine treats each group as one 'axle', so the "
                        "front-group / rear-group loads below map onto axles 1+2 / 3+4.")
+
+        from vehicle_cg_viz import side_view_figure, rear_view_figure
+
+        _cg_base = mb_base if mb_base is not None else mb_v
+        _cg_mod = mb_v if mb_base is not None else None
+        with st.expander("CG position and tip geometry", expanded=True):
+            st.caption(
+                "Deterministic side and rear views from the derived vehicle. The "
+                "CG dot is the computed centre of gravity; each dashed line is a "
+                "tip-over pivot and its angle is the engine's critical tip angle. "
+                "Blue is the baseline"
+                + (", coral is after the change." if _cg_mod is not None else ".")
+            )
+            _side = side_view_figure(_cg_base, modified=_cg_mod)
+            _rear = rear_view_figure(_cg_base, modified=_cg_mod)
+            _side.update_layout(height=440)
+            _rear.update_layout(height=440)
+            _gc1, _gc2 = st.columns(2)
+            _gc1.plotly_chart(_side, config={"displaylogo": False})
+            _gc2.plotly_chart(_rear, config={"displaylogo": False})
 
     st.divider()
 
