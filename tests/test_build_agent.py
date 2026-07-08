@@ -1,11 +1,11 @@
 """Run: .\\mpd\\Scripts\\python.exe test_build_agent.py  (offline; inspects the registry only)"""
-# Core demo set: 3 tools (Select / Verify / Look up) + shared lookup_knowledge.
+# Core demo set: catalog tools + custom isolator analysis + shared lookup_knowledge.
 # Retired for demo robustness (functions stay defined; CAD + Shock UI tab and the
 # capacity/deflection panels cover these): extract_cad_data, list_cad_files,
 # find_capacity_limit, filter_by_deflection.
 SHOCK_4 = sorted([
-    "select_isolator", "run_shock_analysis", "get_isolator_data",
-    "lookup_knowledge",
+    "select_isolator", "run_shock_analysis", "analyze_custom_isolator",
+    "get_isolator_data", "lookup_knowledge",
 ])
 
 

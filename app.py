@@ -30,6 +30,8 @@ from catalog import (
     CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
     select_isolator, select_and_analyze, format_selection_table, format_report,
 )
+from custom_isolator import CustomIsolatorInput, DirectionInput, StiffnessInput, ValidationError
+from custom_isolator_analysis import analyze_custom_isolator
 from ui_selection_summary import (
     build_candidate_comparison_rows,
     build_load_case_rows,
@@ -138,6 +140,21 @@ OBJECTIVE_MAP = {
     "Lowest transmitted shock": "best_isolation",
 }
 
+CUSTOM_MODE_LABEL = "Custom vendor data"
+STIFFNESS_SOURCE_MAP = {
+    "Direct stiffness K": "direct_k",
+    "Rated load @ frequency": "rated_load_frequency",
+    "Shock force @ deflection": "force_deflection",
+}
+
+RACK_LAYOUT_PRESETS = {
+    "Custom": None,
+    "Single rack": (4, 2),
+    "2-gang rack": (6, 2),
+    "3-gang rack": (8, 2),
+    "4-gang rack": (10, 2),
+}
+
 
 # ----------------------------------------------------------------------------
 # Session state
@@ -157,6 +174,8 @@ def _init_state():
         "mobility_chat_history": [],
         "q_selection_result": None,
         "q_selection_key": None,
+        "q_custom_result": None,
+        "q_custom_key": None,
         # Mobility scenario workspace
         "mb_vehicle": None,    # derived mobility Vehicle (single source of truth)
         "mb_prov": None,       # {"method": ..., "source": ...} provenance
@@ -292,6 +311,168 @@ def _layout_box_from_cad_props(props) -> tuple[float, float, float] | None:
     return width_mm, depth_mm, height_mm
 
 
+def _custom_stiffness_widget(prefix: str, label: str) -> DirectionInput:
+    """Render one direction of custom vendor stiffness data."""
+    with st.container(border=True):
+        st.markdown(f"**{label} data**")
+        mode_label = st.selectbox(
+            "Stiffness source",
+            list(STIFFNESS_SOURCE_MAP.keys()),
+            index=1,
+            key=f"{prefix}_mode",
+            help="Choose the form exactly as the vendor publishes it.",
+        )
+        mode = STIFFNESS_SOURCE_MAP[mode_label]
+
+        if mode == "direct_k":
+            c1, c2 = st.columns([2, 1])
+            value = c1.number_input(
+                f"{label} stiffness K",
+                value=1000.0,
+                min_value=0.0,
+                max_value=1.0e8,
+                step=100.0,
+                key=f"{prefix}_k_value",
+            )
+            unit = c2.selectbox("K unit", ["N/m", "N/mm", "lb/in"], key=f"{prefix}_k_unit")
+            stiffness = StiffnessInput.direct_k(value, unit)
+        elif mode == "rated_load_frequency":
+            c1, c2, c3 = st.columns([2, 1, 1])
+            value = c1.number_input(
+                f"{label} rated load",
+                value=30.0 if "comp" in prefix else 6.0,
+                min_value=0.0,
+                max_value=100000.0,
+                step=1.0,
+                key=f"{prefix}_rated_load",
+                help="Vendor value such as 30 kg at 10 Hz.",
+            )
+            unit = c2.selectbox("Load unit", ["kg"], key=f"{prefix}_load_unit")
+            frequency_hz = c3.number_input(
+                "Frequency [Hz]",
+                value=10.0,
+                min_value=0.0,
+                max_value=200.0,
+                step=0.5,
+                key=f"{prefix}_freq",
+            )
+            stiffness = StiffnessInput(
+                method="rated_load_frequency",
+                value=value,
+                unit=unit,
+                frequency_hz=frequency_hz,
+            )
+        else:
+            c1, c2, c3, c4 = st.columns([2, 1, 2, 1])
+            value = c1.number_input(
+                f"{label} shock force",
+                value=1000.0,
+                min_value=0.0,
+                max_value=1.0e7,
+                step=10.0,
+                key=f"{prefix}_force",
+            )
+            unit = c2.selectbox("Force unit", ["daN", "N", "kN"], key=f"{prefix}_force_unit")
+            deflection = c3.number_input(
+                f"{label} shock deflection",
+                value=35.0,
+                min_value=0.0,
+                max_value=10000.0,
+                step=1.0,
+                key=f"{prefix}_deflection",
+            )
+            deflection_unit = c4.selectbox("Deflection unit", ["mm", "in", "m"], key=f"{prefix}_deflection_unit")
+            stiffness = StiffnessInput.force_deflection(value, unit, deflection, deflection_unit)
+
+        t1, t2 = st.columns([2, 1])
+        travel = t1.number_input(
+            f"{label} max dynamic travel",
+            value=32.0 if "comp" in prefix else 37.0,
+            min_value=0.0,
+            max_value=10000.0,
+            step=1.0,
+            key=f"{prefix}_travel",
+        )
+        travel_unit = t2.selectbox("Travel unit", ["mm", "in", "m"], key=f"{prefix}_travel_unit")
+    return DirectionInput(stiffness=stiffness, max_dynamic_travel=travel, travel_unit=travel_unit)
+
+
+def _custom_input_key(
+    *,
+    raw: CustomIsolatorInput,
+    mass_kg: float,
+    n_bottom: int,
+    n_wall: int,
+    env: ShockEnv,
+    clearances: tuple[float, float, float],
+) -> tuple:
+    """Stable key for stale-result detection in custom mode."""
+    return (
+        raw,
+        round(mass_kg, 6),
+        n_bottom,
+        n_wall,
+        round(env.Ao_G, 6),
+        round(env.to_s, 6),
+        round(env.GT_limit_G, 6),
+        env.pulse_shape,
+        tuple(round(v, 6) for v in clearances),
+    )
+
+
+def _custom_case_rows(result) -> list[dict]:
+    rows = []
+    for direction in result.report.directions:
+        rows.append({
+            "Load case": direction.label,
+            "fn [Hz]": round(direction.fn_Hz, 2),
+            "GT [G]": round(direction.GT_G, 3),
+            "GT limit [G]": round(direction.GT_limit, 1),
+            "Movement [mm]": round(direction.delta_mm, 1),
+            "Movement limit [mm]": round(direction.delta_limit_mm, 1),
+            "Status": "PASS" if direction.passed else "FAIL",
+        })
+    return rows
+
+
+def _render_custom_isolator_result(result):
+    """Render a single custom/vendor isolator analysis."""
+    status = st.success if result.passed else st.error
+    status(f"{result.verdict}: {result.normalized.spec.name}")
+    st.caption(
+        f"Validation: {result.validation_level}. "
+        f"Compression source: {result.normalized.stiffness_source_comp}; "
+        f"shear source: {result.normalized.stiffness_source_shear}."
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Compression K", f"{result.normalized.spec.k_comp_Nm:,.0f} N/m")
+    c2.metric("Shear K", f"{result.normalized.spec.k_shear_Nm:,.0f} N/m")
+    c3.metric("Comp travel", f"{result.normalized.spec.d_max_comp_mm:.1f} mm")
+    c4.metric("Shear travel", f"{result.normalized.spec.d_max_shear_mm:.1f} mm")
+
+    if result.static_rating_daN is None:
+        st.info(f"Static load per bottom mount: {result.static_load_daN:.1f} daN. No vendor static rating was entered.")
+    elif result.static_ok:
+        st.success(
+            f"Static load: {result.static_load_daN:.1f} / {result.static_rating_daN:.1f} daN per bottom mount."
+        )
+    else:
+        st.error(
+            f"Static load: {result.static_load_daN:.1f} / {result.static_rating_daN:.1f} daN per bottom mount."
+        )
+
+    if result.warnings:
+        for warning in result.warnings:
+            st.warning(warning)
+
+    st.subheader("4 Load Cases (all must pass)")
+    st.dataframe(_custom_case_rows(result), width="stretch", hide_index=True)
+
+    with st.expander(FULL_PHYSICS_REPORT_LABEL):
+        st.code(format_report(result.report), language="text")
+
+
 def _clearance_hint_candidate(
     *,
     mass_kg: float,
@@ -328,6 +509,46 @@ def _objective_widget(prefix: str) -> str:
              "between parts that already pass all 4 cases.",
     )
     return OBJECTIVE_MAP[label]
+
+
+def _rack_layout_widget(prefix: str) -> tuple[str, str]:
+    scope = st.radio(
+        "Racks connected by common interface plate?",
+        [
+            "Single rack / current rack only",
+            "Yes - analyze combined rack set",
+            "No - independent racks",
+        ],
+        horizontal=True,
+        key=f"{prefix}_rack_scope",
+        help="Interface plates make multiple racks act as one supported system. "
+             "Without an interface plate, run each rack as its own analysis.",
+    )
+    if scope == "Yes - analyze combined rack set":
+        st.info("Use total mass of all connected racks plus the interface plate.")
+    elif scope == "No - independent racks":
+        st.warning("Run each rack separately; do not combine masses.")
+    else:
+        st.caption("Use the mass of the rack currently being checked.")
+
+    preset_label = st.selectbox(
+        "Mount-count preset",
+        list(RACK_LAYOUT_PRESETS.keys()),
+        key=f"{prefix}_rack_preset",
+        help="Applies common rack starting counts without locking the fields below.",
+    )
+    last_key = f"{prefix}_rack_preset_last"
+    if st.session_state.get(last_key) != preset_label:
+        counts = RACK_LAYOUT_PRESETS[preset_label]
+        if counts is not None:
+            st.session_state[f"{prefix}_nb"] = counts[0]
+            st.session_state[f"{prefix}_nw"] = counts[1]
+        st.session_state[last_key] = preset_label
+
+    st.caption(
+        "Presets are starting points; override counts if the rack drawing uses extra stabilizers."
+    )
+    return scope, preset_label
 
 
 def _mount_widget(prefix: str, default_bot: int = 6, default_wall: int = 4) -> tuple[int, int]:
@@ -1023,7 +1244,7 @@ with tab_quick:
 
     sel_mode = st.radio(
         "Mode",
-        ["Auto (recommend best part)", "Manual (verify a specific part)"],
+        ["Auto (recommend best part)", "Manual (verify a specific part)", CUSTOM_MODE_LABEL],
         horizontal=True,
         key="q_sel_mode",
     )
@@ -1042,7 +1263,7 @@ with tab_quick:
     with w3:
         if sel_mode == "Auto (recommend best part)":
             series_label = st.selectbox("Catalog filter", list(SERIES_MAP.keys()), key="q_series")
-        else:
+        elif sel_mode == "Manual (verify a specific part)":
             all_part_options = {e.part_no: e for e in ALL_CATALOGS}
             chosen_part_no = st.selectbox(
                 "Select part to verify",
@@ -1050,6 +1271,9 @@ with tab_quick:
                 index=list(all_part_options.keys()).index("CB1400-15"),
                 key="q_manual_part",
             )
+        else:
+            custom_vendor = st.text_input("Vendor", value="Vibratec", key="q_custom_vendor")
+            custom_part_no = st.text_input("Part number", value="A070146-061", key="q_custom_part")
     st.caption(f"Total system mass **M = {mass_kg:.1f} kg** (equipment + rack), "
                "distributed M/n across mounts.")
 
@@ -1057,8 +1281,52 @@ with tab_quick:
         objective = _objective_widget("q")
 
     st.markdown("**Mount configuration**")
+    q_rack_scope, q_rack_preset = _rack_layout_widget("q")
     n_bot, n_wall = _mount_widget("q", default_bot=6, default_wall=4)
     wall_face = _wall_face_widget("q")
+
+    custom_raw = None
+    if sel_mode == CUSTOM_MODE_LABEL:
+        st.markdown("**Vendor isolator data**")
+        st.caption(
+            "Enter the row as the vendor publishes it. The backend converts units, "
+            "derives K if needed, and marks screening-only assumptions."
+        )
+        c_comp, c_shear = st.columns(2)
+        with c_comp:
+            custom_comp = _custom_stiffness_widget("q_custom_comp", "Compression")
+        with c_shear:
+            custom_shear = _custom_stiffness_widget("q_custom_shear", "Shear / roll")
+        s1, s2, s3 = st.columns([1, 1, 2])
+        custom_static = s1.number_input(
+            "Max static compression load",
+            value=0.0,
+            min_value=0.0,
+            max_value=1.0e7,
+            step=1.0,
+            key="q_custom_static",
+            help="Use 0 if the vendor does not publish a static rating.",
+        )
+        custom_static_unit = s2.selectbox(
+            "Static load unit",
+            ["kg", "daN", "N"],
+            key="q_custom_static_unit",
+        )
+        custom_source = s3.text_input(
+            "Source note",
+            value="",
+            key="q_custom_source",
+            help="Example: Vibratec WRI-A07 datasheet row.",
+        )
+        custom_raw = CustomIsolatorInput(
+            vendor=custom_vendor,
+            part_no=custom_part_no,
+            compression=custom_comp,
+            shear=custom_shear,
+            max_static_comp=custom_static if custom_static > 0 else None,
+            max_static_comp_unit=custom_static_unit if custom_static > 0 else None,
+            source=custom_source,
+        )
 
     st.markdown("**Enclosure dimensions for layout**")
     layout_box_mm = _layout_box_widget("q")
@@ -1077,7 +1345,7 @@ with tab_quick:
             catalog=SERIES_MAP[series_label],
             objective=objective,
         )
-    else:
+    elif sel_mode == "Manual (verify a specific part)":
         hint_candidate = _clearance_hint_candidate(
             mass_kg=mass_kg,
             n_bottom=n_bot,
@@ -1085,25 +1353,37 @@ with tab_quick:
             env=env,
             catalog=[all_part_options[chosen_part_no]],
         )
+    else:
+        hint_candidate = None
     if hint_candidate:
         st.info(format_clearance_hint(hint_candidate))
 
-    q_selection_key = build_shock_selection_key(
-        mode=sel_mode,
-        mass_kg=mass_kg,
-        n_bottom=n_bot,
-        n_wall=n_wall,
-        Ao_G=env.Ao_G,
-        to_s=env.to_s,
-        GT_limit_G=env.GT_limit_G,
-        pulse_shape=env.pulse_shape,
-        clr_x_mm=clr_x,
-        clr_y_mm=clr_y,
-        clr_z_mm=clr_z,
-        catalog_label=series_label if sel_mode == "Auto (recommend best part)" else None,
-        objective=objective if sel_mode == "Auto (recommend best part)" else None,
-        part_no=None if sel_mode == "Auto (recommend best part)" else chosen_part_no,
-    )
+    if sel_mode == CUSTOM_MODE_LABEL:
+        q_selection_key = _custom_input_key(
+            raw=custom_raw,
+            mass_kg=mass_kg,
+            n_bottom=n_bot,
+            n_wall=n_wall,
+            env=env,
+            clearances=(clr_x, clr_y, clr_z),
+        )
+    else:
+        q_selection_key = build_shock_selection_key(
+            mode=sel_mode,
+            mass_kg=mass_kg,
+            n_bottom=n_bot,
+            n_wall=n_wall,
+            Ao_G=env.Ao_G,
+            to_s=env.to_s,
+            GT_limit_G=env.GT_limit_G,
+            pulse_shape=env.pulse_shape,
+            clr_x_mm=clr_x,
+            clr_y_mm=clr_y,
+            clr_z_mm=clr_z,
+            catalog_label=series_label if sel_mode == "Auto (recommend best part)" else None,
+            objective=objective if sel_mode == "Auto (recommend best part)" else None,
+            part_no=None if sel_mode == "Auto (recommend best part)" else chosen_part_no,
+        )
 
     def _run_quick_selector():
         if sel_mode == "Auto (recommend best part)":
@@ -1119,6 +1399,19 @@ with tab_quick:
                     clr_y_mm  = clr_y,
                     clr_z_mm  = clr_z,
                     objective = objective,
+                )
+
+        if sel_mode == CUSTOM_MODE_LABEL:
+            with st.spinner("Running custom 4-case analysis..."):
+                return analyze_custom_isolator(
+                    custom_raw,
+                    mass_kg=mass_kg,
+                    n_bottom=n_bot,
+                    n_wall=n_wall,
+                    shock_env=env,
+                    clr_x_mm=clr_x,
+                    clr_y_mm=clr_y,
+                    clr_z_mm=clr_z,
                 )
 
         with st.spinner("Computing 4 load cases..."):
@@ -1145,13 +1438,57 @@ with tab_quick:
             )
             return report, candidates
 
-    btn_label = "Select best isolator" if sel_mode == "Auto (recommend best part)" else "Run analysis"
+    if sel_mode == "Auto (recommend best part)":
+        btn_label = "Select best isolator"
+    elif sel_mode == CUSTOM_MODE_LABEL:
+        btn_label = "Run custom analysis"
+    else:
+        btn_label = "Run analysis"
     if st.button(btn_label, type="primary", width="stretch", key="q_run"):
-        report, candidates = _run_quick_selector()
-        st.session_state.q_selection_result = (report, candidates)
-        st.session_state.q_selection_key = q_selection_key
+        try:
+            result = _run_quick_selector()
+        except ValidationError as exc:
+            st.error(f"Custom isolator input error: {exc}")
+        else:
+            if sel_mode == CUSTOM_MODE_LABEL:
+                st.session_state.q_custom_result = result
+                st.session_state.q_custom_key = q_selection_key
+                st.session_state.q_selection_result = None
+                st.session_state.q_selection_key = None
+            else:
+                report, candidates = result
+                st.session_state.q_selection_result = (report, candidates)
+                st.session_state.q_selection_key = q_selection_key
+                st.session_state.q_custom_result = None
+                st.session_state.q_custom_key = None
 
-    if st.session_state.q_selection_result:
+    if sel_mode == CUSTOM_MODE_LABEL and st.session_state.q_custom_result:
+        if st.session_state.q_custom_key != q_selection_key:
+            st.warning("Inputs changed. Run the custom analysis again to refresh the result.")
+            stale_left, stale_right, _ = st.columns([1, 1, 4])
+            if stale_left.button(
+                UPDATE_RESULT_LABEL,
+                type="primary",
+                width="stretch",
+                key="q_custom_update_result",
+            ):
+                try:
+                    st.session_state.q_custom_result = _run_quick_selector()
+                    st.session_state.q_custom_key = q_selection_key
+                    st.rerun()
+                except ValidationError as exc:
+                    st.error(f"Custom isolator input error: {exc}")
+            if stale_right.button(
+                CLEAR_RESULT_LABEL,
+                width="stretch",
+                key="q_custom_clear_result",
+            ):
+                st.session_state.q_custom_result = None
+                st.session_state.q_custom_key = None
+                st.rerun()
+        _render_custom_isolator_result(st.session_state.q_custom_result)
+
+    if sel_mode != CUSTOM_MODE_LABEL and st.session_state.q_selection_result:
         if st.session_state.q_selection_key != q_selection_key:
             changed_text = describe_selection_key_changes(
                 st.session_state.q_selection_key,
@@ -1257,6 +1594,7 @@ with tab_cad:
                 st.session_state.last_cad_path = cad_file_override
 
         st.markdown("**Mount configuration**")
+        cad_rack_scope, cad_rack_preset = _rack_layout_widget("cad")
         n_bot_cad, n_wall_cad = _mount_widget("cad", default_bot=6, default_wall=4)
         wall_face_cad = _wall_face_widget("cad")
 

@@ -44,6 +44,11 @@ from catalog import (
     CB61400_CATALOG, CB1400_CATALOG, CB1500_CATALOG, CB1700_CATALOG,
     select_and_analyze, format_selection_table, selection_context_for_llm,
 )
+from custom_isolator import (
+    CustomIsolatorInput, DirectionInput, StiffnessInput,
+    ValidationError as CustomIsolatorValidationError,
+)
+from custom_isolator_analysis import analyze_custom_isolator as _analyze_custom_isolator_backend
 from cad_compliance_checker import extract_cad_data as _extract_cad_data_raw
 from tiedown_tools import (
     run_tiedown_check, recommend_fasteners, get_fastener_data, check_workbook_item,
@@ -348,6 +353,246 @@ def run_shock_analysis(
             note += f"  - {s}\n"
         return note + "\n" + body
     return body
+
+
+def _custom_stiffness_from_tool(
+    label: str,
+    mode: str,
+    value: float,
+    unit: str,
+    frequency_hz: float = 0.0,
+    deflection: float = 0.0,
+    deflection_unit: str = "",
+) -> StiffnessInput:
+    """Build one stiffness input from flat LLM-tool arguments."""
+    m = (mode or "").strip().lower()
+    if m == "direct_k":
+        return StiffnessInput.direct_k(value, unit)
+    if m == "rated_load_frequency":
+        return StiffnessInput.rated_load_frequency(value, unit, frequency_hz)
+    if m == "force_deflection":
+        return StiffnessInput.force_deflection(value, unit, deflection, deflection_unit)
+    raise CustomIsolatorValidationError(
+        f"{label}_stiffness_mode must be one of: direct_k, rated_load_frequency, force_deflection"
+    )
+
+
+def _custom_direction_from_tool(
+    label: str,
+    stiffness_mode: str,
+    value: float,
+    unit: str,
+    max_dynamic_travel: float,
+    travel_unit: str,
+    frequency_hz: float = 0.0,
+    deflection: float = 0.0,
+    deflection_unit: str = "",
+) -> DirectionInput:
+    stiffness = _custom_stiffness_from_tool(
+        label,
+        stiffness_mode,
+        value,
+        unit,
+        frequency_hz=frequency_hz,
+        deflection=deflection,
+        deflection_unit=deflection_unit,
+    )
+    return DirectionInput(
+        stiffness=stiffness,
+        max_dynamic_travel=max_dynamic_travel,
+        travel_unit=travel_unit,
+    )
+
+
+def _format_custom_case(label: str, direction) -> str:
+    return (
+        f"  {label:<12}: fn={direction.fn_Hz:.2f} Hz | "
+        f"GT={direction.GT_G:.3f}/{direction.GT_limit:.1f} G | "
+        f"dD={direction.delta_mm:.1f}/{direction.delta_limit_mm:.1f} mm -> "
+        f"{'PASS' if direction.passed else 'FAIL'}"
+    )
+
+
+@tool
+def analyze_custom_isolator(
+    mass_kg: float,
+    vendor: str,
+    part_no: str,
+    comp_stiffness_mode: str,
+    comp_value: float,
+    comp_unit: str,
+    comp_max_dynamic_travel: float,
+    comp_travel_unit: str = "mm",
+    shear_stiffness_mode: str = "",
+    shear_value: float = 0.0,
+    shear_unit: str = "",
+    shear_max_dynamic_travel: float = 0.0,
+    shear_travel_unit: str = "mm",
+    comp_frequency_hz: float = 0.0,
+    shear_frequency_hz: float = 0.0,
+    comp_deflection: float = 0.0,
+    comp_deflection_unit: str = "",
+    shear_deflection: float = 0.0,
+    shear_deflection_unit: str = "",
+    max_static_comp: float = 0.0,
+    max_static_comp_unit: str = "",
+    source: str = "",
+    n_bottom: int = 6,
+    n_wall: int = 4,
+    Ao_G: float = 20.0,
+    to_ms: float = 11.0,
+    GT_limit_G: float = 10.0,
+    pulse_shape: str = "sawtooth",
+) -> str:
+    """
+    Analyze a non-catalog/custom wire-rope isolator using vendor-supplied data.
+
+    Use this when the part is NOT in the built-in CB catalog, or when the user
+    supplies a vendor row from Vibratec, Socitec, or another manufacturer.
+    Python validates units, derives stiffness when needed, runs the existing
+    4-case shock engine, and returns the provenance caveat.
+
+    IMPORTANT -- parameter handling:
+    Only pass values the user explicitly specifies or that were explicitly
+    extracted from a vendor row. OMIT all other parameters so defaults apply.
+    Do NOT invent compression/shear data. If shear data is missing, call this
+    tool only if you want it to return an error asking for shear data.
+
+    Stiffness modes:
+      - direct_k: value is stiffness. Units: N/m, N/mm, lb/in.
+      - rated_load_frequency: value is rated load mass, unit kg, plus frequency_hz.
+        Example: Vibratec "30 kg at 10 Hz".
+      - force_deflection: value is force, units N/daN/kN, plus deflection and
+        deflection_unit. Example: Socitec "Max Shock F daN" with "d mm".
+
+    Args:
+        mass_kg: REQUIRED. Total supported mass in kg.
+        vendor: REQUIRED. Vendor name, e.g. "Vibratec" or "Socitec".
+        part_no: REQUIRED. Vendor part number.
+        comp_stiffness_mode: REQUIRED. direct_k, rated_load_frequency, or force_deflection.
+        comp_value: REQUIRED. Compression K, rated load, or force depending on mode.
+        comp_unit: REQUIRED. Unit for comp_value.
+        comp_max_dynamic_travel: REQUIRED. Compression max dynamic travel.
+        comp_travel_unit: Unit for compression travel. Default mm. OMIT if mm.
+        shear_stiffness_mode: REQUIRED. Same modes as compression; do not guess.
+        shear_value: REQUIRED. Shear K, rated load, or force depending on mode.
+        shear_unit: REQUIRED. Unit for shear_value.
+        shear_max_dynamic_travel: REQUIRED. Shear max dynamic travel.
+        shear_travel_unit: Unit for shear travel. Default mm. OMIT if mm.
+        comp_frequency_hz: REQUIRED only for comp_stiffness_mode=rated_load_frequency.
+        shear_frequency_hz: REQUIRED only for shear_stiffness_mode=rated_load_frequency.
+        comp_deflection: REQUIRED only for comp_stiffness_mode=force_deflection.
+        comp_deflection_unit: REQUIRED only for comp_stiffness_mode=force_deflection.
+        shear_deflection: REQUIRED only for shear_stiffness_mode=force_deflection.
+        shear_deflection_unit: REQUIRED only for shear_stiffness_mode=force_deflection.
+        max_static_comp: Optional vendor max static compression load. OMIT if absent.
+        max_static_comp_unit: Unit for max_static_comp: kg, daN, or N. OMIT if absent.
+        source: Optional short provenance note. OMIT unless known.
+        n_bottom: Bottom mount count. Default 6. OMIT unless user says.
+        n_wall: Wall mount count. Default 4. OMIT unless user says.
+        Ao_G: Shock magnitude in G. Default 20.0. OMIT unless user specifies.
+        to_ms: Shock pulse duration in milliseconds. Default 11.0. OMIT unless user specifies.
+        GT_limit_G: Max allowable transmitted G. Default 10.0. OMIT unless user says.
+        pulse_shape: sawtooth (default) or half_sine. OMIT unless user specifies.
+    """
+    substitutions: list[str] = []
+    if Ao_G is None or Ao_G <= 0:
+        substitutions.append(f"Ao_G was {Ao_G!r} (invalid); substituted default 20.0 G")
+        Ao_G = 20.0
+    if to_ms is None or to_ms <= 0:
+        substitutions.append(f"to_ms was {to_ms!r} (invalid); substituted default 11.0 ms")
+        to_ms = 11.0
+    if GT_limit_G is None or GT_limit_G <= 0:
+        substitutions.append(f"GT_limit_G was {GT_limit_G!r} (invalid); substituted default 10.0 G")
+        GT_limit_G = 10.0
+    pulse, pulse_note = _parse_pulse_shape(pulse_shape)
+    if pulse_note:
+        substitutions.append(pulse_note)
+
+    try:
+        raw = CustomIsolatorInput(
+            vendor=vendor,
+            part_no=part_no,
+            compression=_custom_direction_from_tool(
+                "comp",
+                comp_stiffness_mode,
+                comp_value,
+                comp_unit,
+                comp_max_dynamic_travel,
+                comp_travel_unit,
+                frequency_hz=comp_frequency_hz,
+                deflection=comp_deflection,
+                deflection_unit=comp_deflection_unit,
+            ),
+            shear=_custom_direction_from_tool(
+                "shear",
+                shear_stiffness_mode,
+                shear_value,
+                shear_unit,
+                shear_max_dynamic_travel,
+                shear_travel_unit,
+                frequency_hz=shear_frequency_hz,
+                deflection=shear_deflection,
+                deflection_unit=shear_deflection_unit,
+            ),
+            max_static_comp=max_static_comp if max_static_comp > 0 else None,
+            max_static_comp_unit=max_static_comp_unit if max_static_comp > 0 else None,
+            source=source,
+        )
+        env = ShockEnv(
+            Ao_G=Ao_G,
+            to_s=to_ms / 1000.0,
+            GT_limit_G=GT_limit_G,
+            pulse_shape=pulse,
+        )
+        result = _analyze_custom_isolator_backend(
+            raw,
+            mass_kg=mass_kg,
+            n_bottom=n_bottom,
+            n_wall=n_wall,
+            shock_env=env,
+        )
+    except CustomIsolatorValidationError as exc:
+        return f"ERROR: {exc}"
+
+    dirs = result.report.directions
+    static_text = "not published"
+    if result.static_rating_daN is not None:
+        static_text = (
+            f"{result.static_load_daN:.1f} / {result.static_rating_daN:.1f} daN per bottom mount "
+            f"-> {'PASS' if result.static_ok else 'FAIL'}"
+        )
+
+    lines: list[str] = []
+    if substitutions:
+        lines.append("NOTE: Tool received invalid shock parameter(s). Substituted defaults:")
+        for s in substitutions:
+            lines.append(f"  - {s}")
+        lines.append("")
+    lines += [
+        "=== CUSTOM ISOLATOR ANALYSIS ===",
+        f"Part: {result.normalized.spec.name}",
+        f"Source: {result.normalized.source or '(user/vendor data)'}",
+        f"Verdict: {result.verdict}",
+        f"Validation: {result.validation_level}",
+        f"Stiffness source: comp={result.normalized.stiffness_source_comp}, "
+        f"shear={result.normalized.stiffness_source_shear}",
+        f"Config: mass={mass_kg} kg | mounts={n_bottom} bottom + {n_wall} wall | "
+        f"shock={Ao_G}G/{to_ms:.0f}ms {pulse} | GT_limit={GT_limit_G}G",
+        f"Static load: {static_text}",
+        "",
+        "4 load cases:",
+        _format_custom_case("Comp-Bottom", dirs[0]),
+        _format_custom_case("Comp-Wall", dirs[1]),
+        _format_custom_case("Roll-Wall", dirs[2]),
+        _format_custom_case("Roll-Bottom", dirs[3]),
+    ]
+    if result.warnings:
+        lines.append("")
+        lines.append("Warnings / caveats:")
+        for warning in result.warnings:
+            lines.append(f"  - {warning}")
+    return "\n".join(lines)
 
 
 @tool
@@ -858,8 +1103,10 @@ question needs a new tool call, even if it looks similar to one already answered
 If you are about to write a recommendation or verdict without having called a tool \
 this turn, STOP and call the tool first.
 
-Your primary task: select the correct wire rope isolator (CB61400, CB1400, CB1500, \
-CB1700 series) for equipment racks given mass, mount configuration, and shock environment.
+Your primary task: select or verify wire rope isolators for equipment racks given \
+mass, mount configuration, and shock environment. Built-in catalog selection covers \
+CB61400, CB1400, CB1500, and CB1700. For non-catalog vendor rows such as Vibratec, \
+Socitec, or custom parts, use analyze_custom_isolator.
 
 Standard defaults (used automatically if you omit the parameter — see CRITICAL rule below):
 - Shock profile : 20G, 11ms saw-tooth (MIL-STD-810H Category 4 off-road)
@@ -937,6 +1184,12 @@ When the user asks for catalog DATA — "what is the stiffness / travel / size \
 of part X", "list the CB1500 parts", "what series exist" — use \
 get_isolator_data. Do NOT run an analysis just to read off K or dmax.
 
+When the user provides vendor/custom isolator data -- for example Vibratec rated \
+load at frequency, Socitec shock force/deflection data, or a hand-typed custom \
+part -- use analyze_custom_isolator. Do NOT convert units or derive K yourself. \
+If compression or shear data is missing, ask for it or call the tool to surface \
+the missing-field error. Treat screening_only results as preliminary.
+
 When the user states a selection PREFERENCE — "least movement", \
 "maximum clearance margin", or "smallest deflection" (default) — pass \
 objective="max_clearance" to select_isolator. When the user asks for \
@@ -965,6 +1218,7 @@ JSON, or any internal format to the user.
 _SHOCK_TOOLS = [
     select_isolator,         # Select: softest passing part for a mass + mount config
     run_shock_analysis,      # Verify: GT / fn / dD for one named part
+    analyze_custom_isolator, # Verify: custom/vendor part from normalized vendor data
     get_isolator_data,       # Look up: catalog stiffness / travel / size
     lookup_knowledge,        # Optional: cite formulas / rules (explanation questions only)
 ]
@@ -981,6 +1235,10 @@ SHOCK_CAPABILITIES = [
      "purpose": "Verify GT, natural frequency, and dynamic deflection for a specific part",
      "example": "Verify whether CB1400-12 passes for a 900 kg rack using 6 bottom and 4 wall mounts under a 15G, 11 ms half-sine shock with 10G transmitted limit.",
      "tool": "run_shock_analysis"},
+    {"capability": "Custom vendor isolator analysis",
+     "purpose": "Analyze a non-catalog isolator from vendor-supplied stiffness, rated-load/frequency, or force/deflection data",
+     "example": "Analyze Vibratec A070146-061 using 30 kg at 10 Hz compression, 6 kg at 10 Hz shear, 32 mm compression travel, and 37 mm shear travel for an 850 kg rack.",
+     "tool": "analyze_custom_isolator"},
     {"capability": "Catalog data lookup",
      "purpose": "Stiffness, rated travel and size of any part or series, in catalog and SI units",
      "example": "What are the compression stiffness, shear stiffness, rated travel, and physical size of CB1400-30 in catalog and SI units?",
@@ -1094,7 +1352,7 @@ _TOOLUSE_CORRECTION = (
     "You answered WITHOUT calling a tool. Every part number, GT value, stiffness, "
     "deflection, pass/fail verdict and formula MUST come from a tool call in THIS "
     "turn. Call exactly one of: select_isolator, run_shock_analysis, "
-    "get_isolator_data, lookup_knowledge. Do NOT answer from memory or from earlier "
+    "analyze_custom_isolator, get_isolator_data, lookup_knowledge. Do NOT answer from memory or from earlier "
     "turns -- a new question needs a new tool call.")
 _TOOLUSE_SAFE_NOTICE = (
     "I can't ground this in a validated tool, so I won't give numbers that might be "

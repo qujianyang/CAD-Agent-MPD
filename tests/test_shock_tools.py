@@ -1,5 +1,10 @@
 """Run: .\\mpd\\Scripts\\python.exe tests\\test_shock_tools.py  (offline; catalog + engine only)"""
-from agent import run_shock_analysis, select_isolator, get_isolator_data
+from agent import (
+    analyze_custom_isolator,
+    run_shock_analysis,
+    select_isolator,
+    get_isolator_data,
+)
 
 
 def test_run_shock_analysis_sawtooth_anchor():
@@ -109,6 +114,90 @@ def test_get_isolator_data_overview():
 def test_get_isolator_data_unknown_part():
     out = get_isolator_data.invoke({"part_no": "CB9999-1"})
     assert out.startswith("ERROR")
+
+
+def test_analyze_custom_isolator_vibratec_style_data_surfaces_screening_warning():
+    out = analyze_custom_isolator.invoke({
+        "mass_kg": 850.0,
+        "vendor": "Vibratec",
+        "part_no": "A070146-061",
+        "comp_stiffness_mode": "rated_load_frequency",
+        "comp_value": 30.0,
+        "comp_unit": "kg",
+        "comp_frequency_hz": 10.0,
+        "comp_max_dynamic_travel": 32.0,
+        "comp_travel_unit": "mm",
+        "shear_stiffness_mode": "rated_load_frequency",
+        "shear_value": 6.0,
+        "shear_unit": "kg",
+        "shear_frequency_hz": 10.0,
+        "shear_max_dynamic_travel": 37.0,
+        "shear_travel_unit": "mm",
+        "max_static_comp": 34.0,
+        "max_static_comp_unit": "kg",
+    })
+
+    assert "=== CUSTOM ISOLATOR ANALYSIS ===" in out
+    assert "Part: Vibratec A070146-061" in out
+    assert "Validation: screening_only" in out
+    assert "derived_from_vibration_frequency" in out
+    assert "Static load" in out
+    assert "FAIL" in out
+    assert "vibration frequency" in out
+
+
+def test_analyze_custom_isolator_socitec_style_data_runs_four_cases():
+    out = analyze_custom_isolator.invoke({
+        "mass_kg": 850.0,
+        "vendor": "Socitec",
+        "part_no": "CB1400-15",
+        "comp_stiffness_mode": "force_deflection",
+        "comp_value": 1253.0,
+        "comp_unit": "daN",
+        "comp_deflection": 37.0,
+        "comp_deflection_unit": "mm",
+        "comp_max_dynamic_travel": 37.0,
+        "comp_travel_unit": "mm",
+        "shear_stiffness_mode": "force_deflection",
+        "shear_value": 1100.0,
+        "shear_unit": "daN",
+        "shear_deflection": 35.0,
+        "shear_deflection_unit": "mm",
+        "shear_max_dynamic_travel": 35.0,
+        "shear_travel_unit": "mm",
+        "max_static_comp": 417.0,
+        "max_static_comp_unit": "daN",
+    })
+
+    assert "Part: Socitec CB1400-15" in out
+    assert "derived_from_shock_load_deflection" in out
+    assert "Comp-Bottom" in out
+    assert "Comp-Wall" in out
+    assert "Roll-Wall" in out
+    assert "Roll-Bottom" in out
+    assert "shock load-deflection" in out
+
+
+def test_analyze_custom_isolator_rejects_missing_shear_data():
+    out = analyze_custom_isolator.invoke({
+        "mass_kg": 850.0,
+        "vendor": "Vibratec",
+        "part_no": "A070146-061",
+        "comp_stiffness_mode": "rated_load_frequency",
+        "comp_value": 30.0,
+        "comp_unit": "kg",
+        "comp_frequency_hz": 10.0,
+        "comp_max_dynamic_travel": 32.0,
+        "comp_travel_unit": "mm",
+        "shear_stiffness_mode": "",
+        "shear_value": 0.0,
+        "shear_unit": "",
+        "shear_max_dynamic_travel": 0.0,
+        "shear_travel_unit": "",
+    })
+
+    assert out.startswith("ERROR")
+    assert "shear" in out.lower()
 
 
 def _run():

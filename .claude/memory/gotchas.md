@@ -9,6 +9,17 @@
 - **`test_assembly.py` stays at root** — it's the SolidWorks COM runtime script (subprocess-launched by `cad_compliance_checker.py` + `app.py`), NOT a pytest test. `scripts/test_part.py` and `scripts/test_api.py` are also manual diagnostics, not pytest.
 - `WB_DEFAULT` in `tiedown_import.py` / `mobility_import.py` now defaults to the committed `data/` copies (anchored via `__file__`, so cwd-independent), keeping the repo self-contained. Override with env vars `TIEDOWN_XLSX` / `MOBILITY_XLS` to point at a newer/local revision. Heads-up: the `data/` tie-down workbook is the **validated 14 kg snapshot** the engine + tests are pinned to; a newer Downloads revision had Air-Con at 20 kg / 7 bolts. If you adopt the newer numbers, refresh `data/` AND update `tests/test_tiedown_import.py` expectations.
 
+## Codex sandbox can falsely report the venv as broken
+
+**Symptom:** Running `mpd\Scripts\python.exe` inside the managed sandbox can fail with:
+```text
+No Python at '"C:\Users\qujia\AppData\Local\Programs\Python\Python310\python.exe'
+```
+
+**Root cause:** The venv is valid, but its base interpreter is outside the workspace at `C:\Users\qujia\AppData\Local\Programs\Python\Python310`. The sandbox cannot read that path, so the launcher error looks like a missing Python install.
+
+**Verified 2026-07-08:** Unsandboxed, the venv reports Python 3.10.8, imports pytest 9.0.3, and runs `tests\test_ui_copy.py` successfully (`9 passed`). If a venv command matters and fails only under sandboxing, rerun the same exact project-venv command with escalation before diagnosing the venv as broken.
+
 ## SolidWorks Education Edition blocks API methods
 
 **Symptom:** `CreateMassProperty`, `GetCoordinateSystemTransformByName2`, and other `IModelDocExtension` methods return `"Member not found"` via late-binding dispatch — even with `gencache.EnsureDispatch`.

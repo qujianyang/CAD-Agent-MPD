@@ -1,5 +1,49 @@
 # Current Status
 
+_Last updated: 2026-07-08 (custom isolator backend + agent tool + Streamlit custom vendor UI)_
+
+## Latest session notes (2026-07-08)
+
+- Direction agreed for scalable vendor support: keep the existing shock physics engine vendor-agnostic, and add a deterministic backend normalization layer before it.
+- Core boundary: LLM decides workflow and explains results; Python owns validation, unit conversion, stiffness derivation, physics, and pass/fail.
+- Target backend shape:
+  - Vendor/user data enters as raw vendor-specific inputs.
+  - Backend validates required compression + shear data.
+  - Backend normalizes to `IsolatorSpec(k_comp_Nm, k_shear_Nm, d_max_comp_mm, d_max_shear_mm, max_static_comp_daN)`.
+  - Existing `run_analysis` / `select_and_analyze` remain unchanged.
+- Supported stiffness input modes for first backend slice:
+  - Direct stiffness K, e.g. VMC/Helical CB data in lb/in or N/mm.
+  - Rated load at natural frequency, e.g. Vibratec `30 kg @ 10 Hz`; derive `K = m * (2*pi*f)^2` and mark `screening_only`.
+  - Shock force at shock deflection, e.g. Socitec `Max Shock F daN` with `d mm`; derive `K = F / d` and mark as derived shock load-deflection.
+- Socitec CB1400 PDF was inspected. It appears physically close to current CB1400 data and provides shock load-deflection pairs, so it fits the backend adapter approach better than Vibratec for shock screening.
+- UI decision: do backend first, not a universal UI form. A form/upload should become a thin wrapper after the backend contract is stable.
+- Backend first slice implemented:
+  - Added `custom_isolator.py` with `CustomIsolatorInput`, `DirectionInput`, `StiffnessInput`, `normalize_custom_isolator`, and `NormalizedCustomIsolator`.
+  - Added `tests/test_custom_isolator.py` covering VMC direct K, Vibratec rated-load/frequency K derivation, Socitec shock force/deflection K derivation, missing shear rejection, and invalid unit/frequency rejection.
+  - Verification: `tests/test_custom_isolator.py` passed (`5 passed`); relevant shock regressions `tests/test_shock_static_gate.py tests/test_impulse_validity.py tests/test_shock_tools.py` passed (`30 passed`).
+- Backend analysis wrapper implemented:
+  - Added `custom_isolator_analysis.py` with `analyze_custom_isolator`, returning `CustomIsolatorAnalysis`.
+  - Wrapper runs normalization, existing `run_analysis`, explicit static-gate status, combined warnings, `validation_level`, and `PASS`/`FAIL` verdict.
+  - Added `tests/test_custom_isolator_analysis.py` covering VMC validated pass, Vibratec static fail + screening warning, Socitec shock-load/deflection screening, missing shear rejection, and bad mass/mount count rejection.
+  - Verification: custom isolator tests passed together (`10 passed`); relevant shock regressions passed (`30 passed`).
+- Agent custom-isolator tool implemented:
+  - Added `analyze_custom_isolator` LangChain tool in `agent.py` with flat scalar parameters for custom/vendor rows.
+  - Tool supports `direct_k`, `rated_load_frequency`, and `force_deflection` stiffness modes for compression and shear, then delegates all validation/conversion/physics to backend modules.
+  - Registered in `_SHOCK_TOOLS`, documented in `SHOCK_CAPABILITIES`, and added to the tool-use guard/prompt.
+  - Verification: `tests/test_shock_tools.py tests/test_build_agent.py` passed (`27 passed`); backend custom-isolator tests passed (`10 passed`); shock regressions passed (`33 passed`).
+- Streamlit Quick Selector custom-vendor mode implemented:
+  - Added `Custom vendor data` mode beside Auto and Manual.
+  - UI captures vendor/part, compression and shear stiffness source, travel, optional static rating, and existing mass/mount/shock/clearance inputs.
+  - Supported input sources match backend: direct K, rated load @ frequency, and shock force @ deflection.
+  - The button runs `analyze_custom_isolator`, renders validation level/provenance warnings, static gate, derived K values, and the same 4-case physics report.
+  - No Excel/file upload yet by design; upload should later pre-fill this same backend contract.
+- Rack layout guidance added to Shock Selector / CAD shock inputs:
+  - Added interface-plate scope prompt: single/current rack, connected rack set, or independent racks.
+  - Connected racks instruct the user to use total mass including the interface plate; independent racks warn to run each rack separately.
+  - Added editable mount-count presets: Custom, Single rack `(4 bottom, 2 wall)`, 2-gang `(6, 2)`, 3-gang `(8, 2)`, 4-gang `(10, 2)`.
+  - Presets only prefill `n_bottom` / `n_wall`; users can override for extra stabilizers or drawing-specific layouts.
+  - Physics engine unchanged; this is UI guidance and safer setup only.
+
 _Last updated: 2026-05-25 (end of long session, just before compact)_
 
 ## What works (end-to-end)
