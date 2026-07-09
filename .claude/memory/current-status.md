@@ -37,12 +37,6 @@ _Last updated: 2026-07-08 (custom isolator backend + agent tool + Streamlit cust
   - Supported input sources match backend: direct K, rated load @ frequency, and shock force @ deflection.
   - The button runs `analyze_custom_isolator`, renders validation level/provenance warnings, static gate, derived K values, and the same 4-case physics report.
   - No Excel/file upload yet by design; upload should later pre-fill this same backend contract.
-- Rack layout guidance added to Shock Selector / CAD shock inputs:
-  - Added interface-plate scope prompt: single/current rack, connected rack set, or independent racks.
-  - Connected racks instruct the user to use total mass including the interface plate; independent racks warn to run each rack separately.
-  - Added editable mount-count presets: Custom, Single rack `(4 bottom, 2 wall)`, 2-gang `(6, 2)`, 3-gang `(8, 2)`, 4-gang `(10, 2)`.
-  - Presets only prefill `n_bottom` / `n_wall`; users can override for extra stabilizers or drawing-specific layouts.
-  - Physics engine unchanged; this is UI guidance and safer setup only.
 
 _Last updated: 2026-05-25 (end of long session, just before compact)_
 

@@ -147,14 +147,6 @@ STIFFNESS_SOURCE_MAP = {
     "Shock force @ deflection": "force_deflection",
 }
 
-RACK_LAYOUT_PRESETS = {
-    "Custom": None,
-    "Single rack": (4, 2),
-    "2-gang rack": (6, 2),
-    "3-gang rack": (8, 2),
-    "4-gang rack": (10, 2),
-}
-
 
 # ----------------------------------------------------------------------------
 # Session state
@@ -509,46 +501,6 @@ def _objective_widget(prefix: str) -> str:
              "between parts that already pass all 4 cases.",
     )
     return OBJECTIVE_MAP[label]
-
-
-def _rack_layout_widget(prefix: str) -> tuple[str, str]:
-    scope = st.radio(
-        "Racks connected by common interface plate?",
-        [
-            "Single rack / current rack only",
-            "Yes - analyze combined rack set",
-            "No - independent racks",
-        ],
-        horizontal=True,
-        key=f"{prefix}_rack_scope",
-        help="Interface plates make multiple racks act as one supported system. "
-             "Without an interface plate, run each rack as its own analysis.",
-    )
-    if scope == "Yes - analyze combined rack set":
-        st.info("Use total mass of all connected racks plus the interface plate.")
-    elif scope == "No - independent racks":
-        st.warning("Run each rack separately; do not combine masses.")
-    else:
-        st.caption("Use the mass of the rack currently being checked.")
-
-    preset_label = st.selectbox(
-        "Mount-count preset",
-        list(RACK_LAYOUT_PRESETS.keys()),
-        key=f"{prefix}_rack_preset",
-        help="Applies common rack starting counts without locking the fields below.",
-    )
-    last_key = f"{prefix}_rack_preset_last"
-    if st.session_state.get(last_key) != preset_label:
-        counts = RACK_LAYOUT_PRESETS[preset_label]
-        if counts is not None:
-            st.session_state[f"{prefix}_nb"] = counts[0]
-            st.session_state[f"{prefix}_nw"] = counts[1]
-        st.session_state[last_key] = preset_label
-
-    st.caption(
-        "Presets are starting points; override counts if the rack drawing uses extra stabilizers."
-    )
-    return scope, preset_label
 
 
 def _mount_widget(prefix: str, default_bot: int = 6, default_wall: int = 4) -> tuple[int, int]:
@@ -1281,7 +1233,6 @@ with tab_quick:
         objective = _objective_widget("q")
 
     st.markdown("**Mount configuration**")
-    q_rack_scope, q_rack_preset = _rack_layout_widget("q")
     n_bot, n_wall = _mount_widget("q", default_bot=6, default_wall=4)
     wall_face = _wall_face_widget("q")
 
@@ -1594,7 +1545,6 @@ with tab_cad:
                 st.session_state.last_cad_path = cad_file_override
 
         st.markdown("**Mount configuration**")
-        cad_rack_scope, cad_rack_preset = _rack_layout_widget("cad")
         n_bot_cad, n_wall_cad = _mount_widget("cad", default_bot=6, default_wall=4)
         wall_face_cad = _wall_face_widget("cad")
 

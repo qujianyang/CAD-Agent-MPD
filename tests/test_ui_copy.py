@@ -63,19 +63,6 @@ def test_shock_selector_has_custom_vendor_mode_without_excel_scope():
     assert "st.file_uploader" not in app_source
 
 
-def test_shock_selector_has_interface_plate_scope_and_rack_presets():
-    app_source = Path("app.py").read_text(encoding="utf-8")
-
-    assert "Racks connected by common interface plate?" in app_source
-    assert "Use total mass of all connected racks plus the interface plate." in app_source
-    assert "Run each rack separately; do not combine masses." in app_source
-    assert '"Single rack": (4, 2)' in app_source
-    assert '"2-gang rack": (6, 2)' in app_source
-    assert '"3-gang rack": (8, 2)' in app_source
-    assert '"4-gang rack": (10, 2)' in app_source
-    assert "Presets are starting points; override counts" in app_source
-
-
 def test_clearance_help_text_explains_gap_scale_and_zero_bypass():
     app_source = Path("app.py").read_text(encoding="utf-8")
 
