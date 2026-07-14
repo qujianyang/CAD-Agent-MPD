@@ -21,8 +21,11 @@ small enough). Metadata stored per chunk:
   - id           : "parent_topic/child_name"
 
 Usage:
-  python setup_knowledge.py                # use NVIDIA API embeddings
+  python setup_knowledge.py                # build the normal mixed development index
   python setup_knowledge.py --local        # use local SentenceTransformer fallback
+  python setup_knowledge.py --provider ollama --model bge-m3
+  python setup_knowledge.py --topic shock_mount --output artifacts/shock_mount_embeddings.json
+                                            # build a shock-only index
 """
 import argparse
 import os
@@ -31,7 +34,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
+from nvidia_embedder import NVIDIAEmbedder, OllamaEmbedder, JSONVectorStore
 
 
 # Where the source markdown lives, and where the vector store goes
@@ -48,8 +51,8 @@ def _extract_title(md_text: str, fallback: str) -> str:
     return fallback
 
 
-def collect_chunks(knowledge_dir: Path) -> list[dict]:
-    """Walk knowledge/ and build one chunk per .md file."""
+def collect_chunks(knowledge_dir: Path, topic: str | None = None) -> list[dict]:
+    """Walk knowledge/ and build one chunk per .md file, optionally by topic."""
     if not knowledge_dir.exists():
         print(f"ERROR: {knowledge_dir} does not exist.")
         sys.exit(1)
@@ -65,6 +68,8 @@ def collect_chunks(knowledge_dir: Path) -> list[dict]:
             continue
 
         parent_topic = parts[0]
+        if topic and parent_topic != topic:
+            continue
         child_name   = md_path.stem
         content      = md_path.read_text(encoding="utf-8")
         title        = _extract_title(content, fallback=child_name.replace("_", " ").title())
@@ -81,23 +86,38 @@ def collect_chunks(knowledge_dir: Path) -> list[dict]:
     return chunks
 
 
-def main(use_local: bool = False):
+def main(
+    use_local: bool = False,
+    topic: str | None = None,
+    output_path: Path = STORE_PATH,
+    provider: str = "nvidia",
+    model: str | None = None,
+    base_url: str = "http://127.0.0.1:11434",
+    query_prefix: str | None = None,
+):
     load_dotenv()
     api_key = os.environ.get("NVIDIA_API_KEY", "")
-    if not api_key and not use_local:
+    if use_local:
+        provider = "sentence_transformers"
+    if provider == "nvidia" and not api_key:
         print("ERROR: NVIDIA_API_KEY not set. Run with --local or add it to .env.")
+        sys.exit(1)
+    if provider not in {"nvidia", "ollama", "sentence_transformers"}:
+        print(f"ERROR: unsupported embedding provider {provider!r}.")
         sys.exit(1)
 
     print("=" * 60)
     print("KNOWLEDGE BASE EMBEDDING PIPELINE")
-    print(f"Mode: {'LOCAL EMBEDDINGS' if use_local else 'NVIDIA API'}")
+    print(f"Provider: {provider}")
+    print(f"Model: {model or ('local' if provider == 'sentence_transformers' else 'nvidia/llama-nemotron-embed-1b-v2')}")
     print(f"Source: {KNOWLEDGE_DIR}")
-    print(f"Output: {STORE_PATH}")
+    print(f"Topic filter: {topic or 'all topics'}")
+    print(f"Output: {output_path}")
     print("=" * 60)
 
     # 1. Collect chunks from the folder tree
     print("\n[1/3] Walking knowledge/ folder...")
-    chunks = collect_chunks(KNOWLEDGE_DIR)
+    chunks = collect_chunks(KNOWLEDGE_DIR, topic=topic)
     if not chunks:
         print("No markdown files found. Aborting.")
         sys.exit(1)
@@ -112,31 +132,47 @@ def main(use_local: bool = False):
 
     # 2. Embed
     print(f"\n[2/3] Embedding {len(chunks)} chunks...")
-    embedder = NVIDIAEmbedder(api_key, use_local=use_local)
-    if not use_local:
+    if provider == "ollama":
+        if not model:
+            print("ERROR: --model is required with --provider ollama.")
+            sys.exit(1)
+        embedder = OllamaEmbedder(model=model, base_url=base_url, query_prefix=query_prefix)
+        embedding_model = model
+    else:
+        use_local = provider == "sentence_transformers"
+        embedder = NVIDIAEmbedder(api_key, model=model or "nvidia/llama-nemotron-embed-1b-v2", use_local=use_local)
+        embedding_model = "local" if use_local else embedder.model
+    if provider == "nvidia":
         if not embedder.test_api_key():
             print("\n  API failed -> falling back to local embeddings.")
             embedder.use_local = True
             use_local = True
-    if use_local:
+            provider = "sentence_transformers"
+            embedding_model = "local"
+    if provider == "sentence_transformers":
         embedder._init_local_model()
 
     embedded = embedder.embed_chunks(chunks)
 
     # 3. Save
     print("\n[3/3] Saving vector store...")
-    store = JSONVectorStore(str(STORE_PATH))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    store = JSONVectorStore(str(output_path))
     metadata = {
         "source":     "knowledge/",
+        "topic_filter": topic,
         "topics":     by_parent,
         "chunk_count": len(embedded),
-        "embedding_model": "local" if use_local else "nvidia/llama-nemotron-embed-1b-v2",
+        "embedding_provider": provider,
+        "embedding_model": embedding_model,
+        "embedding_base_url": base_url if provider == "ollama" else None,
+        "query_prefix": getattr(embedder, "query_prefix", ""),
     }
     store.save(metadata, embedded)
 
     print("\n" + "=" * 60)
     print(f"DONE. {len(embedded)} chunks across {len(by_parent)} parent topics.")
-    print(f"Vector store: {STORE_PATH}")
+    print(f"Vector store: {output_path}")
     print("=" * 60)
 
 
@@ -144,5 +180,26 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Ingest knowledge/ folder into vector store")
     parser.add_argument("--local", action="store_true",
                         help="Use local SentenceTransformer fallback instead of NVIDIA API")
+    parser.add_argument("--provider", default="nvidia",
+                        choices=["nvidia", "ollama", "sentence_transformers"],
+                        help="Embedding provider (default: nvidia)")
+    parser.add_argument("--model", default=None,
+                        help="Embedding model; required for --provider ollama")
+    parser.add_argument("--base-url", default="http://127.0.0.1:11434",
+                        help="Ollama server URL (default: http://127.0.0.1:11434)")
+    parser.add_argument("--query-prefix", default=None,
+                        help="Override the model's default query instruction")
+    parser.add_argument("--topic", default=None,
+                        help="Only ingest one top-level knowledge topic, such as shock_mount")
+    parser.add_argument("--output", default=str(STORE_PATH),
+                        help="Output JSON vector-store path")
     args = parser.parse_args()
-    main(use_local=args.local)
+    main(
+        use_local=args.local,
+        topic=args.topic,
+        output_path=Path(args.output),
+        provider=args.provider,
+        model=args.model,
+        base_url=args.base_url,
+        query_prefix=args.query_prefix,
+    )

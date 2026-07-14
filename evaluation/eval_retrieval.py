@@ -2,14 +2,18 @@
 Recall@k retrieval eval for the shock_mount RAG.
 
 Run from project root:
-    python -m evaluation.eval_retrieval
+    python -m evaluation.eval_retrieval \
+        --store artifacts/shock_mount_embeddings.json \
+        --qrels evaluation/retrieval_qrels_shock_v1.jsonl
 
-Reads ground-truth queries from `evaluation/retrieval_qrels.jsonl`,
-runs each through NVIDIA embeddings + JSONVectorStore.search, and reports
+Reads ground-truth queries from a JSONL qrels file,
+runs each through the same embedding model used to create the index, then
+uses JSONVectorStore.search and reports
 hit@k, recall@k, and MRR. Writes a timestamped JSON to evaluation/results/.
 
 Extend the eval by appending lines to retrieval_qrels.jsonl — no code change.
 """
+import argparse
 import json
 import os
 import sys
@@ -20,11 +24,11 @@ from dotenv import load_dotenv
 
 # Project imports (run from repo root so these resolve)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
+from nvidia_embedder import NVIDIAEmbedder, OllamaEmbedder, JSONVectorStore
 
 # ---------- config ----------
-QRELS_PATH    = Path(__file__).parent / "retrieval_qrels.jsonl"
-STORE_PATH    = "artifacts/knowledge_embeddings.json"          # matches agent.py
+DEFAULT_QRELS_PATH = Path(__file__).parent / "retrieval_qrels_shock_v1.jsonl"
+DEFAULT_STORE_PATH = Path("artifacts/shock_mount_embeddings.json")
 TOP_K_VALUES  = [1, 3, 5]
 RESULTS_DIR   = Path(__file__).parent / "results"
 
@@ -45,29 +49,63 @@ def reciprocal_rank(retrieved_ids, relevant_ids):
     return 0.0
 
 # ---------- runner ----------
-def main():
-    load_dotenv()
-    api_key = os.environ.get("NVIDIA_API_KEY", "").strip()
-    if not api_key:
-        sys.exit("ERROR: NVIDIA_API_KEY not set in .env")
+def main(argv: list[str] | None = None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--qrels", type=Path, default=DEFAULT_QRELS_PATH)
+    parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH)
+    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--provider", choices=["auto", "nvidia", "ollama"], default="auto",
+                        help="Query embedding provider (default: infer from index metadata)")
+    parser.add_argument("--model", default=None,
+                        help="Override the embedding model recorded in the index")
+    parser.add_argument("--base-url", default=None,
+                        help="Override the Ollama URL recorded in the index")
+    args = parser.parse_args(argv)
 
-    if not QRELS_PATH.exists():
-        sys.exit(f"ERROR: qrels file not found: {QRELS_PATH}")
-    qrels = [json.loads(l) for l in QRELS_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+    load_dotenv()
+    if not args.qrels.exists():
+        sys.exit(f"ERROR: qrels file not found: {args.qrels}")
+    if not args.store.exists():
+        sys.exit(f"ERROR: vector store not found: {args.store}")
+    qrels = [json.loads(l) for l in args.qrels.read_text(encoding="utf-8").splitlines() if l.strip()]
     if not qrels:
         sys.exit("ERROR: no queries in qrels file")
 
-    embedder = NVIDIAEmbedder(api_key=api_key)
-    store    = JSONVectorStore(STORE_PATH)
+    store = JSONVectorStore(str(args.store))
+    store_data = store.load()
+    metadata = store_data.get("metadata", {})
+    provider = args.provider
+    if provider == "auto":
+        provider = metadata.get("embedding_provider") or "nvidia"
+    model = args.model or metadata.get("embedding_model")
+    if provider == "ollama":
+        if not model:
+            sys.exit("ERROR: Ollama index metadata has no embedding_model; pass --model.")
+        embedder = OllamaEmbedder(
+            model=model,
+            base_url=args.base_url or metadata.get("embedding_base_url") or "http://127.0.0.1:11434",
+            query_prefix=metadata.get("query_prefix", ""),
+        )
+    else:
+        api_key = os.environ.get("NVIDIA_API_KEY", "").strip()
+        if not api_key:
+            sys.exit("ERROR: NVIDIA_API_KEY not set in .env")
+        embedder = NVIDIAEmbedder(api_key=api_key, model=model or "nvidia/llama-nemotron-embed-1b-v2")
     max_k    = max(TOP_K_VALUES)
 
-    print(f"Evaluating {len(qrels)} queries against {STORE_PATH} (top_k={max_k})\n")
+    store_ids = {chunk.get("id") for chunk in store_data.get("chunks", [])}
+    missing_ids = sorted({item for q in qrels for item in q["relevant"] if item not in store_ids})
+    if missing_ids:
+        sys.exit(f"ERROR: qrels IDs missing from vector store: {', '.join(missing_ids)}")
+
+    print(f"Evaluating {len(qrels)} queries against {args.store} (top_k={max_k})")
+    print(f"Embedding: {provider} / {model}\n")
 
     per_query = []
     for q in qrels:
         qvec = embedder.embed_text(q["query"])
         hits = store.search(qvec, top_k=max_k, parent_topic=q.get("topic"))
-        retrieved = [h["child_name"] for h in hits]
+        retrieved = [h["id"] for h in hits]
 
         row = {
             "qid":          q["qid"],
@@ -157,9 +195,16 @@ def main():
 
     # ---- save ----
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = RESULTS_DIR / f"recall_at_k_{datetime.now():%Y%m%d_%H%M%S}.json"
+    out_path = args.out or RESULTS_DIR / f"recall_at_k_{datetime.now():%Y%m%d_%H%M%S}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(
-        {"summary": summary, "by_category": cat_summary, "adversarial": adv_summary, "per_query": per_query},
+        {
+            "embedding": {"provider": provider, "model": model},
+            "summary": summary,
+            "by_category": cat_summary,
+            "adversarial": adv_summary,
+            "per_query": per_query,
+        },
         indent=2,
     ))
     print(f"\nSaved: {out_path.relative_to(Path.cwd())}" if out_path.is_relative_to(Path.cwd()) else f"\nSaved: {out_path}")

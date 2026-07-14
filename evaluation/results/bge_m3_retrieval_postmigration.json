@@ -1,0 +1,605 @@
+{
+  "embedding": {
+    "provider": "ollama",
+    "model": "bge-m3"
+  },
+  "summary": {
+    "n_main": 16,
+    "hit@1": 0.875,
+    "recall@1": 0.6875,
+    "hit@3": 1.0,
+    "recall@3": 0.875,
+    "hit@5": 1.0,
+    "recall@5": 0.9062,
+    "mrr": 0.9271
+  },
+  "by_category": {
+    "standard": {
+      "n": 5,
+      "hit@1": 0.8,
+      "hit@3": 1.0,
+      "mrr": 0.8667
+    },
+    "catalog": {
+      "n": 3,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "physics": {
+      "n": 2,
+      "hit@1": 0.5,
+      "hit@3": 1.0,
+      "mrr": 0.75
+    },
+    "workflow": {
+      "n": 3,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "limitations": {
+      "n": 2,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "scope_boundary": {
+      "n": 1,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    }
+  },
+  "adversarial": {
+    "n_adversarial": 2,
+    "adv_top1_sim_mean": 0.506,
+    "adv_top1_sim_max": 0.5199
+  },
+  "per_query": [
+    {
+      "qid": "rag01",
+      "category": "standard",
+      "adversarial": false,
+      "query": "Why must a shock test be tailored to the actual item and its transport environment?",
+      "relevant": [
+        "shock_mount/mil_std_516_8_scope_tailoring"
+      ],
+      "retrieved": [
+        "shock_mount/mil_std_516_8_scope_tailoring",
+        "shock_mount/mil_std_516_8_functional_transport",
+        "shock_mount/mil_std_516_8_transport_defaults",
+        "shock_mount/mil_std_516_8_field_data_srs",
+        "shock_mount/mil_std_516_8_axes_setup"
+      ],
+      "similarities": [
+        0.6334,
+        0.6007,
+        0.5991,
+        0.5893,
+        0.5833
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag02",
+      "category": "standard",
+      "adversarial": false,
+      "query": "What is the difference between functional shock and transportation shock?",
+      "relevant": [
+        "shock_mount/mil_std_516_8_functional_transport"
+      ],
+      "retrieved": [
+        "shock_mount/mil_std_516_8_functional_transport",
+        "shock_mount/mil_std_516_8_transport_defaults",
+        "shock_mount/project_shock_requirements",
+        "shock_mount/road_vibration_check",
+        "shock_mount/dynamic_deflection"
+      ],
+      "similarities": [
+        0.6449,
+        0.5283,
+        0.4956,
+        0.4955,
+        0.4795
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag03",
+      "category": "standard",
+      "adversarial": false,
+      "query": "Can a half-sine shock pulse replace a terminal-peak sawtooth pulse?",
+      "relevant": [
+        "shock_mount/mil_std_516_8_classical_pulses",
+        "shock_mount/pulse_half_sine"
+      ],
+      "retrieved": [
+        "shock_mount/mil_std_516_8_classical_pulses",
+        "shock_mount/pulse_sawtooth",
+        "shock_mount/pulse_half_sine",
+        "shock_mount/project_shock_requirements",
+        "shock_mount/impulse_velocity"
+      ],
+      "similarities": [
+        0.6965,
+        0.6803,
+        0.6769,
+        0.6186,
+        0.586
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag04",
+      "category": "standard",
+      "adversarial": false,
+      "query": "Why are field measurements and shock response spectrum useful when defining a shock environment?",
+      "relevant": [
+        "shock_mount/mil_std_516_8_field_data_srs"
+      ],
+      "retrieved": [
+        "shock_mount/mil_std_516_8_field_data_srs",
+        "shock_mount/mil_std_516_8_transport_defaults",
+        "shock_mount/mil_std_516_8_scope_tailoring",
+        "shock_mount/standard_scope",
+        "shock_mount/mil_std_516_8_functional_transport"
+      ],
+      "similarities": [
+        0.6608,
+        0.5543,
+        0.552,
+        0.5231,
+        0.5177
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag05",
+      "category": "standard",
+      "adversarial": false,
+      "query": "Does Method 516.8 automatically make 20 G and 11 ms correct for every rack?",
+      "relevant": [
+        "shock_mount/project_shock_requirements",
+        "shock_mount/mil_std_516_8_transport_defaults"
+      ],
+      "retrieved": [
+        "shock_mount/mil_std_516_8_field_data_srs",
+        "shock_mount/mil_std_516_8_scope_tailoring",
+        "shock_mount/project_shock_requirements",
+        "shock_mount/standard_scope",
+        "shock_mount/mil_std_516_8_classical_pulses"
+      ],
+      "similarities": [
+        0.5528,
+        0.5424,
+        0.5369,
+        0.5172,
+        0.5087
+      ],
+      "mrr": 0.3333,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 0.5
+    },
+    {
+      "qid": "rag06",
+      "category": "catalog",
+      "adversarial": false,
+      "query": "What shock stiffness and rated travel does CB1700-30 have?",
+      "relevant": [
+        "shock_mount/cb1700_catalog"
+      ],
+      "retrieved": [
+        "shock_mount/cb1700_catalog",
+        "shock_mount/cb61400_optional_scope",
+        "shock_mount/cb1400_catalog",
+        "shock_mount/cb1500_catalog",
+        "shock_mount/static_load_gate"
+      ],
+      "similarities": [
+        0.6184,
+        0.5555,
+        0.5423,
+        0.5338,
+        0.5017
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag07",
+      "category": "catalog",
+      "adversarial": false,
+      "query": "Is CB61400 selected automatically and why is it optional?",
+      "relevant": [
+        "shock_mount/cb61400_optional_scope"
+      ],
+      "retrieved": [
+        "shock_mount/cb61400_optional_scope",
+        "shock_mount/selection_workflow",
+        "shock_mount/cb1700_catalog",
+        "shock_mount/cb1400_catalog",
+        "shock_mount/cb1500_catalog"
+      ],
+      "similarities": [
+        0.6745,
+        0.6284,
+        0.5319,
+        0.5047,
+        0.4987
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag08",
+      "category": "catalog",
+      "adversarial": false,
+      "query": "Where does the static load rating used by the selector come from?",
+      "relevant": [
+        "shock_mount/static_load_gate",
+        "shock_mount/cb1400_catalog"
+      ],
+      "retrieved": [
+        "shock_mount/static_load_gate",
+        "shock_mount/cb61400_optional_scope",
+        "shock_mount/selection_workflow",
+        "shock_mount/verification_workflow",
+        "shock_mount/road_vibration_check"
+      ],
+      "similarities": [
+        0.5838,
+        0.5538,
+        0.5456,
+        0.5321,
+        0.5259
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 0.5
+    },
+    {
+      "qid": "rag09",
+      "category": "physics",
+      "adversarial": false,
+      "query": "How is the shock velocity change calculated for a sawtooth pulse?",
+      "relevant": [
+        "shock_mount/impulse_velocity",
+        "shock_mount/pulse_sawtooth"
+      ],
+      "retrieved": [
+        "shock_mount/impulse_velocity",
+        "shock_mount/mil_std_516_8_classical_pulses",
+        "shock_mount/pulse_sawtooth",
+        "shock_mount/project_shock_requirements",
+        "shock_mount/pulse_half_sine"
+      ],
+      "similarities": [
+        0.6833,
+        0.6637,
+        0.6555,
+        0.6325,
+        0.628
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag10",
+      "category": "physics",
+      "adversarial": false,
+      "query": "Why does a softer mount reduce transmitted acceleration but increase dynamic deflection?",
+      "relevant": [
+        "shock_mount/transmitted_acceleration",
+        "shock_mount/dynamic_deflection"
+      ],
+      "retrieved": [
+        "shock_mount/travel_limit_gate",
+        "shock_mount/transmitted_acceleration",
+        "shock_mount/best_isolation_objective",
+        "shock_mount/dynamic_deflection",
+        "shock_mount/natural_frequency"
+      ],
+      "similarities": [
+        0.5663,
+        0.5649,
+        0.5416,
+        0.5362,
+        0.5203
+      ],
+      "mrr": 0.5,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag11",
+      "category": "workflow",
+      "adversarial": false,
+      "query": "What are the four mount load cases and why do lateral cases divide the mass by two?",
+      "relevant": [
+        "shock_mount/four_load_cases",
+        "shock_mount/load_distribution"
+      ],
+      "retrieved": [
+        "shock_mount/load_distribution",
+        "shock_mount/four_load_cases",
+        "shock_mount/static_load_gate",
+        "shock_mount/mil_std_516_8_axes_setup",
+        "shock_mount/selection_workflow"
+      ],
+      "similarities": [
+        0.6076,
+        0.5804,
+        0.5114,
+        0.4878,
+        0.4855
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag12",
+      "category": "workflow",
+      "adversarial": false,
+      "query": "What information is required before choosing a shock isolator?",
+      "relevant": [
+        "shock_mount/selection_workflow"
+      ],
+      "retrieved": [
+        "shock_mount/selection_workflow",
+        "shock_mount/installation_considerations",
+        "shock_mount/model_assumptions",
+        "shock_mount/verification_workflow",
+        "shock_mount/mil_std_516_8_scope_tailoring"
+      ],
+      "similarities": [
+        0.6756,
+        0.6261,
+        0.6254,
+        0.6223,
+        0.6045
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag13",
+      "category": "workflow",
+      "adversarial": false,
+      "query": "How do I verify an isolator that has already been specified?",
+      "relevant": [
+        "shock_mount/verification_workflow",
+        "shock_mount/governing_check"
+      ],
+      "retrieved": [
+        "shock_mount/verification_workflow",
+        "shock_mount/selection_workflow",
+        "shock_mount/four_load_cases",
+        "shock_mount/installation_considerations",
+        "shock_mount/validation_excel_baseline"
+      ],
+      "similarities": [
+        0.6515,
+        0.5941,
+        0.5863,
+        0.5809,
+        0.5688
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 0.5
+    },
+    {
+      "qid": "rag14",
+      "category": "limitations",
+      "adversarial": false,
+      "query": "Does this tool prove the rack has passed a physical MIL-STD qualification test?",
+      "relevant": [
+        "shock_mount/standard_scope"
+      ],
+      "retrieved": [
+        "shock_mount/standard_scope",
+        "shock_mount/mil_std_516_8_functional_transport",
+        "shock_mount/mil_std_516_8_axes_setup",
+        "shock_mount/verification_workflow",
+        "shock_mount/mil_std_516_8_scope_tailoring"
+      ],
+      "similarities": [
+        0.6427,
+        0.599,
+        0.5785,
+        0.578,
+        0.555
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag15",
+      "category": "limitations",
+      "adversarial": false,
+      "query": "What important engineering effects are not represented by this shock model?",
+      "relevant": [
+        "shock_mount/model_limitations",
+        "shock_mount/model_assumptions"
+      ],
+      "retrieved": [
+        "shock_mount/model_limitations",
+        "shock_mount/model_assumptions",
+        "shock_mount/mil_std_516_8_field_data_srs",
+        "shock_mount/static_load_gate",
+        "shock_mount/mil_std_516_8_functional_transport"
+      ],
+      "similarities": [
+        0.5335,
+        0.5186,
+        0.4974,
+        0.4932,
+        0.4889
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "rag16",
+      "category": "out_of_scope",
+      "adversarial": true,
+      "query": "How do I configure a thermal CFD simulation for an electronics enclosure?",
+      "relevant": [],
+      "retrieved": [
+        "shock_mount/installation_considerations",
+        "shock_mount/selection_workflow",
+        "shock_mount/verification_workflow",
+        "shock_mount/cb1400_catalog",
+        "shock_mount/dynamic_deflection"
+      ],
+      "similarities": [
+        0.5199,
+        0.5194,
+        0.5105,
+        0.505,
+        0.5
+      ],
+      "mrr": 0.0,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 0,
+      "recall@3": 0.0,
+      "hit@5": 0,
+      "recall@5": 0.0
+    },
+    {
+      "qid": "rag17",
+      "category": "out_of_scope",
+      "adversarial": true,
+      "query": "What torque should I use for an M6 stainless bolt?",
+      "relevant": [],
+      "retrieved": [
+        "shock_mount/mil_std_516_8_scope_tailoring",
+        "shock_mount/project_shock_requirements",
+        "shock_mount/road_vibration_check",
+        "shock_mount/installation_considerations",
+        "shock_mount/pulse_sawtooth"
+      ],
+      "similarities": [
+        0.4921,
+        0.4862,
+        0.4785,
+        0.4779,
+        0.4771
+      ],
+      "mrr": 0.0,
+      "hit@1": 0,
+      "recall@1": 0.0,
+      "hit@3": 0,
+      "recall@3": 0.0,
+      "hit@5": 0,
+      "recall@5": 0.0
+    },
+    {
+      "qid": "rag18",
+      "category": "scope_boundary",
+      "adversarial": false,
+      "query": "Give me the complete Method 514.8 vibration test procedure.",
+      "relevant": [
+        "shock_mount/standard_scope"
+      ],
+      "retrieved": [
+        "shock_mount/standard_scope",
+        "shock_mount/mil_std_516_8_scope_tailoring",
+        "shock_mount/mil_std_516_8_classical_pulses",
+        "shock_mount/mil_std_516_8_functional_transport",
+        "shock_mount/road_vibration_check"
+      ],
+      "similarities": [
+        0.5452,
+        0.529,
+        0.5277,
+        0.5078,
+        0.5003
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    }
+  ]
+}

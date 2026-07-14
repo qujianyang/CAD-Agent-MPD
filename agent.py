@@ -62,7 +62,28 @@ _rag: Optional[object] = None
 _knowledge_embedder: Optional[object] = None
 _knowledge_store: Optional[object] = None
 
-KNOWLEDGE_STORE_PATH = "artifacts/knowledge_embeddings.json"
+# The normal UI uses the mixed development index. Evaluation can point this at
+# a frozen, domain-specific index without altering retrieval code.
+KNOWLEDGE_STORE_PATH = os.environ.get(
+    "KNOWLEDGE_STORE_PATH", "artifacts/knowledge_embeddings.json"
+)
+EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "nvidia").strip().lower()
+try:
+    KNOWLEDGE_MAX_CHARS_PER_HIT = max(
+        200, int(os.environ.get("KNOWLEDGE_MAX_CHARS_PER_HIT", "1400"))
+    )
+except ValueError:
+    KNOWLEDGE_MAX_CHARS_PER_HIT = 1400
+
+
+def _truncate_knowledge_content(content: str) -> str:
+    """Keep RAG tool output within the LLM's fixed context budget."""
+    if len(content) <= KNOWLEDGE_MAX_CHARS_PER_HIT:
+        return content
+    return (
+        f"{content[:KNOWLEDGE_MAX_CHARS_PER_HIT].rstrip()}\n\n"
+        "[Excerpt truncated to preserve context for the answer.]"
+    )
 
 
 def _get_rag():
@@ -78,10 +99,20 @@ def _get_knowledge_search():
     global _knowledge_embedder, _knowledge_store
     if _knowledge_store is None:
         from pathlib import Path
-        from nvidia_embedder import NVIDIAEmbedder, JSONVectorStore
+        from nvidia_embedder import NVIDIAEmbedder, OllamaEmbedder, JSONVectorStore
         if not Path(KNOWLEDGE_STORE_PATH).exists():
             return None, None
-        _knowledge_embedder = NVIDIAEmbedder(_api_key) if _api_key else None
+        if EMBEDDING_PROVIDER == "ollama":
+            _knowledge_embedder = OllamaEmbedder(
+                model=os.environ.get("OLLAMA_EMBEDDING_MODEL", "bge-m3"),
+                base_url=os.environ.get("OLLAMA_EMBEDDING_BASE_URL", "http://127.0.0.1:11434"),
+            )
+        elif EMBEDDING_PROVIDER == "nvidia":
+            _knowledge_embedder = NVIDIAEmbedder(_api_key) if _api_key else None
+        else:
+            raise ValueError(
+                f"Unsupported EMBEDDING_PROVIDER={EMBEDDING_PROVIDER!r}; use 'nvidia' or 'ollama'."
+            )
         _knowledge_store    = JSONVectorStore(KNOWLEDGE_STORE_PATH)
     return _knowledge_embedder, _knowledge_store
 
@@ -600,18 +631,31 @@ def lookup_knowledge(query: str, parent_topic: str = "") -> str:
     """
     Search the hierarchical engineering knowledge base (knowledge/ folder).
 
-    Available parent topics: 'shock_mount' (more topics coming soon).
-    Inside shock_mount/ there are pages: formulas, load_cases, selection_rules,
-    catalog_overview.
+    Primary parent topic: 'shock_mount' — focused reference chunks covering:
+      - formulas: impulse_velocity, natural_frequency, transmitted_acceleration,
+        dynamic_deflection; load_distribution and four_load_cases
+      - gates and decisions: static_load_gate, travel_limit_gate,
+        governing_check, missing_input_policy
+      - workflows and objectives: selection_workflow, verification_workflow,
+        max_clearance_objective (DEFAULT: stiffest passing part, smallest
+        deflection), best_isolation_objective (softest passing part, lowest GT)
+      - catalogue provenance: cb1400_catalog, cb1500_catalog, cb1700_catalog,
+        cb61400_optional_scope
+      - standard basis: project_shock_requirements (where 20G/11ms/10G come
+        from), standard_scope, pulse_sawtooth, pulse_half_sine, and six
+        mil_std_516_8_* method pages
+      - model scope: model_assumptions, model_limitations,
+        road_vibration_check, installation_considerations,
+        validation_excel_baseline
 
-    Use this when you need to cite EXACT formulas (V, fn, GT, dD), explain WHY
-    the mass is divided differently per load case, justify the "softest valid
-    part" selection rule, or quote stiffness/travel values from the CB catalogs.
+    Use this to cite formulas, justify defaults and objectives, quote catalogue
+    provenance, or explain standard basis and model limits. Numerical results
+    always come from the deterministic tools, never from these pages.
 
     Args:
         query:         What you want to know, in natural language.
                        Examples: "GT formula", "why divide mass by 2",
-                       "when to use CB1800", "what passes for 1500kg".
+                       "where does 20 G come from", "CB61400 static rating".
         parent_topic:  Optional filter — e.g. "shock_mount". Leave empty to
                        search across all topics.
 
@@ -622,7 +666,7 @@ def lookup_knowledge(query: str, parent_topic: str = "") -> str:
         return ("ERROR: knowledge base not built yet. Run `python setup_knowledge.py` "
                 "to ingest the knowledge/ folder.")
     if embedder is None:
-        return "ERROR: NVIDIA API key not set; cannot embed query."
+        return "ERROR: embedding provider is not configured; cannot embed query."
 
     parent = parent_topic.strip() or None
     try:
@@ -646,7 +690,7 @@ def lookup_knowledge(query: str, parent_topic: str = "") -> str:
             f"\n--- [{i}] {label}  ({h['similarity']:.0%} match)  ---\n"
             f"Title: {h.get('title','(no title)')}\n"
             f"Source: {h.get('source_path','?')}\n"
-            f"{h['content']}\n"
+            f"{_truncate_knowledge_content(h['content'])}\n"
         )
     return "\n".join(parts)
 
@@ -1364,21 +1408,35 @@ def _build_chat_model(cfg: LLMConfig):
     if not cfg.api_key:
         raise RuntimeError(f"{cfg.api_key_env} is not set.")
 
-    if cfg.provider == "openai":
+    if cfg.provider in ("openai", "ollama"):
+        # Ollama exposes an OpenAI-compatible endpoint, so it reuses ChatOpenAI
+        # with a base_url pointed at the local server. This keeps a single code
+        # path for local (Ollama now / vLLM later) and hosted OpenAI.
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
+        kwargs = dict(
             model=cfg.model,
             api_key=cfg.api_key,
-            temperature=0.1,
-            max_tokens=2048,
+            temperature=cfg.temperature,
+            max_tokens=cfg.max_tokens,
+            top_p=cfg.top_p,
+            presence_penalty=cfg.presence_penalty,
         )
+        if cfg.base_url:
+            kwargs["base_url"] = cfg.base_url
+        if cfg.seed is not None:
+            kwargs["seed"] = cfg.seed
+        if cfg.reasoning_effort:
+            kwargs["reasoning_effort"] = cfg.reasoning_effort
+        return ChatOpenAI(**kwargs)
 
     if cfg.provider == "nvidia":
         return ChatNVIDIA(
             model=cfg.model,
             api_key=cfg.api_key,
-            temperature=0.1,
-            max_tokens=2048,
+            temperature=cfg.temperature,
+            max_tokens=cfg.max_tokens,
+            top_p=cfg.top_p,
+            presence_penalty=cfg.presence_penalty,
             # NVIDIA's hosted Llama 3.1 70B only allows ONE tool call per turn.
             parallel_tool_calls=False,
         )

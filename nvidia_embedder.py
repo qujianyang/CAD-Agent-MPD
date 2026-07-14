@@ -7,8 +7,91 @@ import time
 from pathlib import Path
 from typing import List, Dict, Any
 
+import requests
+
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+OLLAMA_QUERY_PREFIXES = {
+    # BGE-M3 is trained for symmetric retrieval and needs no instruction.
+    "bge-m3": "",
+    # Mixedbread documents this retrieval prefix for query embeddings only.
+    "hf.co/mixedbread-ai/mxbai-embed-large-v1:F16": (
+        "Represent this sentence for searching relevant passages: "
+    ),
+    # Qwen recommends an instruction for asymmetric retrieval. This project
+    # instruction is part of the embedding configuration and is saved in index
+    # metadata so it can be frozen and reproduced.
+    "qwen3-embedding:8b": (
+        "Instruct: Given a technical engineering question, retrieve relevant "
+        "shock-mount reference passages that answer the question\nQuery: "
+    ),
+}
+
+
+def ollama_query_prefix(model: str) -> str:
+    """Return the documented/project retrieval instruction for an Ollama model."""
+    return OLLAMA_QUERY_PREFIXES.get(model, "")
+
+
+class OllamaEmbedder:
+    """Embed documents and queries through Ollama's native /api/embed endpoint."""
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str = "http://127.0.0.1:11434",
+        query_prefix: str | None = None,
+        timeout_s: int = 120,
+    ):
+        self.model = model
+        self.base_url = base_url.rstrip("/").removesuffix("/v1")
+        self.query_prefix = ollama_query_prefix(model) if query_prefix is None else query_prefix
+        self.timeout_s = timeout_s
+
+    def _embed_inputs(self, inputs: str | list[str]) -> list[list[float]]:
+        response = requests.post(
+            f"{self.base_url}/api/embed",
+            json={"model": self.model, "input": inputs},
+            timeout=self.timeout_s,
+        )
+        try:
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            detail = response.text[:300] if response is not None else ""
+            raise RuntimeError(f"Ollama embedding request failed: {detail}") from exc
+
+        payload = response.json()
+        embeddings = payload.get("embeddings")
+        if not isinstance(embeddings, list):
+            raise RuntimeError("Ollama embedding response did not contain 'embeddings'.")
+        return embeddings
+
+    def embed_text(self, text: str) -> List[float]:
+        """Embed a query, applying any model-specific query instruction."""
+        if not text or not text.strip():
+            return []
+        embeddings = self._embed_inputs(f"{self.query_prefix}{text}")
+        if len(embeddings) != 1:
+            raise RuntimeError(f"Expected one query embedding, received {len(embeddings)}.")
+        return embeddings[0]
+
+    def embed_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Embed stored passages without a query instruction, in small batches."""
+        total = len(chunks)
+        print(f"\nEmbedding {total} chunks via Ollama ({self.model})...\n")
+        for start in range(0, total, 16):
+            batch = chunks[start:start + 16]
+            embeddings = self._embed_inputs([chunk["content"] for chunk in batch])
+            if len(embeddings) != len(batch):
+                raise RuntimeError(
+                    f"Ollama returned {len(embeddings)} embeddings for {len(batch)} passages."
+                )
+            for chunk, embedding in zip(batch, embeddings):
+                chunk["embedding"] = embedding
+            print(f"[OK] Embedded {min(start + len(batch), total)}/{total} chunks")
+        return chunks
 
 
 class NVIDIAEmbedder:

@@ -1,0 +1,18 @@
+{"qid":"rag01","category":"standard","query":"Why must a shock test be tailored to the actual item and its transport environment?","relevant":["shock_mount/mil_std_516_8_scope_tailoring"],"topic":"shock_mount"}
+{"qid":"rag02","category":"standard","query":"What is the difference between functional shock and transportation shock?","relevant":["shock_mount/mil_std_516_8_functional_transport"],"topic":"shock_mount"}
+{"qid":"rag03","category":"standard","query":"Can a half-sine shock pulse replace a terminal-peak sawtooth pulse?","relevant":["shock_mount/mil_std_516_8_classical_pulses","shock_mount/pulse_half_sine"],"topic":"shock_mount"}
+{"qid":"rag04","category":"standard","query":"Why are field measurements and shock response spectrum useful when defining a shock environment?","relevant":["shock_mount/mil_std_516_8_field_data_srs"],"topic":"shock_mount"}
+{"qid":"rag05","category":"standard","query":"Does Method 516.8 automatically make 20 G and 11 ms correct for every rack?","relevant":["shock_mount/project_shock_requirements","shock_mount/mil_std_516_8_transport_defaults"],"topic":"shock_mount"}
+{"qid":"rag06","category":"catalog","query":"What shock stiffness and rated travel does CB1700-30 have?","relevant":["shock_mount/cb1700_catalog"],"topic":"shock_mount"}
+{"qid":"rag07","category":"catalog","query":"Is CB61400 selected automatically and why is it optional?","relevant":["shock_mount/cb61400_optional_scope"],"topic":"shock_mount"}
+{"qid":"rag08","category":"catalog","query":"Where does the static load rating used by the selector come from?","relevant":["shock_mount/static_load_gate","shock_mount/cb1400_catalog"],"topic":"shock_mount"}
+{"qid":"rag09","category":"physics","query":"How is the shock velocity change calculated for a sawtooth pulse?","relevant":["shock_mount/impulse_velocity","shock_mount/pulse_sawtooth"],"topic":"shock_mount"}
+{"qid":"rag10","category":"physics","query":"Why does a softer mount reduce transmitted acceleration but increase dynamic deflection?","relevant":["shock_mount/transmitted_acceleration","shock_mount/dynamic_deflection"],"topic":"shock_mount"}
+{"qid":"rag11","category":"workflow","query":"What are the four mount load cases and why do lateral cases divide the mass by two?","relevant":["shock_mount/four_load_cases","shock_mount/load_distribution"],"topic":"shock_mount"}
+{"qid":"rag12","category":"workflow","query":"What information is required before choosing a shock isolator?","relevant":["shock_mount/selection_workflow"],"topic":"shock_mount"}
+{"qid":"rag13","category":"workflow","query":"How do I verify an isolator that has already been specified?","relevant":["shock_mount/verification_workflow","shock_mount/governing_check"],"topic":"shock_mount"}
+{"qid":"rag14","category":"limitations","query":"Does this tool prove the rack has passed a physical MIL-STD qualification test?","relevant":["shock_mount/standard_scope"],"topic":"shock_mount"}
+{"qid":"rag15","category":"limitations","query":"What important engineering effects are not represented by this shock model?","relevant":["shock_mount/model_limitations","shock_mount/model_assumptions"],"topic":"shock_mount"}
+{"qid":"rag16","category":"out_of_scope","query":"How do I configure a thermal CFD simulation for an electronics enclosure?","relevant":[],"adversarial":true,"topic":"shock_mount"}
+{"qid":"rag17","category":"out_of_scope","query":"What torque should I use for an M6 stainless bolt?","relevant":[],"adversarial":true,"topic":"shock_mount"}
+{"qid":"rag18","category":"scope_boundary","query":"Give me the complete Method 514.8 vibration test procedure.","relevant":["shock_mount/standard_scope"],"topic":"shock_mount"}
