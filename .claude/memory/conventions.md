@@ -43,13 +43,18 @@ Returned object is a `CompiledStateGraph` from LangGraph.
 
 ## Environment
 
-- `.env` only for API keys. **No hardcoded fallbacks anywhere** — they leak into git history.
-- Required: `NVIDIA_API_KEY`
+- `.env` stores secrets and local runtime selection (`LLM_PROVIDER`, model name,
+  and local base URL). Never commit it and never print API-key values.
+- `NVIDIA_API_KEY` is required for NVIDIA chat and the current hosted RAG
+  embedder. It is not required for tools-only local Ollama screening with RAG off.
 - Do not commit `mil_std_embeddings.json` if it ever contains anything user-specific.
-- **Python venv**: `C:\Users\qujia\QuantumKeyDistribution\CAD-Agent-MPD\mpd\Scripts\python.exe`
-  - All project deps (langchain, streamlit, langchain-nvidia-ai-endpoints, pywin32, etc.) live here.
-  - Always use this interpreter for scripts: `.\mpd\Scripts\python.exe setup_knowledge.py`
-  - Never use bare `python` in this project — system Python 3.13 at `C:\Python313` has none of these packages.
+- **Python venv**: use the repo-relative `.\mpd\Scripts\python.exe` from the
+  repository root. Do not record a laptop-specific absolute repo path.
+  - Verified Python version on the current laptop: 3.10.8.
+  - All project deps (langchain, streamlit, provider clients, pywin32, etc.) live here.
+  - Example: `.\mpd\Scripts\python.exe setup_knowledge.py`.
+  - Use `requirements-dev.txt` when running the pytest suite.
+  - Do not use bare system Python for project scripts.
 
 ## Streaming
 

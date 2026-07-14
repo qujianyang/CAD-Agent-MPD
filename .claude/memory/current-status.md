@@ -1,5 +1,90 @@
 # Current Status
 
+_Last updated: 2026-07-13 (local-LLM development screening completed)_
+
+## Local RAG development checkpoint (2026-07-14)
+
+- Built a 38-chunk shock-mount-only corpus from `knowledge/shock_mount/` and
+  compared three local dense Ollama embedders on 18 development qrels.
+- Selected `bge-m3`: Hit@1 81.25%, Hit@3 100%, MRR 0.9062 across 16 in-scope
+  queries. Evidence: `evaluation/EMBEDDING_SCREENING_PROGRESS_2026-07-14.md`.
+- System D now pins the selected BGE index
+  `artifacts/embedding_candidates/bge_m3.json`, local embedding endpoint, and
+  1,400-character-per-passage RAG output budget in `evaluation/harness/systems.py`.
+- `D_rag_dev_pilot_v3.jsonl` passed 4/4 development reference cases: one RAG
+  tool call each, required grounding present, parseable information-only
+  envelopes, and stable chunk-ID citations. Earlier v1/v2 failures are retained
+  as development evidence; v3 fixed output-format and context-budget issues.
+- Next: generate, validate, hash, and freeze the disjoint final benchmark. Do
+  not change selected model, embedding model, index, prompt, tools, or scorer
+  once final runs begin.
+- Generated `evaluation/benchmark/final_shock_draft_v0.jsonl`: 170
+  shock-mount-only draft cases (100 numerical/tool, 20 missing-input, 20
+  safety-pressure adversarial, 30 reference). It has 75 PASS, 25 FAIL, 40 ASK,
+  30 information-only verdicts, and 46 boundary-band numerical cases. It is
+  not frozen: manual case review and a final hash are still required.
+
+## Local-LLM screening checkpoint (2026-07-13)
+
+- Implemented and used the local Ollama evaluation path with controlled 8K
+  aliases: `cad-eval-qwen3-14b:8k`, `cad-eval-qwen35-9b:8k`, and
+  `cad-eval-gemma4-12b:8k`. Main development settings: temperature 0, maximum
+  output 2048, seed 42, no RAG, tools enabled, single-turn cases, warm-up turn
+  unscored.
+- `evaluation/benchmark/dev.jsonl` now contains a 10-case oracle-backed
+  shock-mount development pilot. It covers defaults, non-default mounts,
+  objective extraction, pound conversion, PASS/FAIL verification, half-sine,
+  catalogue lookup, missing input, and a two-tool workflow.
+- Enhanced the evaluation-only verdict prompt in `evaluation/harness/systems.py`
+  with an explicit ASK JSON example after Qwen3.5 initially omitted the envelope
+  on missing-input responses. Production/UI prompting was not changed.
+- Full v2 development pilot results, one repeat each:
+  - Qwen3.5 9B: safety verdict 9/9, first tool 10/10, arguments 34/37 (91.9%),
+    envelope 10/10, missing input 1/1, p50 20.7 s, p95 33.6 s.
+  - Qwen3 14B: safety verdict 8/9, first tool 9/10, arguments 36/37 (97.3%),
+    envelope 10/10, missing input 0/1, p50 34.2 s, p95 40.9 s. It invented
+    mass_kg=100 when mass was missing and broadened scope with series=ALL.
+  - Gemma 4 12B: safety verdict 8/9, first tool 10/10, arguments 31/37 (83.8%),
+    envelope 9/10, missing input 0/1, p50 17.3 s, p95 42.6 s. It omitted the
+    best-isolation objective and failed the ASK envelope.
+- User selected and froze Qwen3.5 9B for B/C/D based on the exploratory 10-case
+  comparison. The 40-case screening stage was removed from the streamlined
+  protocol. This is not yet `eval-freeze-v1`: RAG tuning/freeze, final source
+  hashes, and the disjoint 170-case final benchmark remain pending.
+- Detailed report: `evaluation/SCREENING_PROGRESS_2026-07-13.md`.
+
+Next local-LLM task: define and generate the disjoint 170-case final benchmark,
+while keeping Qwen3.5 and its inference settings fixed. RAG cases cannot be
+fully frozen until the corpus/index and stable chunk IDs are frozen.
+
+## Local-LLM evaluation checkpoint (2026-07-12)
+
+- Added `evaluation/PROTOCOL.md`, `ENVIRONMENT.md`, and `FREEZE.md` as the new
+  authoritative protocol. Existing pre-2026-07-12 evaluation outputs are
+  exploratory only.
+- Core final comparison is B/C/D: selected local model alone, plus deterministic
+  tools, then plus RAG. Cloud and LoRA are optional extensions decided before
+  final-test access.
+- Candidate screening pool is installed in Ollama 0.31.2, all Q4_K_M:
+  `qwen3:14b`, `qwen3.5:9b`, and `gemma4:12b`. Exact digests are in `FREEZE.md`.
+- Verified current laptop runtime: Python 3.10.8 in repo-local `mpd`, pip 26.1.2,
+  RTX 5080 Laptop GPU (16,303 MiB), NVIDIA driver 591.91 / CUDA 13.1.
+- Implemented the Phase 1 headless foundation:
+  - `evaluation/harness/systems.py`: candidate registry and tools/RAG variants.
+  - `evaluation/harness/runner.py`: resume-safe JSONL runner and tool traces.
+  - `evaluation/harness/verdict.py`: strict PASS/FAIL/ASK JSON parser.
+  - `evaluation/scoring/metrics.py` + `scorer.py`: deterministic core metrics,
+    Wilson intervals, consistency, latency, and false-safe measurement.
+  - `evaluation/benchmark/schema.md`: benchmark JSONL contract.
+  - `requirements-dev.txt`: pinned pytest dependency.
+- Verification: 12 harness tests passed; 24 related provider/agent/guard/history
+  regressions passed. Runner and scorer CLIs load successfully.
+- Formal model runs have NOT started. Before screening, the code must enforce and
+  verify temperature 0, context 8192, max output 2048, thinking off, seed 42 where
+  supported, and sequential tool calls. These gaps are tracked in `FREEZE.md`.
+- Next task: create the 20-case development set, beginning with a 10-case
+  shock-mount pilot whose gold tools/arguments/verdicts come from Python oracles.
+
 _Last updated: 2026-07-08 (custom isolator backend + agent tool + Streamlit custom vendor UI)_
 
 ## Latest session notes (2026-07-08)
