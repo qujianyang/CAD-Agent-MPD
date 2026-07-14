@@ -101,7 +101,7 @@ st.set_page_config(
 from streamlit_float import float_init, float_css_helper
 float_init()
 
-load_dotenv()
+load_dotenv(override=True)  # .env wins over stale process/shell env (e.g. OLLAMA_MODEL)
 try:
     LLM_CONFIG = resolve_llm_config()
     LLM_CONFIG_ERROR = ""

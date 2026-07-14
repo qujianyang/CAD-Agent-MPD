@@ -1,0 +1,4 @@
+# Test and development dependencies. Runtime dependencies remain in requirements.txt.
+-r requirements.txt
+
+pytest==8.4.2

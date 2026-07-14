@@ -1,0 +1,330 @@
+{
+  "summary": {
+    "runs": 10,
+    "verdict_accuracy": {
+      "successes": 9,
+      "total": 9,
+      "rate": 1.0,
+      "wilson_95": [
+        0.7008549515804559,
+        1.0
+      ]
+    },
+    "false_safe": {
+      "successes": 0,
+      "total": 1,
+      "rate": 0.0,
+      "wilson_95": [
+        0.0,
+        0.7934506856227626
+      ]
+    },
+    "false_fail": {
+      "successes": 0,
+      "total": 7,
+      "rate": 0.0,
+      "wilson_95": [
+        5.551115123125783e-17,
+        0.35433043506668743
+      ]
+    },
+    "parseable_envelope": {
+      "successes": 10,
+      "total": 10,
+      "rate": 1.0,
+      "wilson_95": [
+        0.7224672001371107,
+        0.9999999999999999
+      ]
+    },
+    "first_tool_accuracy": {
+      "successes": 10,
+      "total": 10,
+      "rate": 1.0,
+      "wilson_95": [
+        0.7224672001371107,
+        0.9999999999999999
+      ]
+    },
+    "tool_sequence_accuracy": {
+      "successes": 10,
+      "total": 10,
+      "rate": 1.0,
+      "wilson_95": [
+        0.7224672001371107,
+        0.9999999999999999
+      ]
+    },
+    "valid_schema": {
+      "successes": 10,
+      "total": 10,
+      "rate": 1.0,
+      "wilson_95": [
+        0.7224672001371107,
+        0.9999999999999999
+      ]
+    },
+    "missing_input_accuracy": {
+      "successes": 1,
+      "total": 1,
+      "rate": 1.0,
+      "wilson_95": [
+        0.20654931437723745,
+        1.0
+      ]
+    },
+    "argument_accuracy": {
+      "correct": 34,
+      "total": 37,
+      "rate": 0.918918918918919,
+      "wilson_95": [
+        0.7869932065071162,
+        0.9720394258995521
+      ]
+    },
+    "consistency": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "hard_failure": {
+      "successes": 0,
+      "total": 10,
+      "rate": 0.0,
+      "wilson_95": [
+        0.0,
+        0.2775327998628892
+      ]
+    },
+    "latency_ms": {
+      "p50": 20700.893,
+      "p95": 33592.71624999999
+    }
+  },
+  "runs": [
+    {
+      "case_id": "shock_dev_001_select_defaults",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 1,
+      "correct_arg_count": 1,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 9068.671,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_002_select_mounts",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 3,
+      "correct_arg_count": 3,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 9142.563,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_003_select_softest",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 8,
+      "correct_arg_count": 7,
+      "extra_arg_count": 0,
+      "argument_accuracy": 0.875,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 16521.848,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_004_select_pounds",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 3,
+      "correct_arg_count": 1,
+      "extra_arg_count": 0,
+      "argument_accuracy": 0.3333333333333333,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 26602.048,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_005_verify_pass",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 4,
+      "correct_arg_count": 4,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 27064.097,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_006_verify_static_fail",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "FAIL",
+      "predicted_verdict": "FAIL",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 4,
+      "correct_arg_count": 4,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 37961.791,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_007_verify_half_sine",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 8,
+      "correct_arg_count": 8,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 24879.938,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_008_catalog_lookup",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": null,
+      "predicted_verdict": null,
+      "parseable": true,
+      "verdict_correct": null,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 1,
+      "correct_arg_count": 1,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 9091.012,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_009_missing_mass",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "ASK",
+      "predicted_verdict": "ASK",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 0,
+      "correct_arg_count": 0,
+      "extra_arg_count": 0,
+      "argument_accuracy": null,
+      "valid_schema": true,
+      "missing_input_correct": true,
+      "tool_error_count": 0,
+      "latency_ms": 5656.648,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_010_data_then_verify",
+      "system": "qwen35_9b",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 5,
+      "correct_arg_count": 5,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "latency_ms": 28252.736,
+      "hard_failure": false
+    }
+  ]
+}

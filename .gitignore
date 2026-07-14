@@ -65,3 +65,9 @@ Appendix_BCDE_demo.docx
 artifacts/
 mlflow.db
 mlartifacts/
+
+# Formal local-LLM evaluation raw runs (large and reproducible)
+evaluation/runs/
+
+# Scratch downloads/extractions
+tmp/
