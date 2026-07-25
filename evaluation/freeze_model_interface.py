@@ -1,4 +1,9 @@
-"""Capture the frozen local model, prompts, tool schemas, and source hashes."""
+"""Capture the frozen local model, prompts, tool schemas, and source hashes.
+
+The final evaluation is limited to the shock-mount domain.  This manifest
+therefore excludes tiedown and mobility artefacts so unrelated work cannot
+invalidate the shock-mount experiment's reproducibility record.
+"""
 
 from __future__ import annotations
 
@@ -33,11 +38,7 @@ SOURCE_FILES = (
     "llm_config.py",
     "catalog.py",
     "physics_engine.py",
-    "tiedown_engine.py",
-    "tiedown_tools.py",
-    "fastener_catalog.py",
-    "mobility_engine.py",
-    "mobility_tools.py",
+    "nvidia_embedder.py",
     "evaluation/models/qwen35-9b.Modelfile",
     "evaluation/harness/systems.py",
     "evaluation/harness/runner.py",
@@ -45,7 +46,7 @@ SOURCE_FILES = (
     "evaluation/scoring/metrics.py",
     "evaluation/scoring/scorer.py",
 )
-DOMAINS = ("shock_mount", "tiedown", "mobility")
+DOMAINS = ("shock_mount",)
 
 
 def _canonical_json(value: Any) -> str:

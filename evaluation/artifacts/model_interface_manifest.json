@@ -1,0 +1,477 @@
+{
+  "manifest_version": "model-interface-v1",
+  "recorded_date": "2026-07-13",
+  "selected_model": {
+    "base_model": "qwen3.5:9b",
+    "evaluation_alias": "cad-eval-qwen35-9b:8k",
+    "alias_digest": "41877dcbd4e07e5c9c40f5ab7968bc651674d83801a171cfd6b0684d13701910"
+  },
+  "core_systems": {
+    "B": {
+      "id": "B",
+      "provider": "ollama",
+      "model": "cad-eval-qwen35-9b:8k",
+      "base_model": "qwen3.5:9b",
+      "base_url": "http://localhost:11434/v1",
+      "tools": false,
+      "rag": false,
+      "context_length": 8192,
+      "temperature": 0.0,
+      "max_tokens": 2048,
+      "seed": 42,
+      "reasoning_effort": "none",
+      "top_p": 0.95,
+      "presence_penalty": 0.0,
+      "embedding_provider": "ollama",
+      "embedding_model": "bge-m3",
+      "embedding_base_url": "http://127.0.0.1:11434",
+      "knowledge_store_path": "artifacts/embedding_candidates/bge_m3.json",
+      "knowledge_max_chars_per_hit": 1400
+    },
+    "C": {
+      "id": "C",
+      "provider": "ollama",
+      "model": "cad-eval-qwen35-9b:8k",
+      "base_model": "qwen3.5:9b",
+      "base_url": "http://localhost:11434/v1",
+      "tools": true,
+      "rag": false,
+      "context_length": 8192,
+      "temperature": 0.0,
+      "max_tokens": 2048,
+      "seed": 42,
+      "reasoning_effort": "none",
+      "top_p": 0.95,
+      "presence_penalty": 0.0,
+      "embedding_provider": "ollama",
+      "embedding_model": "bge-m3",
+      "embedding_base_url": "http://127.0.0.1:11434",
+      "knowledge_store_path": "artifacts/embedding_candidates/bge_m3.json",
+      "knowledge_max_chars_per_hit": 1400
+    },
+    "D": {
+      "id": "D",
+      "provider": "ollama",
+      "model": "cad-eval-qwen35-9b:8k",
+      "base_model": "qwen3.5:9b",
+      "base_url": "http://localhost:11434/v1",
+      "tools": true,
+      "rag": true,
+      "context_length": 8192,
+      "temperature": 0.0,
+      "max_tokens": 2048,
+      "seed": 42,
+      "reasoning_effort": "none",
+      "top_p": 0.95,
+      "presence_penalty": 0.0,
+      "embedding_provider": "ollama",
+      "embedding_model": "bge-m3",
+      "embedding_base_url": "http://127.0.0.1:11434",
+      "knowledge_store_path": "artifacts/embedding_candidates/bge_m3.json",
+      "knowledge_max_chars_per_hit": 1400
+    }
+  },
+  "domains": {
+    "shock_mount": {
+      "prompt_sha256": "f38c28862c433f65e2e9c480993dbf422d21ba0871cf4f6426950cd37ba7a108",
+      "prompt_length_chars": 6673,
+      "tool_schema_sha256": "1c30fa3204b785bf547757a3bfae2251c901c106a4c0028bc12ce0c2befe32a0",
+      "tools": [
+        {
+          "name": "select_isolator",
+          "description": "Select the optimal wire rope isolator. By DEFAULT scans the practical-rack range\nCB1400 / CB1500 / CB1700; the softer 6-strand CB61400 is opt-in (pass series=\"ALL\").\nEvaluates every matching part and recommends the best per `objective` (default:\nSTIFFEST that passes = least movement / max clearance):\n  - GT < GT_limit in all 3 load directions (compression vertical, lateral, shear)\n  - Dynamic deflection < isolator's rated travel in all 3 directions\nReturns the full selection table plus mathematical proof for the recommended part.\n\nIMPORTANT \u2014 parameter handling:\nOnly pass values for parameters the user explicitly specifies. For everything\nelse, OMIT the parameter so the project default applies. Do NOT guess and do\nNOT pass 0 for the shock parameters \u2014 0 makes the physics trivial.\n\nProject defaults (used if you omit the parameter):\n    n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms),\n    GT_limit_G=10.0G, series=\"AUTO\", pulse_shape=\"sawtooth\",\n    objective=\"max_clearance\"\n\nArgs:\n    mass_kg    : REQUIRED. Total assembly mass in kg. Get from extract_cad_data\n                 or ask the user.\n    n_bottom   : Number of bottom-mounted isolators. Default 6. OMIT unless user says.\n    n_wall     : Number of wall-mounted isolators. Default 4. OMIT unless user says.\n    Ao_G       : Shock magnitude in G. Default 20.0 (MIL-STD-810H Category 4).\n                 OMIT unless user explicitly gives a different shock spec.\n    to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0 (11 ms saw-tooth).\n                 OMIT unless user explicitly gives a different pulse duration.\n    GT_limit_G : Max allowable transmitted G. Default 10.0 G. OMIT unless user says.\n    series     : Catalog filter. Default \"AUTO\" (CB1400/CB1500/CB1700 \u2014 practical\n                 19\" rack range). Pass \"ALL\" to also include the softer 6-strand\n                 CB61400, or a single series name (\"CB61400\"/\"CB1400\"/\"CB1500\"/\"CB1700\").\n    pulse_shape: \"sawtooth\" (default) or \"half_sine\". OMIT unless the user\n                 names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.\n    objective  : Tiebreak among passing parts: \"max_clearance\" (smallest\n                 deflection, default) or \"best_isolation\" (softest / lowest\n                 transmitted shock). OMIT unless the user states a preference.",
+          "args_schema": {
+            "description": "Select the optimal wire rope isolator. By DEFAULT scans the practical-rack range\nCB1400 / CB1500 / CB1700; the softer 6-strand CB61400 is opt-in (pass series=\"ALL\").\nEvaluates every matching part and recommends the best per `objective` (default:\nSTIFFEST that passes = least movement / max clearance):\n  - GT < GT_limit in all 3 load directions (compression vertical, lateral, shear)\n  - Dynamic deflection < isolator's rated travel in all 3 directions\nReturns the full selection table plus mathematical proof for the recommended part.\n\nIMPORTANT \u2014 parameter handling:\nOnly pass values for parameters the user explicitly specifies. For everything\nelse, OMIT the parameter so the project default applies. Do NOT guess and do\nNOT pass 0 for the shock parameters \u2014 0 makes the physics trivial.\n\nProject defaults (used if you omit the parameter):\n    n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms),\n    GT_limit_G=10.0G, series=\"AUTO\", pulse_shape=\"sawtooth\",\n    objective=\"max_clearance\"\n\nArgs:\n    mass_kg    : REQUIRED. Total assembly mass in kg. Get from extract_cad_data\n                 or ask the user.\n    n_bottom   : Number of bottom-mounted isolators. Default 6. OMIT unless user says.\n    n_wall     : Number of wall-mounted isolators. Default 4. OMIT unless user says.\n    Ao_G       : Shock magnitude in G. Default 20.0 (MIL-STD-810H Category 4).\n                 OMIT unless user explicitly gives a different shock spec.\n    to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0 (11 ms saw-tooth).\n                 OMIT unless user explicitly gives a different pulse duration.\n    GT_limit_G : Max allowable transmitted G. Default 10.0 G. OMIT unless user says.\n    series     : Catalog filter. Default \"AUTO\" (CB1400/CB1500/CB1700 \u2014 practical\n                 19\" rack range). Pass \"ALL\" to also include the softer 6-strand\n                 CB61400, or a single series name (\"CB61400\"/\"CB1400\"/\"CB1500\"/\"CB1700\").\n    pulse_shape: \"sawtooth\" (default) or \"half_sine\". OMIT unless the user\n                 names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.\n    objective  : Tiebreak among passing parts: \"max_clearance\" (smallest\n                 deflection, default) or \"best_isolation\" (softest / lowest\n                 transmitted shock). OMIT unless the user states a preference.",
+            "properties": {
+              "mass_kg": {
+                "title": "Mass Kg",
+                "type": "number"
+              },
+              "n_bottom": {
+                "default": 6,
+                "title": "N Bottom",
+                "type": "integer"
+              },
+              "n_wall": {
+                "default": 4,
+                "title": "N Wall",
+                "type": "integer"
+              },
+              "Ao_G": {
+                "default": 20.0,
+                "title": "Ao G",
+                "type": "number"
+              },
+              "to_ms": {
+                "default": 11.0,
+                "title": "To Ms",
+                "type": "number"
+              },
+              "GT_limit_G": {
+                "default": 10.0,
+                "title": "Gt Limit G",
+                "type": "number"
+              },
+              "series": {
+                "default": "AUTO",
+                "title": "Series",
+                "type": "string"
+              },
+              "pulse_shape": {
+                "default": "sawtooth",
+                "title": "Pulse Shape",
+                "type": "string"
+              },
+              "objective": {
+                "default": "max_clearance",
+                "title": "Objective",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mass_kg"
+            ],
+            "title": "select_isolator",
+            "type": "object"
+          }
+        },
+        {
+          "name": "run_shock_analysis",
+          "description": "Verify whether a specific isolator part passes shock analysis for a given mass.\nCalculates: fn (natural frequency, Hz), GT (transmitted G), dD (dynamic deflection, mm).\nUse this to confirm the recommended part, or to test a user-specified part number.\n\nIMPORTANT \u2014 parameter handling:\nOnly pass values the user explicitly specifies. OMIT all other parameters\nso the project defaults apply. Do NOT pass 0 for shock parameters \u2014 0 makes\nthe physics trivial (every part passes).\n\nProject defaults (used if you omit the parameter):\n    n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms), GT_limit_G=10.0G\n\nArgs:\n    mass_kg    : REQUIRED. Total assembly mass in kg.\n    part_no    : REQUIRED. Isolator part number, e.g. 'CB1400-15', 'CB1500-30'.\n    n_bottom   : Bottom-mount count. Default 6. OMIT unless user says.\n    n_wall     : Wall-mount count.   Default 4. OMIT unless user says.\n    Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user specifies.\n    to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0. OMIT unless user specifies.\n    GT_limit_G : Max allowable transmitted G. Default 10.0. OMIT unless user says.\n    pulse_shape: \"sawtooth\" (default) or \"half_sine\". OMIT unless the user\n                 names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.",
+          "args_schema": {
+            "description": "Verify whether a specific isolator part passes shock analysis for a given mass.\nCalculates: fn (natural frequency, Hz), GT (transmitted G), dD (dynamic deflection, mm).\nUse this to confirm the recommended part, or to test a user-specified part number.\n\nIMPORTANT \u2014 parameter handling:\nOnly pass values the user explicitly specifies. OMIT all other parameters\nso the project defaults apply. Do NOT pass 0 for shock parameters \u2014 0 makes\nthe physics trivial (every part passes).\n\nProject defaults (used if you omit the parameter):\n    n_bottom=6, n_wall=4, Ao_G=20.0G, to_ms=11.0 (11 ms), GT_limit_G=10.0G\n\nArgs:\n    mass_kg    : REQUIRED. Total assembly mass in kg.\n    part_no    : REQUIRED. Isolator part number, e.g. 'CB1400-15', 'CB1500-30'.\n    n_bottom   : Bottom-mount count. Default 6. OMIT unless user says.\n    n_wall     : Wall-mount count.   Default 4. OMIT unless user says.\n    Ao_G       : Shock magnitude in G. Default 20.0. OMIT unless user specifies.\n    to_ms      : Shock pulse duration in MILLISECONDS. Default 11.0. OMIT unless user specifies.\n    GT_limit_G : Max allowable transmitted G. Default 10.0. OMIT unless user says.\n    pulse_shape: \"sawtooth\" (default) or \"half_sine\". OMIT unless the user\n                 names a pulse shape. Half-sine is ~27% harsher for the same Ao/to.",
+            "properties": {
+              "mass_kg": {
+                "title": "Mass Kg",
+                "type": "number"
+              },
+              "part_no": {
+                "default": "CB1400-15",
+                "title": "Part No",
+                "type": "string"
+              },
+              "n_bottom": {
+                "default": 6,
+                "title": "N Bottom",
+                "type": "integer"
+              },
+              "n_wall": {
+                "default": 4,
+                "title": "N Wall",
+                "type": "integer"
+              },
+              "Ao_G": {
+                "default": 20.0,
+                "title": "Ao G",
+                "type": "number"
+              },
+              "to_ms": {
+                "default": 11.0,
+                "title": "To Ms",
+                "type": "number"
+              },
+              "GT_limit_G": {
+                "default": 10.0,
+                "title": "Gt Limit G",
+                "type": "number"
+              },
+              "pulse_shape": {
+                "default": "sawtooth",
+                "title": "Pulse Shape",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mass_kg"
+            ],
+            "title": "run_shock_analysis",
+            "type": "object"
+          }
+        },
+        {
+          "name": "analyze_custom_isolator",
+          "description": "Analyze a non-catalog/custom wire-rope isolator using vendor-supplied data.\n\nUse this when the part is NOT in the built-in CB catalog, or when the user\nsupplies a vendor row from Vibratec, Socitec, or another manufacturer.\nPython validates units, derives stiffness when needed, runs the existing\n4-case shock engine, and returns the provenance caveat.\n\nIMPORTANT -- parameter handling:\nOnly pass values the user explicitly specifies or that were explicitly\nextracted from a vendor row. OMIT all other parameters so defaults apply.\nDo NOT invent compression/shear data. If shear data is missing, call this\ntool only if you want it to return an error asking for shear data.\n\nStiffness modes:\n  - direct_k: value is stiffness. Units: N/m, N/mm, lb/in.\n  - rated_load_frequency: value is rated load mass, unit kg, plus frequency_hz.\n    Example: Vibratec \"30 kg at 10 Hz\".\n  - force_deflection: value is force, units N/daN/kN, plus deflection and\n    deflection_unit. Example: Socitec \"Max Shock F daN\" with \"d mm\".\n\nArgs:\n    mass_kg: REQUIRED. Total supported mass in kg.\n    vendor: REQUIRED. Vendor name, e.g. \"Vibratec\" or \"Socitec\".\n    part_no: REQUIRED. Vendor part number.\n    comp_stiffness_mode: REQUIRED. direct_k, rated_load_frequency, or force_deflection.\n    comp_value: REQUIRED. Compression K, rated load, or force depending on mode.\n    comp_unit: REQUIRED. Unit for comp_value.\n    comp_max_dynamic_travel: REQUIRED. Compression max dynamic travel.\n    comp_travel_unit: Unit for compression travel. Default mm. OMIT if mm.\n    shear_stiffness_mode: REQUIRED. Same modes as compression; do not guess.\n    shear_value: REQUIRED. Shear K, rated load, or force depending on mode.\n    shear_unit: REQUIRED. Unit for shear_value.\n    shear_max_dynamic_travel: REQUIRED. Shear max dynamic travel.\n    shear_travel_unit: Unit for shear travel. Default mm. OMIT if mm.\n    comp_frequency_hz: REQUIRED only for comp_stiffness_mode=rated_load_frequency.\n    shear_frequency_hz: REQUIRED only for shear_stiffness_mode=rated_load_frequency.\n    comp_deflection: REQUIRED only for comp_stiffness_mode=force_deflection.\n    comp_deflection_unit: REQUIRED only for comp_stiffness_mode=force_deflection.\n    shear_deflection: REQUIRED only for shear_stiffness_mode=force_deflection.\n    shear_deflection_unit: REQUIRED only for shear_stiffness_mode=force_deflection.\n    max_static_comp: Optional vendor max static compression load. OMIT if absent.\n    max_static_comp_unit: Unit for max_static_comp: kg, daN, or N. OMIT if absent.\n    source: Optional short provenance note. OMIT unless known.\n    n_bottom: Bottom mount count. Default 6. OMIT unless user says.\n    n_wall: Wall mount count. Default 4. OMIT unless user says.\n    Ao_G: Shock magnitude in G. Default 20.0. OMIT unless user specifies.\n    to_ms: Shock pulse duration in milliseconds. Default 11.0. OMIT unless user specifies.\n    GT_limit_G: Max allowable transmitted G. Default 10.0. OMIT unless user says.\n    pulse_shape: sawtooth (default) or half_sine. OMIT unless user specifies.",
+          "args_schema": {
+            "description": "Analyze a non-catalog/custom wire-rope isolator using vendor-supplied data.\n\nUse this when the part is NOT in the built-in CB catalog, or when the user\nsupplies a vendor row from Vibratec, Socitec, or another manufacturer.\nPython validates units, derives stiffness when needed, runs the existing\n4-case shock engine, and returns the provenance caveat.\n\nIMPORTANT -- parameter handling:\nOnly pass values the user explicitly specifies or that were explicitly\nextracted from a vendor row. OMIT all other parameters so defaults apply.\nDo NOT invent compression/shear data. If shear data is missing, call this\ntool only if you want it to return an error asking for shear data.\n\nStiffness modes:\n  - direct_k: value is stiffness. Units: N/m, N/mm, lb/in.\n  - rated_load_frequency: value is rated load mass, unit kg, plus frequency_hz.\n    Example: Vibratec \"30 kg at 10 Hz\".\n  - force_deflection: value is force, units N/daN/kN, plus deflection and\n    deflection_unit. Example: Socitec \"Max Shock F daN\" with \"d mm\".\n\nArgs:\n    mass_kg: REQUIRED. Total supported mass in kg.\n    vendor: REQUIRED. Vendor name, e.g. \"Vibratec\" or \"Socitec\".\n    part_no: REQUIRED. Vendor part number.\n    comp_stiffness_mode: REQUIRED. direct_k, rated_load_frequency, or force_deflection.\n    comp_value: REQUIRED. Compression K, rated load, or force depending on mode.\n    comp_unit: REQUIRED. Unit for comp_value.\n    comp_max_dynamic_travel: REQUIRED. Compression max dynamic travel.\n    comp_travel_unit: Unit for compression travel. Default mm. OMIT if mm.\n    shear_stiffness_mode: REQUIRED. Same modes as compression; do not guess.\n    shear_value: REQUIRED. Shear K, rated load, or force depending on mode.\n    shear_unit: REQUIRED. Unit for shear_value.\n    shear_max_dynamic_travel: REQUIRED. Shear max dynamic travel.\n    shear_travel_unit: Unit for shear travel. Default mm. OMIT if mm.\n    comp_frequency_hz: REQUIRED only for comp_stiffness_mode=rated_load_frequency.\n    shear_frequency_hz: REQUIRED only for shear_stiffness_mode=rated_load_frequency.\n    comp_deflection: REQUIRED only for comp_stiffness_mode=force_deflection.\n    comp_deflection_unit: REQUIRED only for comp_stiffness_mode=force_deflection.\n    shear_deflection: REQUIRED only for shear_stiffness_mode=force_deflection.\n    shear_deflection_unit: REQUIRED only for shear_stiffness_mode=force_deflection.\n    max_static_comp: Optional vendor max static compression load. OMIT if absent.\n    max_static_comp_unit: Unit for max_static_comp: kg, daN, or N. OMIT if absent.\n    source: Optional short provenance note. OMIT unless known.\n    n_bottom: Bottom mount count. Default 6. OMIT unless user says.\n    n_wall: Wall mount count. Default 4. OMIT unless user says.\n    Ao_G: Shock magnitude in G. Default 20.0. OMIT unless user specifies.\n    to_ms: Shock pulse duration in milliseconds. Default 11.0. OMIT unless user specifies.\n    GT_limit_G: Max allowable transmitted G. Default 10.0. OMIT unless user says.\n    pulse_shape: sawtooth (default) or half_sine. OMIT unless user specifies.",
+            "properties": {
+              "mass_kg": {
+                "title": "Mass Kg",
+                "type": "number"
+              },
+              "vendor": {
+                "title": "Vendor",
+                "type": "string"
+              },
+              "part_no": {
+                "title": "Part No",
+                "type": "string"
+              },
+              "comp_stiffness_mode": {
+                "title": "Comp Stiffness Mode",
+                "type": "string"
+              },
+              "comp_value": {
+                "title": "Comp Value",
+                "type": "number"
+              },
+              "comp_unit": {
+                "title": "Comp Unit",
+                "type": "string"
+              },
+              "comp_max_dynamic_travel": {
+                "title": "Comp Max Dynamic Travel",
+                "type": "number"
+              },
+              "comp_travel_unit": {
+                "default": "mm",
+                "title": "Comp Travel Unit",
+                "type": "string"
+              },
+              "shear_stiffness_mode": {
+                "default": "",
+                "title": "Shear Stiffness Mode",
+                "type": "string"
+              },
+              "shear_value": {
+                "default": 0.0,
+                "title": "Shear Value",
+                "type": "number"
+              },
+              "shear_unit": {
+                "default": "",
+                "title": "Shear Unit",
+                "type": "string"
+              },
+              "shear_max_dynamic_travel": {
+                "default": 0.0,
+                "title": "Shear Max Dynamic Travel",
+                "type": "number"
+              },
+              "shear_travel_unit": {
+                "default": "mm",
+                "title": "Shear Travel Unit",
+                "type": "string"
+              },
+              "comp_frequency_hz": {
+                "default": 0.0,
+                "title": "Comp Frequency Hz",
+                "type": "number"
+              },
+              "shear_frequency_hz": {
+                "default": 0.0,
+                "title": "Shear Frequency Hz",
+                "type": "number"
+              },
+              "comp_deflection": {
+                "default": 0.0,
+                "title": "Comp Deflection",
+                "type": "number"
+              },
+              "comp_deflection_unit": {
+                "default": "",
+                "title": "Comp Deflection Unit",
+                "type": "string"
+              },
+              "shear_deflection": {
+                "default": 0.0,
+                "title": "Shear Deflection",
+                "type": "number"
+              },
+              "shear_deflection_unit": {
+                "default": "",
+                "title": "Shear Deflection Unit",
+                "type": "string"
+              },
+              "max_static_comp": {
+                "default": 0.0,
+                "title": "Max Static Comp",
+                "type": "number"
+              },
+              "max_static_comp_unit": {
+                "default": "",
+                "title": "Max Static Comp Unit",
+                "type": "string"
+              },
+              "source": {
+                "default": "",
+                "title": "Source",
+                "type": "string"
+              },
+              "n_bottom": {
+                "default": 6,
+                "title": "N Bottom",
+                "type": "integer"
+              },
+              "n_wall": {
+                "default": 4,
+                "title": "N Wall",
+                "type": "integer"
+              },
+              "Ao_G": {
+                "default": 20.0,
+                "title": "Ao G",
+                "type": "number"
+              },
+              "to_ms": {
+                "default": 11.0,
+                "title": "To Ms",
+                "type": "number"
+              },
+              "GT_limit_G": {
+                "default": 10.0,
+                "title": "Gt Limit G",
+                "type": "number"
+              },
+              "pulse_shape": {
+                "default": "sawtooth",
+                "title": "Pulse Shape",
+                "type": "string"
+              }
+            },
+            "required": [
+              "mass_kg",
+              "vendor",
+              "part_no",
+              "comp_stiffness_mode",
+              "comp_value",
+              "comp_unit",
+              "comp_max_dynamic_travel"
+            ],
+            "title": "analyze_custom_isolator",
+            "type": "object"
+          }
+        },
+        {
+          "name": "get_isolator_data",
+          "description": "DATA LOOKUP in the isolator catalog -- no analysis. Use this for:\n  - \"what is the stiffness / rated travel / size of CB1400-30?\"\n  - \"what parts are in the CB1500 series?\"\n  - \"what series / parts are available?\"\nCatalog numbers come from THIS tool only -- never from memory, and never\nconvert lb/in to N/m yourself.\n\nOMIT both arguments for the overview of all four series.\n\nArgs:\n    part_no : Exact part number, e.g. \"CB1400-30\". OMIT if asking about a series.\n    series  : \"CB61400\", \"CB1400\", \"CB1500\" or \"CB1700\". OMIT for all series.",
+          "args_schema": {
+            "description": "DATA LOOKUP in the isolator catalog -- no analysis. Use this for:\n  - \"what is the stiffness / rated travel / size of CB1400-30?\"\n  - \"what parts are in the CB1500 series?\"\n  - \"what series / parts are available?\"\nCatalog numbers come from THIS tool only -- never from memory, and never\nconvert lb/in to N/m yourself.\n\nOMIT both arguments for the overview of all four series.\n\nArgs:\n    part_no : Exact part number, e.g. \"CB1400-30\". OMIT if asking about a series.\n    series  : \"CB61400\", \"CB1400\", \"CB1500\" or \"CB1700\". OMIT for all series.",
+            "properties": {
+              "part_no": {
+                "default": "",
+                "title": "Part No",
+                "type": "string"
+              },
+              "series": {
+                "default": "",
+                "title": "Series",
+                "type": "string"
+              }
+            },
+            "title": "get_isolator_data",
+            "type": "object"
+          }
+        },
+        {
+          "name": "lookup_knowledge",
+          "description": "Search the hierarchical engineering knowledge base (knowledge/ folder).\n\nPrimary parent topic: 'shock_mount' \u2014 focused reference chunks covering:\n  - formulas: impulse_velocity, natural_frequency, transmitted_acceleration,\n    dynamic_deflection; load_distribution and four_load_cases\n  - gates and decisions: static_load_gate, travel_limit_gate,\n    governing_check, missing_input_policy\n  - workflows and objectives: selection_workflow, verification_workflow,\n    max_clearance_objective (DEFAULT: stiffest passing part, smallest\n    deflection), best_isolation_objective (softest passing part, lowest GT)\n  - catalogue provenance: cb1400_catalog, cb1500_catalog, cb1700_catalog,\n    cb61400_optional_scope\n  - standard basis: project_shock_requirements (where 20G/11ms/10G come\n    from), standard_scope, pulse_sawtooth, pulse_half_sine, and six\n    mil_std_516_8_* method pages\n  - model scope: model_assumptions, model_limitations,\n    road_vibration_check, installation_considerations,\n    validation_excel_baseline\n\nUse this to cite formulas, justify defaults and objectives, quote catalogue\nprovenance, or explain standard basis and model limits. Numerical results\nalways come from the deterministic tools, never from these pages.\n\nArgs:\n    query:         What you want to know, in natural language.\n                   Examples: \"GT formula\", \"why divide mass by 2\",\n                   \"where does 20 G come from\", \"CB61400 static rating\".\n    parent_topic:  Optional filter \u2014 e.g. \"shock_mount\". Leave empty to\n                   search across all topics.\n\nReturns the top matching pages with topic labels so they can be cited.",
+          "args_schema": {
+            "description": "Search the hierarchical engineering knowledge base (knowledge/ folder).\n\nPrimary parent topic: 'shock_mount' \u2014 focused reference chunks covering:\n  - formulas: impulse_velocity, natural_frequency, transmitted_acceleration,\n    dynamic_deflection; load_distribution and four_load_cases\n  - gates and decisions: static_load_gate, travel_limit_gate,\n    governing_check, missing_input_policy\n  - workflows and objectives: selection_workflow, verification_workflow,\n    max_clearance_objective (DEFAULT: stiffest passing part, smallest\n    deflection), best_isolation_objective (softest passing part, lowest GT)\n  - catalogue provenance: cb1400_catalog, cb1500_catalog, cb1700_catalog,\n    cb61400_optional_scope\n  - standard basis: project_shock_requirements (where 20G/11ms/10G come\n    from), standard_scope, pulse_sawtooth, pulse_half_sine, and six\n    mil_std_516_8_* method pages\n  - model scope: model_assumptions, model_limitations,\n    road_vibration_check, installation_considerations,\n    validation_excel_baseline\n\nUse this to cite formulas, justify defaults and objectives, quote catalogue\nprovenance, or explain standard basis and model limits. Numerical results\nalways come from the deterministic tools, never from these pages.\n\nArgs:\n    query:         What you want to know, in natural language.\n                   Examples: \"GT formula\", \"why divide mass by 2\",\n                   \"where does 20 G come from\", \"CB61400 static rating\".\n    parent_topic:  Optional filter \u2014 e.g. \"shock_mount\". Leave empty to\n                   search across all topics.\n\nReturns the top matching pages with topic labels so they can be cited.",
+            "properties": {
+              "query": {
+                "title": "Query",
+                "type": "string"
+              },
+              "parent_topic": {
+                "default": "",
+                "title": "Parent Topic",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "title": "lookup_knowledge",
+            "type": "object"
+          }
+        }
+      ]
+    }
+  },
+  "source_files": [
+    {
+      "path": "agent.py",
+      "sha256": "bfb6c98eeead8288c2d7db9790443f4a06079f35c07928ccdd677ba04188a877",
+      "size_bytes": 76059
+    },
+    {
+      "path": "llm_config.py",
+      "sha256": "98b5280b3318cfd13ba79743241f9396119bbc21e9ef41c15436a119ae8abb61",
+      "size_bytes": 4623
+    },
+    {
+      "path": "catalog.py",
+      "sha256": "601792aceb474af56c4c1f1b73a70754a8250120caa3c0e7515eaade3f4e9e67",
+      "size_bytes": 26047
+    },
+    {
+      "path": "physics_engine.py",
+      "sha256": "70ca832500b1f6308bd120dc4d247b4a84c43f19ca4a3b6a0902d89c77e2b0cf",
+      "size_bytes": 14848
+    },
+    {
+      "path": "nvidia_embedder.py",
+      "sha256": "00956d953ebe5a9020b58c9e067780323c94949a9881e64ed1ded482956ca59e",
+      "size_bytes": 10870
+    },
+    {
+      "path": "evaluation/models/qwen35-9b.Modelfile",
+      "sha256": "ebc9c247d2a2d7158bbf15b3278f833758f0cd021da3d58dffe86e44bea5c5d3",
+      "size_bytes": 175
+    },
+    {
+      "path": "evaluation/harness/systems.py",
+      "sha256": "82163f2072a11a12897e489f91bf8ef8624d90a78628eddd7ed3a4c60a230ce2",
+      "size_bytes": 9592
+    },
+    {
+      "path": "evaluation/harness/runner.py",
+      "sha256": "4273a8042a74d8e8f20fe1e564585705a19c4c71a98542a367ac0263d027e42a",
+      "size_bytes": 11483
+    },
+    {
+      "path": "evaluation/harness/verdict.py",
+      "sha256": "9a69a0c06ee0e316331ff4881cc94ba02a755aa0b79de4604ba132d351c360af",
+      "size_bytes": 3512
+    },
+    {
+      "path": "evaluation/scoring/metrics.py",
+      "sha256": "2c0ecfcf651800d289a2a44fc97354a6150c7096cf2fe4cd1fa470b1ae94764c",
+      "size_bytes": 10797
+    },
+    {
+      "path": "evaluation/scoring/scorer.py",
+      "sha256": "e10bd438a483d0452bcb93ffdaead7db09f13c7a0e1550cda4318a6a4e0cf723",
+      "size_bytes": 3243
+    }
+  ],
+  "ollama": {
+    "version_endpoint": "http://localhost:11434",
+    "alias": "cad-eval-qwen35-9b:8k",
+    "digest": "41877dcbd4e07e5c9c40f5ab7968bc651674d83801a171cfd6b0684d13701910",
+    "size_bytes": 6594474774,
+    "details": {
+      "parent_model": "qwen3.5:9b",
+      "format": "gguf",
+      "family": "qwen35",
+      "families": [
+        "qwen35"
+      ],
+      "parameter_size": "9.7B",
+      "quantization_level": "Q4_K_M",
+      "context_length": 262144,
+      "embedding_length": 4096
+    },
+    "parameters": {
+      "presence_penalty": "1.5",
+      "repeat_penalty": "1",
+      "seed": "42",
+      "temperature": "0",
+      "top_k": "20",
+      "top_p": "0.95",
+      "num_ctx": "8192",
+      "num_predict": "2048"
+    }
+  },
+  "manifest_content_sha256": "4946cfdf9386f8c350e76c7313726e30a849d72da60610d2df0b2996d0c22a6f"
+}

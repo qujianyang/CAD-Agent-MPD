@@ -271,6 +271,7 @@ def test_evaluation_agent_removes_rag_tool(monkeypatch):
     assert "RAG is disabled" in captured["system_prompt"]
     assert "EVALUATION OUTPUT CONTRACT" in captured["system_prompt"]
     assert "Never write \"null\" as a\nstring" in captured["system_prompt"]
+    assert "CRITICAL ENGINEERING VERDICT RULE" in captured["system_prompt"]
 
 
 def test_core_bcd_systems_change_only_tools_and_rag():

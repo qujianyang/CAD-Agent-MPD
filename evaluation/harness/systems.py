@@ -225,6 +225,15 @@ end with exactly this shape (with the appropriate missing field names):
   "citations": []
 }
 ```
+
+CRITICAL ENGINEERING VERDICT RULE: For any question that asks for an isolator
+selection, an engineering verification, or whether a configuration passes, the
+final envelope verdict MUST be "PASS", "FAIL", or "ASK". Never use null for
+an engineering decision. When a deterministic engineering tool was called,
+copy its PASS or FAIL outcome into the final envelope. Use ASK only when a
+required input is missing or contradictory. Use null only for a pure
+information or catalogue-lookup question that has no engineering safety
+decision. This rule overrides the illustrative null example above.
 """
 
 

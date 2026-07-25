@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Preserve frozen evaluation evidence byte-for-byte so published SHA-256
+# checksums remain valid across Windows and Linux checkouts.
+evaluation/benchmark/*.jsonl binary
+evaluation/runs/*.jsonl binary
+evaluation/results/*_scored.json binary
+evaluation/results/*_formal.json binary
+evaluation/results/*_report.md binary
+evaluation/artifacts/*.json binary
+artifacts/embedding_candidates/*.json binary

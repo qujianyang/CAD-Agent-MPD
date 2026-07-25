@@ -25,6 +25,11 @@ class TestGenuineClarificationIsToolFree:
         a = "Which part number should I check?"
         assert _requires_tool(q, a) is False
 
+    def test_declarative_request_for_missing_mass_no_claim(self):
+        q = "Select an isolator."
+        a = "Please provide the rack mass in kg before I can run the selection."
+        assert _requires_tool(q, a) is False
+
 
 class TestTechnicalAnswersRequireTool:
     def test_loophole_question_mark_with_claim(self):

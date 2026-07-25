@@ -1,4 +1,4 @@
-# CAD Agent — Shock Mount Selection
+# CAD Agent - Shock Mount Selection
 # Linux-safe runtime requirements (Streamlit Community Cloud, Python 3.12).
 # Pins match the verified `mpd` venv; all have manylinux + cp312 wheels.
 #
@@ -11,7 +11,7 @@
 #     extraction tab self-disables on non-Windows.
 #   - Provider is chosen by LLM_PROVIDER (default "nvidia"; "openai" also supported).
 #     Both client libs are included so either provider works on Cloud.
-#   - Optional, NOT needed to run the app — install separately if you use them:
+#   - Optional, NOT needed to run the app - install separately if you use them:
 #       PyMuPDF, pymupdf4llm   -> legacy MIL-STD PDF ingestion (setup_rag.py)
 #       sentence-transformers  -> local embedding fallback (setup_knowledge.py --local)
 

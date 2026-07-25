@@ -1391,6 +1391,14 @@ _CLAIM_RE = re.compile(
 _INPUT_REQ_RE = re.compile(
     r"(mass|kg|weight|part\s*(number|no)|which part|mount|configuration|"
     r"shock|pulse|half[\s-]?sine|saw[\s-]?tooth)", re.IGNORECASE)
+# A clarification can be a polite declarative sentence, not only a question.
+# Keep this deliberately narrow so technical claims still require a tool call.
+_CLARIFICATION_REQUEST_RE = re.compile(
+    r"\b(?:please\s+(?:provide|supply|share|confirm|re-ask)|"
+    r"(?:i\s+)?(?:need|require)\s+(?:the\s+)?|"
+    r"(?:cannot|can't)\s+(?:select|verify|analyse|analyze|assess)\s+without)\b",
+    re.IGNORECASE,
+)
 
 _TOOLUSE_CORRECTION = (
     "You answered WITHOUT calling a tool. Every part number, GT value, stiffness, "
@@ -1455,7 +1463,9 @@ def _requires_tool(question: str, answer: str) -> bool:
     if _SMALLTALK_RE.search(question or ""):
         return False
     a = answer or ""
-    asks_for_input = ("?" in a) and bool(_INPUT_REQ_RE.search(a))
+    asks_for_input = bool(_INPUT_REQ_RE.search(a)) and (
+        "?" in a or bool(_CLARIFICATION_REQUEST_RE.search(a))
+    )
     makes_claim = bool(_CLAIM_RE.search(a))
     if asks_for_input and not makes_claim:
         return False

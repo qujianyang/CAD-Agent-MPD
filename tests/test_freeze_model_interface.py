@@ -22,13 +22,13 @@ def test_manifest_captures_identical_core_model_settings():
     assert len(manifest["manifest_content_sha256"]) == 64
 
 
-def test_manifest_captures_engineering_domains_and_tool_schemas():
+def test_manifest_captures_shock_mount_domain_and_tool_schema():
     manifest = build_manifest(
         "http://localhost:11434/v1",
         verify_ollama=False,
     )
 
-    assert set(manifest["domains"]) == {"shock_mount", "tiedown", "mobility"}
+    assert set(manifest["domains"]) == {"shock_mount"}
     for domain in manifest["domains"].values():
         assert len(domain["prompt_sha256"]) == 64
         assert len(domain["tool_schema_sha256"]) == 64

@@ -1,6 +1,29 @@
 # Current Status
 
-_Last updated: 2026-07-13 (local-LLM development screening completed)_
+_Last updated: 2026-07-26 (formal B/C/D evaluation completed and frozen)_
+
+## Formal evaluation release (2026-07-26)
+
+- Completed the shock-mount B/C/D controlled ablation on the frozen 170-case
+  benchmark with three repeats: 510 records per system, 1,530 total.
+- Majority verdict accuracy: B 38.6% (54/140), C 82.1% (115/140), and D 84.3%
+  (118/140).
+- False-safe rate: B 13.8% (4/29), C 13.8% (4/29), and D 3.4% (1/29).
+- Paired exact McNemar results: B to C +43.6 percentage points, `p < 0.0001`;
+  C to D +2.1 points, `p = 0.6291`.
+- System D retrieval Hit@3 was 86.7%. RAG produced a measurable safety gain,
+  but its small overall verdict-accuracy increase was not statistically
+  significant in this benchmark.
+- Preserved raw B/C/D records, deterministic scored files, formal JSON, and
+  the report under `evaluation/runs/` and `evaluation/results/`.
+- Clean-room reproducibility check passed: fresh Python 3.10.8 venv installed
+  from `requirements-dev.txt`; release-focused suite passed 37/37 tests.
+- Verified development/final separation: zero case-ID, exact-question, or input
+  configuration overlaps.
+- Authoritative closeout:
+  `evaluation/FINAL_RELEASE_VERIFICATION.md` and `evaluation/FREEZE.md`.
+- Release tag: `eval-freeze-v1`. Any model, prompt, tool, engine, RAG, benchmark,
+  parser, or scorer change starts a new evaluation version.
 
 ## Local RAG development checkpoint (2026-07-14)
 
