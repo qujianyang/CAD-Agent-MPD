@@ -1411,6 +1411,24 @@ _TOOLUSE_SAFE_NOTICE = (
     "wrong. Please re-ask and include the key inputs (e.g. the rack mass, the part "
     "number, or whether the pulse is half-sine).")
 
+_CURRENT_CONTEXT_MARKERS = (
+    "current analysis",
+    "current result",
+    "this analysis",
+    "this result",
+    "selected isolator",
+    "current isolator",
+    "current selection",
+    "recommended part",
+    "why was",
+    "closest-to-fail",
+    "closest to failing",
+    "governing condition",
+    "catalog alternatives",
+    "nearest catalog",
+    "check next",
+)
+
 
 def _build_chat_model(cfg: LLMConfig):
     if not cfg.api_key:
@@ -1472,6 +1490,12 @@ def _requires_tool(question: str, answer: str) -> bool:
     return True
 
 
+def _is_context_grounded_question(question: str) -> bool:
+    """True only for questions that describe an already computed UI result."""
+    normalized = " ".join((question or "").lower().split())
+    return any(marker in normalized for marker in _CURRENT_CONTEXT_MARKERS)
+
+
 class DomainAgent:
     """LangChain tool-calling agent for one engineering domain (focused prompt + tools)."""
 
@@ -1490,19 +1514,46 @@ class DomainAgent:
         llm = _build_chat_model(cfg)
         self._agent = create_agent(llm, tools, system_prompt=system_prompt)
 
-    def invoke(self, question: str, chat_history: list | None = None) -> str:
+    def invoke(
+        self,
+        question: str,
+        chat_history: list | None = None,
+        runtime_context: str | None = None,
+        allow_context_answer: bool = False,
+    ) -> str:
         """Run the agent and return the final answer text. Routes through the
         guarded stream() so tool-use enforcement applies here too."""
         if _MLFLOW_ON:
             import mlflow  # only imported once tracing was explicitly enabled
             with mlflow.start_run(run_name=f"{self._domain}-invoke", nested=True):
                 mlflow.set_tags({"domain": self._domain, "question": question[:120]})
-                return self._collect_final(question, chat_history)
-        return self._collect_final(question, chat_history)
+                return self._collect_final(
+                    question,
+                    chat_history,
+                    runtime_context,
+                    allow_context_answer,
+                )
+        return self._collect_final(
+            question,
+            chat_history,
+            runtime_context,
+            allow_context_answer,
+        )
 
-    def _collect_final(self, question: str, chat_history: list | None = None) -> str:
+    def _collect_final(
+        self,
+        question: str,
+        chat_history: list | None = None,
+        runtime_context: str | None = None,
+        allow_context_answer: bool = False,
+    ) -> str:
         final = ""
-        for ev in self.stream(question, chat_history):
+        for ev in self.stream(
+            question,
+            chat_history,
+            runtime_context,
+            allow_context_answer,
+        ):
             if ev["type"] == "final":
                 final = ev["content"]
         return final
@@ -1546,7 +1597,13 @@ class DomainAgent:
                         last_ai_content = content
         yield {"type": "_final", "content": last_ai_content}
 
-    def stream(self, question: str, chat_history: list | None = None):
+    def stream(
+        self,
+        question: str,
+        chat_history: list | None = None,
+        runtime_context: str | None = None,
+        allow_context_answer: bool = False,
+    ):
         """
         Stream structured events as the agent works (for Streamlit st.status).
         Yields dicts: reasoning | tool_call | tool_result | final.
@@ -1562,7 +1619,11 @@ class DomainAgent:
             chat_history = None
         else:
             chat_history = _limit_history(chat_history)
-        messages = list(chat_history) if chat_history else []
+        messages = []
+        if runtime_context:
+            messages.append(("system", runtime_context))
+        if chat_history:
+            messages.extend(chat_history)
         messages.append(("human", question))
 
         seen_tool_call_ids: set[str] = set()
@@ -1573,7 +1634,13 @@ class DomainAgent:
             else:
                 yield ev
 
+        context_answer_allowed = (
+            allow_context_answer
+            and bool(runtime_context)
+            and _is_context_grounded_question(question)
+        )
         if (not seen_tool_call_ids and self._domain in _ENFORCE_TOOLUSE_DOMAINS
+                and not context_answer_allowed
                 and _requires_tool(question, final_content)):
             retry_messages = messages + [
                 ("ai", final_content or "(no answer)"),

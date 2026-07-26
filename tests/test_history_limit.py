@@ -46,6 +46,23 @@ class _Capture:
     stream = DomainAgent.stream
 
 
+class _NoToolShockCapture:
+    """Shock agent stand-in that always returns an untooled technical answer."""
+
+    def __init__(self):
+        self._domain = "shock_mount"
+        self.drive_calls = 0
+
+    def _drive(self, messages, seen_tool_call_ids):
+        self.drive_calls += 1
+        yield {
+            "type": "_final",
+            "content": "CB1400-15 passes with transmitted GT of 6.3 G.",
+        }
+
+    stream = DomainAgent.stream
+
+
 class TestStreamAppliesCap:
     def test_stateful_domain_capped(self):
         # "mobility" is stateful but NOT in _ENFORCE_TOOLUSE_DOMAINS, so the
@@ -59,6 +76,46 @@ class TestStreamAppliesCap:
         agent = _Capture("ui_guide_shock")
         list(agent.stream("current q", chat_history=_make_history(10)))
         assert agent.seen_messages == [("human", "current q")]
+
+    def test_runtime_context_is_ephemeral_system_message_before_history(self):
+        agent = _Capture("mobility")
+        history = _make_history(4)
+        list(
+            agent.stream(
+                "current q",
+                chat_history=history,
+                runtime_context="CURRENT UI SNAPSHOT",
+            )
+        )
+        assert agent.seen_messages == [
+            ("system", "CURRENT UI SNAPSHOT"),
+            *history,
+            ("human", "current q"),
+        ]
+
+    def test_current_result_explanation_can_use_validated_runtime_context(self):
+        agent = _NoToolShockCapture()
+        events = list(
+            agent.stream(
+                "Explain the current analysis result.",
+                runtime_context="CURRENT VALIDATED SNAPSHOT",
+                allow_context_answer=True,
+            )
+        )
+        assert agent.drive_calls == 1
+        assert events[-1]["content"].startswith("CB1400-15 passes")
+
+    def test_new_calculation_still_triggers_tool_guard_with_runtime_context(self):
+        agent = _NoToolShockCapture()
+        events = list(
+            agent.stream(
+                "Select an isolator for a 1200 kg rack.",
+                runtime_context="CURRENT VALIDATED SNAPSHOT",
+                allow_context_answer=True,
+            )
+        )
+        assert agent.drive_calls == 2
+        assert "can't ground this" in events[-1]["content"]
 
 
 def _run():

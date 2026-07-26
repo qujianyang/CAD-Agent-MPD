@@ -4,7 +4,7 @@ Run: .\\mpd\\Scripts\\python.exe -m pytest tests/test_tooluse_guard.py
 No LLM / API key: we only exercise _requires_tool, the gate that decides whether a
 no-tool answer should trigger the retry guard in DomainAgent.stream().
 """
-from agent import _requires_tool
+from agent import _is_context_grounded_question, _requires_tool
 
 
 class TestSmallTalkIsToolFree:
@@ -53,3 +53,27 @@ class TestTechnicalAnswersRequireTool:
         q = "What mount for a 1200 kg cabinet?"
         a = "Recommendation: CB1400-60 in 6 bottom + 4 wall configuration."
         assert _requires_tool(q, a) is True
+
+
+class TestCurrentResultQuestions:
+    def test_context_actions_are_narrowly_recognized(self):
+        assert _is_context_grounded_question(
+            "Explain the current analysis result."
+        )
+        assert _is_context_grounded_question(
+            "Why was the current isolator selected?"
+        )
+        assert _is_context_grounded_question(
+            "Compare the selected isolator with the nearest catalog alternatives."
+        )
+
+    def test_new_or_hypothetical_calculations_are_not_context_explanations(self):
+        assert not _is_context_grounded_question(
+            "Select an isolator for a 1200 kg rack."
+        )
+        assert not _is_context_grounded_question(
+            "What happens if clearance is reduced to 8 mm?"
+        )
+        assert not _is_context_grounded_question(
+            "Why does natural frequency affect isolation?"
+        )
