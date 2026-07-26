@@ -1253,6 +1253,91 @@ def _render_shock_context_actions(snapshot, context_state: str) -> None:
         st.caption("Context actions are disabled until the analysis is rerun.")
 
 
+def _render_supplier_enquiry_pack(
+    snapshot,
+    context_state: str,
+    *,
+    layout_box_mm,
+    clearances,
+    wall_face: str,
+) -> None:
+    """Render a deterministic Word supplier-pack download."""
+    if snapshot is None:
+        return
+
+    with st.expander("Generate supplier enquiry pack", expanded=False):
+        st.caption(
+            "Creates a preliminary Word package directly from the current "
+            "Python result. Supplier confirmation remains pending."
+        )
+        if context_state != "current":
+            st.warning(
+                "Rerun the analysis before generating a supplier pack. The "
+                "stored result is no longer current."
+            )
+            return
+
+        meta_left, meta_right = st.columns(2)
+        project_reference = meta_left.text_input(
+            "Project / enquiry reference",
+            value="Shock isolation enquiry",
+            key="supplier_pack_project",
+        )
+        equipment_reference = meta_right.text_input(
+            "Equipment reference",
+            value="Equipment rack / enclosure",
+            key="supplier_pack_equipment",
+        )
+        prepared_by = meta_left.text_input(
+            "Prepared by",
+            value="",
+            key="supplier_pack_prepared_by",
+        )
+        supplier = meta_right.text_input(
+            "Intended supplier",
+            value="Helical / VMC",
+            key="supplier_pack_supplier",
+        )
+
+        try:
+            from supplier_enquiry_report import supplier_enquiry_pack_bytes
+
+            pack_bytes = supplier_enquiry_pack_bytes(
+                snapshot,
+                project_reference=project_reference,
+                equipment_reference=equipment_reference,
+                prepared_by=prepared_by,
+                supplier=supplier,
+                layout_box_mm=layout_box_mm,
+                clearances_mm=clearances,
+                wall_face=wall_face,
+            )
+        except Exception as exc:
+            st.error(f"Could not generate supplier enquiry pack: {exc}")
+            return
+
+        from datetime import datetime as _dt
+
+        timestamp = _dt.now().strftime("%Y%m%d_%H%M")
+        st.download_button(
+            "Download supplier enquiry pack (.docx)",
+            data=pack_bytes,
+            file_name=(
+                f"Supplier_Enquiry_{snapshot.analysis_id}_{timestamp}.docx"
+            ),
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
+            key=f"supplier_pack_download_{snapshot.analysis_id}",
+            width="stretch",
+        )
+        st.caption(
+            "Includes requirements, four load cases, alternatives, conceptual "
+            "mount coordinates, warnings, supplier questions and approval boundary."
+        )
+
+
 def render_floating_assistant(domain: str, title: str, placeholder: str,
                               *, quickstart=None):
     """
@@ -1664,6 +1749,13 @@ with tab_quick:
         shock_context_state = "stale" if selection_is_stale else "current"
 
     _render_shock_context_actions(shock_snapshot, shock_context_state)
+    _render_supplier_enquiry_pack(
+        shock_snapshot,
+        shock_context_state,
+        layout_box_mm=layout_box_mm,
+        clearances=(clr_x, clr_y, clr_z),
+        wall_face=wall_face,
+    )
 
     # ---- Shock-isolation assistant (collapsible, consistent with other tabs) ----
     from agent import SHOCK_CAPABILITIES
