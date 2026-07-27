@@ -1,0 +1,256 @@
+{
+  "summary": {
+    "runs": 4,
+    "verdict_accuracy": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "false_safe": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "false_fail": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "parseable_envelope": {
+      "successes": 4,
+      "total": 4,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5101091635454027,
+        1.0
+      ]
+    },
+    "first_tool_accuracy": {
+      "successes": 4,
+      "total": 4,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5101091635454027,
+        1.0
+      ]
+    },
+    "tool_sequence_accuracy": {
+      "successes": 4,
+      "total": 4,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5101091635454027,
+        1.0
+      ]
+    },
+    "valid_schema": {
+      "successes": 4,
+      "total": 4,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5101091635454027,
+        1.0
+      ]
+    },
+    "missing_input_accuracy": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "retrieval_hit_at_3": {
+      "successes": 4,
+      "total": 4,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5101091635454027,
+        1.0
+      ]
+    },
+    "retrieval_recall_at_3": {
+      "total": 4,
+      "mean": 0.875
+    },
+    "retrieval_mrr": {
+      "total": 4,
+      "mean": 1.0
+    },
+    "citation_precision": {
+      "total": 4,
+      "mean": 0.3333333333333333
+    },
+    "citation_recall": {
+      "total": 4,
+      "mean": 0.875
+    },
+    "citation_ids_are_retrieved": {
+      "successes": 4,
+      "total": 4,
+      "rate": 1.0,
+      "wilson_95": [
+        0.5101091635454027,
+        1.0
+      ]
+    },
+    "argument_accuracy": {
+      "correct": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "consistency": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "hard_failure": {
+      "successes": 0,
+      "total": 4,
+      "rate": 0.0,
+      "wilson_95": [
+        0.0,
+        0.4898908364545973
+      ]
+    },
+    "latency_ms": {
+      "p50": 32274.495000000003,
+      "p95": 37591.3457
+    }
+  },
+  "runs": [
+    {
+      "case_id": "rag_dev_001_tailoring",
+      "system": "D",
+      "repeat": 1,
+      "gold_verdict": null,
+      "predicted_verdict": null,
+      "parseable": true,
+      "verdict_correct": null,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 0,
+      "correct_arg_count": 0,
+      "extra_arg_count": 2,
+      "argument_accuracy": null,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "retrieval_hit_at_3": true,
+      "retrieval_recall_at_3": 1.0,
+      "retrieval_mrr": 1.0,
+      "citation_precision": 0.3333333333333333,
+      "citation_recall": 1.0,
+      "citation_ids_are_retrieved": true,
+      "latency_ms": 38406.917,
+      "hard_failure": false
+    },
+    {
+      "case_id": "rag_dev_002_tradeoff",
+      "system": "D",
+      "repeat": 1,
+      "gold_verdict": null,
+      "predicted_verdict": null,
+      "parseable": true,
+      "verdict_correct": null,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 0,
+      "correct_arg_count": 0,
+      "extra_arg_count": 2,
+      "argument_accuracy": null,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "retrieval_hit_at_3": true,
+      "retrieval_recall_at_3": 0.5,
+      "retrieval_mrr": 1.0,
+      "citation_precision": 0.3333333333333333,
+      "citation_recall": 0.5,
+      "citation_ids_are_retrieved": true,
+      "latency_ms": 32969.775,
+      "hard_failure": false
+    },
+    {
+      "case_id": "rag_dev_003_selection_inputs",
+      "system": "D",
+      "repeat": 1,
+      "gold_verdict": null,
+      "predicted_verdict": null,
+      "parseable": true,
+      "verdict_correct": null,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 0,
+      "correct_arg_count": 0,
+      "extra_arg_count": 2,
+      "argument_accuracy": null,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "retrieval_hit_at_3": true,
+      "retrieval_recall_at_3": 1.0,
+      "retrieval_mrr": 1.0,
+      "citation_precision": 0.3333333333333333,
+      "citation_recall": 1.0,
+      "citation_ids_are_retrieved": true,
+      "latency_ms": 31579.215,
+      "hard_failure": false
+    },
+    {
+      "case_id": "rag_dev_004_vibration_boundary",
+      "system": "D",
+      "repeat": 1,
+      "gold_verdict": null,
+      "predicted_verdict": null,
+      "parseable": true,
+      "verdict_correct": null,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 0,
+      "correct_arg_count": 0,
+      "extra_arg_count": 2,
+      "argument_accuracy": null,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "retrieval_hit_at_3": true,
+      "retrieval_recall_at_3": 1.0,
+      "retrieval_mrr": 1.0,
+      "citation_precision": 0.3333333333333333,
+      "citation_recall": 1.0,
+      "citation_ids_are_retrieved": true,
+      "latency_ms": 26932.485,
+      "hard_failure": false
+    }
+  ]
+}

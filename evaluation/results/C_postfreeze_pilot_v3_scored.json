@@ -1,0 +1,228 @@
+{
+  "summary": {
+    "runs": 3,
+    "verdict_accuracy": {
+      "successes": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385029682449546,
+        1.0
+      ]
+    },
+    "false_safe": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "false_fail": {
+      "successes": 0,
+      "total": 2,
+      "rate": 0.0,
+      "wilson_95": [
+        0.0,
+        0.6576197724933469
+      ]
+    },
+    "parseable_envelope": {
+      "successes": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385029682449546,
+        1.0
+      ]
+    },
+    "first_tool_accuracy": {
+      "successes": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385029682449546,
+        1.0
+      ]
+    },
+    "tool_sequence_accuracy": {
+      "successes": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385029682449546,
+        1.0
+      ]
+    },
+    "valid_schema": {
+      "successes": 3,
+      "total": 3,
+      "rate": 1.0,
+      "wilson_95": [
+        0.4385029682449546,
+        1.0
+      ]
+    },
+    "missing_input_accuracy": {
+      "successes": 1,
+      "total": 1,
+      "rate": 1.0,
+      "wilson_95": [
+        0.20654931437723745,
+        1.0
+      ]
+    },
+    "retrieval_hit_at_3": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "retrieval_recall_at_3": {
+      "total": 0,
+      "mean": null
+    },
+    "retrieval_mrr": {
+      "total": 0,
+      "mean": null
+    },
+    "citation_precision": {
+      "total": 0,
+      "mean": null
+    },
+    "citation_recall": {
+      "total": 0,
+      "mean": null
+    },
+    "citation_ids_are_retrieved": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "argument_accuracy": {
+      "correct": 6,
+      "total": 6,
+      "rate": 1.0,
+      "wilson_95": [
+        0.6096657120978346,
+        1.0
+      ]
+    },
+    "consistency": {
+      "successes": 0,
+      "total": 0,
+      "rate": null,
+      "wilson_95": [
+        null,
+        null
+      ]
+    },
+    "hard_failure": {
+      "successes": 0,
+      "total": 3,
+      "rate": 0.0,
+      "wilson_95": [
+        5.551115123125783e-17,
+        0.5614970317550454
+      ]
+    },
+    "latency_ms": {
+      "p50": 30590.599,
+      "p95": 45066.35019999999
+    }
+  },
+  "runs": [
+    {
+      "case_id": "shock_dev_001_select_defaults",
+      "system": "C",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 1,
+      "correct_arg_count": 1,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "retrieval_hit_at_3": null,
+      "retrieval_recall_at_3": null,
+      "retrieval_mrr": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "citation_ids_are_retrieved": null,
+      "latency_ms": 46674.767,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_009_missing_mass",
+      "system": "C",
+      "repeat": 1,
+      "gold_verdict": "ASK",
+      "predicted_verdict": "ASK",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 0,
+      "correct_arg_count": 0,
+      "extra_arg_count": 0,
+      "argument_accuracy": null,
+      "valid_schema": true,
+      "missing_input_correct": true,
+      "tool_error_count": 0,
+      "retrieval_hit_at_3": null,
+      "retrieval_recall_at_3": null,
+      "retrieval_mrr": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "citation_ids_are_retrieved": null,
+      "latency_ms": 4372.869,
+      "hard_failure": false
+    },
+    {
+      "case_id": "shock_dev_010_data_then_verify",
+      "system": "C",
+      "repeat": 1,
+      "gold_verdict": "PASS",
+      "predicted_verdict": "PASS",
+      "parseable": true,
+      "verdict_correct": true,
+      "false_safe": false,
+      "false_fail": false,
+      "first_tool_correct": true,
+      "sequence_correct": true,
+      "expected_arg_count": 5,
+      "correct_arg_count": 5,
+      "extra_arg_count": 0,
+      "argument_accuracy": 1.0,
+      "valid_schema": true,
+      "missing_input_correct": null,
+      "tool_error_count": 0,
+      "retrieval_hit_at_3": null,
+      "retrieval_recall_at_3": null,
+      "retrieval_mrr": null,
+      "citation_precision": null,
+      "citation_recall": null,
+      "citation_ids_are_retrieved": null,
+      "latency_ms": 30590.599,
+      "hard_failure": false
+    }
+  ]
+}
