@@ -55,12 +55,21 @@ def test_selection_objective_copy_is_clearance_first_without_balanced():
 
 def test_shock_selector_has_custom_vendor_mode_without_excel_scope():
     app_source = Path("app.py").read_text(encoding="utf-8")
+    custom_form_start = app_source.index(
+        "if sel_mode == CUSTOM_MODE_LABEL:",
+        app_source.index("with tab_quick:"),
+    )
+    custom_form_end = app_source.index(
+        "def _run_quick_selector():",
+        custom_form_start,
+    )
+    custom_form_source = app_source[custom_form_start:custom_form_end]
 
     assert '"Custom vendor data"' in app_source
     assert "analyze_custom_isolator(" in app_source
     assert "CustomIsolatorInput" in app_source
     assert "Stiffness source" in app_source
-    assert "st.file_uploader" not in app_source
+    assert "st.file_uploader" not in custom_form_source
 
 
 def test_clearance_help_text_explains_gap_scale_and_zero_bypass():
@@ -99,3 +108,17 @@ def test_shock_result_has_actionable_stale_controls_and_floating_guide():
     assert "ui_guide_shock" in app_source
     assert "ui_guide_tiedown" in app_source
     assert "ui_guide_mobility" in app_source
+
+
+def test_explanatory_visual_has_purpose_controls_and_evidence_boundary():
+    app_source = Path("app.py").read_text(encoding="utf-8")
+
+    assert '"Visual purpose"' in app_source
+    assert '"Viewpoint"' in app_source
+    assert "VISUAL_PURPOSE_OPTIONS" in app_source
+    assert "VIEWPOINT_OPTIONS" in app_source
+    assert "concept_evidence_rows" in app_source
+    assert "Evidence boundary" in app_source
+    assert "Random vibration" in Path("shock_concept_image.py").read_text(
+        encoding="utf-8"
+    )

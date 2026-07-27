@@ -1,6 +1,103 @@
 # Current Status
 
-_Last updated: 2026-07-26 (formal B/C/D evaluation completed and frozen)_
+_Last updated: 2026-07-27 (evidence-aware explanatory visual v3)_
+
+## Evidence-aware explanatory visual v3 (2026-07-27)
+
+- Replaced the single broad image prompt with three controlled visual purposes:
+  shock attenuation, mounting arrangement, and wire-rope mechanism.
+- Added three viewpoint choices: three-quarter cutaway, side section, and
+  close-up detail. Purpose, viewpoint, free-text direction, quality and
+  reference-image digest are all included in the image cache key.
+- Strengthened the mechanical prompt: every mount must be a complete helical
+  wire-rope isolator with repeated cable loops between opposing clamp bars;
+  wall stabilizers must not appear as loose cables or tie-downs.
+- An uploaded approved image is now explicitly treated as the physical source
+  of truth. Without one, the UI labels the physical appearance as generic.
+- Added a deterministic evidence-boundary table separating shock calculation,
+  conceptual mount arrangement, physical appearance, supplier confirmation,
+  random-vibration assessment, and physical test/road-trial evidence.
+- The generated image remains presentation-only and cannot change the selected
+  part, PASS/FAIL result, calculation values or mount coordinates.
+- Verification: focused image/UI suite passed 20/20; full suite passed 474
+  tests with 9 skipped. The panel was checked at desktop and 390 x 844 mobile
+  widths without making a paid Image API request.
+
+## Supplier enquiry pack v2 (2026-07-26)
+
+- Expanded the deterministic Word supplier pack and its Streamlit form with
+  centre of gravity, wall-stabilizer height, random-vibration profile and
+  duration, equipment operating state, interface/bracket requirements,
+  environment/corrosion requirements, and road-trial status.
+- The pack now separates requirement completeness from evidence status. It
+  labels analysis inputs, supplied values, assumptions, items to confirm, and
+  not-applicable fields without presenting them as approved requirements.
+- Added explicit evidence levels for deterministic screening, supplier
+  nonlinear simulation, random-vibration assessment, physical laboratory
+  testing, and functional road trial.
+- Expanded the supplier request to cover exact part/configuration, nonlinear
+  curves, per-axis extrema, vibration evidence, clearance/snubbing, fastener
+  details, environmental limits, and service life.
+- Added supplier-response and road-trial records for pre/post function,
+  fasteners, cables/connectors, collision marks, permanent deformation,
+  instrumentation, reviewer, date, and disposition.
+- Verification: live Streamlit controls load at `http://127.0.0.1:8503`;
+  focused supplier/UI tests passed 15/15; full suite passed 470 tests with
+  9 skipped. A generated eight-page sample has 15 geometry-valid tables,
+  marked data-table headers, and no high-severity accessibility findings.
+- Next product task: evidence-aware explanatory visual v3.
+
+## Vendor evidence RAG update (2026-07-26)
+
+- Reviewed the supplied shock-mount working report, Socitec CB1390 catalogue,
+  six vendor nonlinear calculation/simulation reports, and image-only CB1390
+  dynamic stiffness curves.
+- Added ten source-qualified shock chunks covering evidence classification,
+  CB1390 construction/performance, supplied case evidence, vendor effective
+  configuration count, nonlinear-model boundary, installation/acceptance,
+  shock-versus-vibration separation, and supplier input/output requirements.
+- Important safety findings are now explicit:
+  - vendor simulation is not physical qualification;
+  - physical mount count is not the supplier's unexplained `4.66/6.66` field;
+  - gang count does not uniquely determine mount arrangement;
+  - a shock result below 10 G does not prove random-vibration compliance.
+- Rebuilt the live mixed `artifacts/knowledge_embeddings.json` with local
+  BGE-M3: 67 total chunks, including 44 shock-mount chunks. The frozen formal
+  evaluation index `artifacts/embedding_candidates/bge_m3.json` was not changed.
+- Local `.env` now selects Ollama/BGE-M3 for query embeddings while retaining
+  the OpenAI chat model.
+- Retrieval verification:
+  - new 12-query vendor suite: Hit@1 100%, Hit@3 100%, MRR 1.0;
+  - original shock suite on the live index: Hit@1 87.5%, Hit@3 100%,
+    MRR 0.9271.
+- Product proposal:
+  `docs/reports/SHOCK_VENDOR_EVIDENCE_RAG_UPDATE_2026-07-26.md`.
+- Recommended next implementation: supplier enquiry pack v2 first, then
+  evidence-aware explanatory visual v3.
+
+## Client-demo image explanation layer (2026-07-26)
+
+- Added an optional `gpt-image-2` concept-visual action after a current,
+  verified Shock Selector result.
+- The image call is explicit and separate from the `gpt-5.4-mini` engineering
+  assistant. It cannot change tool calls, calculations, mount coordinates or
+  PASS/FAIL.
+- `shock_concept_image.py` builds a controlled prompt that excludes CAD files,
+  vendor documents, exact part numbers and project dimensions. Users can add
+  free-form visual direction and optionally upload an approved PNG/JPG/WebP
+  reference; the latter uses the Image API edit path so the isolator appearance
+  does not have to be guessed from text alone.
+- The prompt explicitly requires looped steel wire rope captured between
+  parallel clamp bars and rejects coil springs, vertical rope columns, loose
+  cables and eye-bolt restraints. The UI shows authoritative Python values
+  outside the image and labels the artwork as a concept illustration rather
+  than an engineering drawing.
+- Generation is disabled for stale results, cached per analysis/quality in the
+  Streamlit session, and supports Draft (`low`) or Presentation (`medium`)
+  quality. `OPENAI_IMAGE_MODEL` may override the default `gpt-image-2`.
+- Verification: focused image/supplier/UI tests passed 20/20; full suite passed
+  467 tests with 9 skipped. The panel was checked in Streamlit at desktop and
+  mobile widths without triggering a paid generation request.
 
 ## Formal evaluation release (2026-07-26)
 

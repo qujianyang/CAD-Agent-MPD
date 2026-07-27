@@ -647,6 +647,13 @@ def lookup_knowledge(query: str, parent_topic: str = "") -> str:
       - model scope: model_assumptions, model_limitations,
         road_vibration_check, installation_considerations,
         validation_excel_baseline
+      - supplied vendor evidence: vendor_source_register,
+        socitec_cb1390_construction, socitec_cb1390_performance,
+        vendor_cb1390_hh14_cases, vendor_cb1400_cases,
+        vendor_nonlinear_model_boundary,
+        vendor_effective_configuration_count, shock_vibration_separation
+      - implementation workflow: installation_acceptance_workflow and
+        supplier_data_requirements
 
     Use this to cite formulas, justify defaults and objectives, quote catalogue
     provenance, or explain standard basis and model limits. Numerical results

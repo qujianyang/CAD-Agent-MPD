@@ -181,6 +181,7 @@ def _init_state():
         "q_selection_key": None,
         "q_custom_result": None,
         "q_custom_key": None,
+        "shock_concept_images": {},
         # Mobility scenario workspace
         "mb_vehicle": None,    # derived mobility Vehicle (single source of truth)
         "mb_prov": None,       # {"method": ..., "source": ...} provenance
@@ -1299,6 +1300,82 @@ def _render_supplier_enquiry_pack(
             key="supplier_pack_supplier",
         )
 
+        st.markdown("**Supplier requirement inputs**")
+        cg_x_col, cg_y_col, cg_z_col = st.columns(3)
+        cg_x_mm = cg_x_col.number_input(
+            "CG X (mm)",
+            value=None,
+            step=1.0,
+            key="supplier_pack_cg_x_mm",
+        )
+        cg_y_mm = cg_y_col.number_input(
+            "CG Y (mm)",
+            value=None,
+            step=1.0,
+            key="supplier_pack_cg_y_mm",
+        )
+        cg_z_mm = cg_z_col.number_input(
+            "CG Z (mm)",
+            value=None,
+            step=1.0,
+            key="supplier_pack_cg_z_mm",
+        )
+
+        requirement_left, requirement_right = st.columns(2)
+        wall_stabilizer_height_mm = requirement_left.number_input(
+            "Wall stabilizer height (mm)",
+            min_value=0.0,
+            value=None,
+            step=10.0,
+            key="supplier_pack_wall_height_mm",
+        )
+        vibration_duration_min = requirement_right.number_input(
+            "Random-vibration duration (min)",
+            min_value=0.0,
+            value=None,
+            step=5.0,
+            key="supplier_pack_vibration_duration_min",
+        )
+        vibration_profile = requirement_left.text_input(
+            "Random-vibration profile / category",
+            value="",
+            placeholder="e.g. MIL-STD-810H 514.8C-VII Category 4",
+            key="supplier_pack_vibration_profile",
+        )
+        operating_state = requirement_right.selectbox(
+            "Equipment operating state",
+            (
+                "To be confirmed",
+                "Powered and operating during transport",
+                "Powered off; post-event functional check",
+                "Operated only during a dedicated functional test",
+            ),
+            key="supplier_pack_operating_state",
+        )
+        interface_requirements = requirement_left.text_input(
+            "Interface / bracket requirement",
+            value="",
+            placeholder="e.g. M8 inserts, supplier to confirm engagement and torque",
+            key="supplier_pack_interface_requirements",
+        )
+        environment_requirements = requirement_right.text_input(
+            "Environment / corrosion requirement",
+            value="",
+            placeholder="e.g. marine, salt fog, temperature range",
+            key="supplier_pack_environment_requirements",
+        )
+        road_trial_status = st.selectbox(
+            "Road-trial status",
+            (
+                "To be confirmed",
+                "Required, not started",
+                "Planned",
+                "Completed, evidence pending",
+                "Not required",
+            ),
+            key="supplier_pack_road_trial_status",
+        )
+
         try:
             from supplier_enquiry_report import supplier_enquiry_pack_bytes
 
@@ -1311,6 +1388,14 @@ def _render_supplier_enquiry_pack(
                 layout_box_mm=layout_box_mm,
                 clearances_mm=clearances,
                 wall_face=wall_face,
+                cg_mm=(cg_x_mm, cg_y_mm, cg_z_mm),
+                wall_stabilizer_height_mm=wall_stabilizer_height_mm,
+                vibration_profile=vibration_profile,
+                vibration_duration_min=vibration_duration_min,
+                operating_state=operating_state,
+                interface_requirements=interface_requirements,
+                environment_requirements=environment_requirements,
+                road_trial_status=road_trial_status,
             )
         except Exception as exc:
             st.error(f"Could not generate supplier enquiry pack: {exc}")
@@ -1333,8 +1418,239 @@ def _render_supplier_enquiry_pack(
             width="stretch",
         )
         st.caption(
-            "Includes requirements, four load cases, alternatives, conceptual "
-            "mount coordinates, warnings, supplier questions and approval boundary."
+            "Includes requirement completeness, evidence levels, four load "
+            "cases, conceptual coordinates, supplier questions, and a road-trial "
+            "record."
+        )
+
+
+def _render_shock_concept_visual(snapshot, context_state: str) -> None:
+    """Render an optional OpenAI-generated explanation of a verified result."""
+    if snapshot is None:
+        return
+
+    from shock_concept_image import (
+        DEFAULT_IMAGE_MODEL,
+        MAX_VISUAL_INSTRUCTIONS_CHARS,
+        QUALITY_OPTIONS,
+        VIEWPOINT_OPTIONS,
+        VISUAL_PURPOSE_HINTS,
+        VISUAL_PURPOSE_OPTIONS,
+        concept_evidence_rows,
+        concept_cache_key,
+        generate_concept_image,
+    )
+
+    with st.expander("Generate explanatory visual", expanded=False):
+        st.caption(
+            "Creates a conceptual training illustration from the verified result. "
+            "The Python calculation and deterministic mount drawing remain "
+            "authoritative."
+        )
+        st.caption(
+            "The shock-isolation assistant is text-only. Configure and generate "
+            "images in this panel."
+        )
+        if context_state != "current":
+            st.warning(
+                "Rerun the analysis before generating a visual. The stored result "
+                "is no longer current."
+            )
+            return
+
+        openai_image_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not openai_image_key:
+            st.info(
+                "Add OPENAI_API_KEY to the project .env file to enable OpenAI "
+                "image generation."
+            )
+            return
+
+        model = os.getenv("OPENAI_IMAGE_MODEL", DEFAULT_IMAGE_MODEL).strip()
+        purpose_col, viewpoint_col = st.columns(2)
+        purpose_label = purpose_col.selectbox(
+            "Visual purpose",
+            list(VISUAL_PURPOSE_OPTIONS),
+            key=f"shock_concept_purpose_{snapshot.analysis_id}",
+        )
+        visual_purpose = VISUAL_PURPOSE_OPTIONS[purpose_label]
+        viewpoint_label = viewpoint_col.selectbox(
+            "Viewpoint",
+            list(VIEWPOINT_OPTIONS),
+            key=f"shock_concept_viewpoint_{snapshot.analysis_id}",
+        )
+        viewpoint = VIEWPOINT_OPTIONS[viewpoint_label]
+        st.caption(VISUAL_PURPOSE_HINTS[visual_purpose])
+
+        visual_instructions = st.text_area(
+            "Additional visual direction",
+            value="",
+            placeholder=(
+                "Example: Use a clean white background, keep the rack compact, "
+                "and show the input shock travelling left to right."
+            ),
+            max_chars=MAX_VISUAL_INSTRUCTIONS_CHARS,
+            key=f"shock_concept_instructions_{snapshot.analysis_id}",
+            help=(
+                "Add style, colour or emphasis preferences. Purpose, evidence "
+                "boundaries and mechanical safety rules remain controlled."
+            ),
+        )
+        reference_upload = st.file_uploader(
+            "Approved physical reference image (optional)",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"shock_concept_reference_{snapshot.analysis_id}",
+            help=(
+                "Upload an approved isolator or rack image when physical "
+                "appearance matters. The file is sent to the OpenAI Image API."
+            ),
+        )
+        reference_image = None
+        reference_image_data = None
+        if reference_upload is not None:
+            reference_image_data = reference_upload.getvalue()
+            if len(reference_image_data) > 10 * 1024 * 1024:
+                st.error("Reference image must be 10 MB or smaller.")
+                return
+            reference_media_type = reference_upload.type or "image/png"
+            if reference_media_type == "image/jpg":
+                reference_media_type = "image/jpeg"
+            reference_image = (
+                reference_upload.name,
+                reference_image_data,
+                reference_media_type,
+            )
+            st.image(
+                reference_image_data,
+                caption=(
+                    "Reference supplied for mechanical appearance only. "
+                    "Confirm that it is approved for cloud processing."
+                ),
+                width=240,
+            )
+
+        st.markdown("**Evidence boundary**")
+        st.dataframe(
+            [
+                {
+                    "Evidence": evidence,
+                    "Status": status,
+                    "Meaning": detail,
+                }
+                for evidence, status, detail in concept_evidence_rows(
+                    snapshot,
+                    has_reference_image=reference_image is not None,
+                )
+            ],
+            hide_index=True,
+            width="stretch",
+        )
+        if reference_image is None:
+            st.info(
+                "Physical appearance will be generic. Upload an approved reference "
+                "image when isolator or bracket fidelity matters."
+            )
+
+        quality_label = st.selectbox(
+            "Image quality",
+            list(QUALITY_OPTIONS),
+            key=f"shock_concept_quality_{snapshot.analysis_id}",
+            help=(
+                "Draft is faster and cheaper. Presentation produces a more "
+                "refined image and costs more."
+            ),
+        )
+        quality = QUALITY_OPTIONS[quality_label]
+        cache_key = concept_cache_key(
+            snapshot,
+            model=model,
+            quality=quality,
+            visual_purpose=visual_purpose,
+            viewpoint=viewpoint,
+            visual_instructions=visual_instructions,
+            reference_image_data=reference_image_data,
+        )
+        cached_images = st.session_state["shock_concept_images"]
+        generated = cached_images.get(cache_key)
+
+        button_label = (
+            "Regenerate concept visual"
+            if generated is not None
+            else "Generate concept visual"
+        )
+        if st.button(
+            button_label,
+            key=f"shock_concept_generate_{cache_key}",
+            type="primary",
+        ):
+            try:
+                with st.spinner(
+                    "Generating the explanatory visual. This can take up to two minutes..."
+                ):
+                    generated = generate_concept_image(
+                        snapshot,
+                        api_key=openai_image_key,
+                        model=model,
+                        quality=quality,
+                        visual_purpose=visual_purpose,
+                        viewpoint=viewpoint,
+                        visual_instructions=visual_instructions,
+                        reference_image=reference_image,
+                    )
+                cached_images[cache_key] = generated
+            except Exception as exc:
+                st.error(f"Could not generate the concept visual: {exc}")
+                return
+
+        if generated is None:
+            st.caption(
+                "Generation is user-triggered and uses the OpenAI Image API. "
+                "No CAD file or supplier document is uploaded unless you "
+                "explicitly select a reference image here."
+            )
+            return
+
+        st.image(
+            generated.data,
+            width="stretch",
+            caption=(
+                f"AI-generated {purpose_label.lower()} concept linked to "
+                f"Analysis {snapshot.analysis_id}"
+                + (
+                    " using the uploaded visual reference."
+                    if generated.used_reference_image
+                    else "."
+                )
+            ),
+        )
+        value_columns = st.columns(4)
+        value_columns[0].metric("Verified verdict", snapshot.verdict)
+        value_columns[1].metric("Input shock", f"{snapshot.input_shock_g:.1f} G")
+        if snapshot.worst_transmitted_g is not None:
+            value_columns[2].metric(
+                "Worst transmitted",
+                f"{snapshot.worst_transmitted_g:.2f} G",
+            )
+        else:
+            value_columns[2].metric("Worst transmitted", "Not available")
+        value_columns[3].metric(
+            "Mount arrangement",
+            f"{snapshot.bottom_mounts} bottom + {snapshot.wall_mounts} wall",
+        )
+        st.warning(
+            "Concept illustration only. It is not an engineering drawing and "
+            "must not be used for dimensions, mount coordinates, part identity "
+            "or approval."
+        )
+        st.download_button(
+            "Download concept visual",
+            data=generated.data,
+            file_name=(
+                f"Shock_Concept_{snapshot.analysis_id}."
+                f"{generated.file_extension}"
+            ),
+            mime=generated.media_type,
+            key=f"shock_concept_download_{cache_key}",
         )
 
 
@@ -1756,6 +2072,7 @@ with tab_quick:
         clearances=(clr_x, clr_y, clr_z),
         wall_face=wall_face,
     )
+    _render_shock_concept_visual(shock_snapshot, shock_context_state)
 
     # ---- Shock-isolation assistant (collapsible, consistent with other tabs) ----
     from agent import SHOCK_CAPABILITIES

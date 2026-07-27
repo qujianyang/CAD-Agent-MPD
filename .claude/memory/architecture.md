@@ -18,6 +18,7 @@ runtime script, not a test).
 | `agent.py` | LangChain `create_agent` + 7 tool definitions + `stream()` method for UI live tool calls. |
 | `physics_engine.py` | 4-case shock analysis (Comp-Bottom, Comp-Wall, Roll-Wall, Roll-Bottom). Validated vs the Excel sheet. |
 | `catalog.py` | VMC catalog (CB1400 / CB1500 / CB1800) + `select_isolator` (softest valid K). |
+| `shock_concept_image.py` | Optional `gpt-image-2` adapter with controlled visual purposes, viewpoints and deterministic evidence boundaries; no engineering authority. |
 | `test_assembly.py` | SolidWorks COM script. Accepts `--file` arg. Extracts mass, CG (raw + base-relative), bbox, coord-sys-used. |
 | `cad_compliance_checker.py` | Bridge: subprocess `test_assembly.py`, parse stdout into a dict. |
 | `nvidia_embedder.py` | `JSONVectorStore` with cosine similarity + `parent_topic` filter. |

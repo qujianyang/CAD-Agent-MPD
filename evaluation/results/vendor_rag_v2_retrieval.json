@@ -1,0 +1,430 @@
+{
+  "embedding": {
+    "provider": "ollama",
+    "model": "bge-m3"
+  },
+  "summary": {
+    "n_main": 12,
+    "hit@1": 1.0,
+    "recall@1": 0.7917,
+    "hit@3": 1.0,
+    "recall@3": 0.9167,
+    "hit@5": 1.0,
+    "recall@5": 0.9167,
+    "mrr": 1.0
+  },
+  "by_category": {
+    "evidence": {
+      "n": 2,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "catalog": {
+      "n": 2,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "model": {
+      "n": 2,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "cases": {
+      "n": 2,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "safety": {
+      "n": 1,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "workflow": {
+      "n": 1,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    },
+    "supplier": {
+      "n": 2,
+      "hit@1": 1.0,
+      "hit@3": 1.0,
+      "mrr": 1.0
+    }
+  },
+  "adversarial": {
+    "n_adversarial": 0
+  },
+  "per_query": [
+    {
+      "qid": "vendor01",
+      "category": "evidence",
+      "adversarial": false,
+      "query": "Is a supplier nonlinear SDOF simulation the same as a physical qualification test?",
+      "relevant": [
+        "shock_mount/vendor_source_register",
+        "shock_mount/vendor_nonlinear_model_boundary"
+      ],
+      "retrieved": [
+        "shock_mount/vendor_nonlinear_model_boundary",
+        "shock_mount/vendor_effective_configuration_count",
+        "shock_mount/vendor_source_register",
+        "shock_mount/standard_scope",
+        "shock_mount/model_limitations"
+      ],
+      "similarities": [
+        0.5958,
+        0.5922,
+        0.5633,
+        0.516,
+        0.4865
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor02",
+      "category": "catalog",
+      "adversarial": false,
+      "query": "What materials, dimensions, and mounting interface suffixes are available for the Socitec CB1390?",
+      "relevant": [
+        "shock_mount/socitec_cb1390_construction"
+      ],
+      "retrieved": [
+        "shock_mount/socitec_cb1390_construction",
+        "shock_mount/socitec_cb1390_performance",
+        "shock_mount/installation_considerations",
+        "shock_mount/vendor_cb1390_hh14_cases",
+        "shock_mount/vendor_source_register"
+      ],
+      "similarities": [
+        0.7157,
+        0.6322,
+        0.6205,
+        0.5977,
+        0.5854
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor03",
+      "category": "catalog",
+      "adversarial": false,
+      "query": "What are the CB1390-20 and CB1390-30 shear or roll maximum static and shock force-deflection values?",
+      "relevant": [
+        "shock_mount/socitec_cb1390_performance"
+      ],
+      "retrieved": [
+        "shock_mount/socitec_cb1390_performance",
+        "shock_mount/vendor_cb1390_hh14_cases",
+        "shock_mount/cb1400_catalog",
+        "shock_mount/installation_considerations",
+        "shock_mount/vendor_source_register"
+      ],
+      "similarities": [
+        0.6977,
+        0.5767,
+        0.548,
+        0.5479,
+        0.5463
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor04",
+      "category": "model",
+      "adversarial": false,
+      "query": "What do the effective configuration values 4.66 and 6.66 mean, and should I enter them as physical mount counts?",
+      "relevant": [
+        "shock_mount/vendor_effective_configuration_count",
+        "shock_mount/vendor_cb1390_hh14_cases"
+      ],
+      "retrieved": [
+        "shock_mount/vendor_effective_configuration_count",
+        "shock_mount/mil_std_516_8_axes_setup",
+        "shock_mount/installation_acceptance_workflow",
+        "shock_mount/mil_std_516_8_functional_transport",
+        "shock_mount/travel_limit_gate"
+      ],
+      "similarities": [
+        0.6385,
+        0.5422,
+        0.5126,
+        0.4967,
+        0.4918
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 0.5
+    },
+    {
+      "qid": "vendor05",
+      "category": "cases",
+      "adversarial": false,
+      "query": "How did increasing the HH14 rack mass from 115 kg to 135 kg affect modal frequency and displacement?",
+      "relevant": [
+        "shock_mount/vendor_cb1390_hh14_cases"
+      ],
+      "retrieved": [
+        "shock_mount/vendor_cb1390_hh14_cases",
+        "shock_mount/vendor_cb1400_cases",
+        "shock_mount/cb1500_catalog",
+        "shock_mount/natural_frequency",
+        "shock_mount/cb1400_catalog"
+      ],
+      "similarities": [
+        0.5886,
+        0.5372,
+        0.5043,
+        0.49,
+        0.489
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor06",
+      "category": "cases",
+      "adversarial": false,
+      "query": "What shock displacement and acceleration did the supplier predict for the 850 kg and 1050 kg CB1400-15 rack cases?",
+      "relevant": [
+        "shock_mount/vendor_cb1400_cases"
+      ],
+      "retrieved": [
+        "shock_mount/vendor_cb1400_cases",
+        "shock_mount/vendor_cb1390_hh14_cases",
+        "shock_mount/cb1500_catalog",
+        "shock_mount/shock_vibration_separation",
+        "shock_mount/vendor_source_register"
+      ],
+      "similarities": [
+        0.7345,
+        0.6323,
+        0.6087,
+        0.5997,
+        0.598
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor07",
+      "category": "safety",
+      "adversarial": false,
+      "query": "Can a rack stay below the 10 g shock limit but still fail the 40-minute random vibration requirement?",
+      "relevant": [
+        "shock_mount/shock_vibration_separation",
+        "shock_mount/vendor_cb1400_cases"
+      ],
+      "retrieved": [
+        "shock_mount/shock_vibration_separation",
+        "shock_mount/vendor_cb1400_cases",
+        "shock_mount/project_shock_requirements",
+        "shock_mount/road_vibration_check",
+        "shock_mount/model_limitations"
+      ],
+      "similarities": [
+        0.7058,
+        0.607,
+        0.5794,
+        0.5685,
+        0.5546
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor08",
+      "category": "workflow",
+      "adversarial": false,
+      "query": "Can I infer the bottom and stabilizer mount count from whether a rack is one-gang or two-gang?",
+      "relevant": [
+        "shock_mount/installation_acceptance_workflow"
+      ],
+      "retrieved": [
+        "shock_mount/installation_acceptance_workflow",
+        "shock_mount/static_load_gate",
+        "shock_mount/vendor_effective_configuration_count",
+        "shock_mount/vendor_source_register",
+        "shock_mount/verification_workflow"
+      ],
+      "similarities": [
+        0.605,
+        0.5507,
+        0.5297,
+        0.5295,
+        0.5242
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor09",
+      "category": "supplier",
+      "adversarial": false,
+      "query": "What project inputs must be included before sending a wire-rope isolator enquiry to the supplier?",
+      "relevant": [
+        "shock_mount/supplier_data_requirements"
+      ],
+      "retrieved": [
+        "shock_mount/supplier_data_requirements",
+        "shock_mount/installation_considerations",
+        "shock_mount/socitec_cb1390_construction",
+        "shock_mount/selection_workflow",
+        "shock_mount/four_load_cases"
+      ],
+      "similarities": [
+        0.6734,
+        0.576,
+        0.5597,
+        0.559,
+        0.5365
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor10",
+      "category": "supplier",
+      "adversarial": false,
+      "query": "What nonlinear analysis outputs, interfaces, and installation details should the supplier be asked to confirm?",
+      "relevant": [
+        "shock_mount/supplier_data_requirements",
+        "shock_mount/vendor_nonlinear_model_boundary"
+      ],
+      "retrieved": [
+        "shock_mount/vendor_nonlinear_model_boundary",
+        "shock_mount/supplier_data_requirements",
+        "shock_mount/vendor_effective_configuration_count",
+        "shock_mount/installation_considerations",
+        "shock_mount/vendor_source_register"
+      ],
+      "similarities": [
+        0.6156,
+        0.608,
+        0.5571,
+        0.552,
+        0.5263
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    },
+    {
+      "qid": "vendor11",
+      "category": "model",
+      "adversarial": false,
+      "query": "Why can the project's constant average stiffness screening not exactly reproduce the vendor's nonlinear curves?",
+      "relevant": [
+        "shock_mount/vendor_nonlinear_model_boundary",
+        "shock_mount/socitec_cb1390_performance"
+      ],
+      "retrieved": [
+        "shock_mount/vendor_nonlinear_model_boundary",
+        "shock_mount/model_limitations",
+        "shock_mount/vendor_cb1390_hh14_cases",
+        "shock_mount/vendor_effective_configuration_count",
+        "shock_mount/vendor_source_register"
+      ],
+      "similarities": [
+        0.682,
+        0.5331,
+        0.5324,
+        0.5246,
+        0.522
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 0.5,
+      "hit@3": 1,
+      "recall@3": 0.5,
+      "hit@5": 1,
+      "recall@5": 0.5
+    },
+    {
+      "qid": "vendor12",
+      "category": "evidence",
+      "adversarial": false,
+      "query": "Which supplied documents are catalogues, simulations, internal reports, or physical test reports?",
+      "relevant": [
+        "shock_mount/vendor_source_register"
+      ],
+      "retrieved": [
+        "shock_mount/vendor_source_register",
+        "shock_mount/installation_acceptance_workflow",
+        "shock_mount/supplier_data_requirements",
+        "shock_mount/validation_excel_baseline",
+        "shock_mount/vendor_effective_configuration_count"
+      ],
+      "similarities": [
+        0.5786,
+        0.5273,
+        0.5103,
+        0.4718,
+        0.4646
+      ],
+      "mrr": 1.0,
+      "hit@1": 1,
+      "recall@1": 1.0,
+      "hit@3": 1,
+      "recall@3": 1.0,
+      "hit@5": 1,
+      "recall@5": 1.0
+    }
+  ]
+}

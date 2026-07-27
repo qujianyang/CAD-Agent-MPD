@@ -1,8 +1,10 @@
 # Model Limitations
 
 **Chunk:** `shock_mount/model_limitations`
-**Source:** `physics_engine.py` (`IMPULSE_VALIDITY_RATIO`, warnings), `catalog.py`, and scope notes in `mil_std_basis.md` (vibration is a separate analysis).
-**Grounding:** validated-in-repo (behaviour). Standard-scope wording → cross-check `standard_scope.md`.
+**Source:** `physics_engine.py` (`IMPULSE_VALIDITY_RATIO`, warnings),
+`catalog.py`, scope notes in `standard_scope.md`, and vendor evidence
+SRC-CURVE-01 plus SRC-SIM-01 through SRC-SIM-06.
+**Grounding:** validated-in-repo behaviour plus supplied vendor evidence.
 
 ---
 
@@ -17,7 +19,9 @@ The model in `model_assumptions.md` is valid within bounds. Known limitations:
    only. Road/transport random-vibration fatigue (the MIL-STD-810 vibration
    method, "Category 4 off-road" spectra) is a **separate** analysis this tool
    does not perform. A separate road-vibration resonance check exists but uses a
-   different ("Vibration Average") stiffness column.
+   different ("Vibration Average") stiffness column. SRC-SIM-05 and SRC-SIM-06
+   explicitly report cases that remain below 10 g in the shock tables but fail
+   the required 40-minute random-vibration duration.
 
 3. **Linear stiffness only (averaged rate).** The VMC Tech Notes warn the
    published spring rates are **averages**, and that *where the static load sits
@@ -25,6 +29,11 @@ The model in `model_assumptions.md` is valid within bounds. Known limitations:
    the available dynamic travel, and cross-axis stability. The single "Shock
    Average K" cannot capture this. Verify near-limit parts against the vendor's
    principal- and cross-axis load-deflection curves.
+
+   The supplied CB1390 dynamic curves and nonlinear SDOF sheets confirm this
+   boundary. Their effective configuration values and axis-specific nonlinear
+   curves cannot be reproduced by the project's one-average-K model. See
+   `vendor_nonlinear_model_boundary.md`.
 
    Note also: VMC "does not list load ratings for individual wire rope
    isolators." Any Max Static F used by the static gate comes from a separate
@@ -44,6 +53,11 @@ The model in `model_assumptions.md` is valid within bounds. Known limitations:
 7. **Catalogue-bounded.** Selection only considers transcribed CB-series parts
    (plus user-supplied custom isolators via the custom-isolator path). Parts
    without a published static rating warn rather than fail.
+
+8. **No physical qualification claim.** A deterministic project result or
+   supplier simulation is not a physical shock test, random-vibration test, or
+   installed-system qualification. The supplied source set contains no physical
+   laboratory qualification report (`vendor_source_register.md`).
 
 When any limitation is material to a decision, surface it — do not present a
 pass as unconditional.

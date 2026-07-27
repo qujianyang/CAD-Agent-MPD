@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, is_dataclass
 from datetime import date
 from io import BytesIO
+import math
 from typing import Any, Mapping, Optional, Sequence
 
 from docx import Document
@@ -44,6 +45,14 @@ def generate_supplier_enquiry_pack(
     layout_box_mm: Optional[Sequence[float]] = None,
     clearances_mm: Sequence[Optional[float]] = (None, None, None),
     wall_face: str = "back",
+    cg_mm: Sequence[Optional[float]] = (None, None, None),
+    wall_stabilizer_height_mm: Optional[float] = None,
+    vibration_profile: str = "",
+    vibration_duration_min: Optional[float] = None,
+    operating_state: str = "To be confirmed",
+    interface_requirements: str = "",
+    environment_requirements: str = "",
+    road_trial_status: str = "To be confirmed",
     report_date: Optional[str] = None,
 ) -> Document:
     """Return a Word supplier enquiry pack from one authoritative snapshot."""
@@ -57,6 +66,13 @@ def generate_supplier_enquiry_pack(
     equipment_reference = equipment_reference.strip() or "Equipment rack / enclosure"
     prepared_by = prepared_by.strip() or "To be completed"
     supplier = supplier.strip() or "To be confirmed"
+    cg_mm = _optional_triplet(cg_mm)
+    vibration_profile = vibration_profile.strip()
+    operating_state = operating_state.strip() or "To be confirmed"
+    interface_requirements = interface_requirements.strip()
+    environment_requirements = environment_requirements.strip()
+    road_trial_status = road_trial_status.strip() or "To be confirmed"
+    velocity_change_ms = _velocity_change_ms(payload)
 
     doc = Document()
     _configure_document(doc)
@@ -91,24 +107,77 @@ def generate_supplier_enquiry_pack(
         ],
     )
 
-    doc.add_heading("2. Equipment and shock requirements", level=1)
+    doc.add_heading("2. Requirement completeness", level=1)
+    completeness_rows = _requirement_completeness_rows(
+        payload,
+        layout_box_mm=layout_box_mm,
+        clearances_mm=clearances_mm,
+        cg_mm=cg_mm,
+        wall_stabilizer_height_mm=wall_stabilizer_height_mm,
+        vibration_profile=vibration_profile,
+        vibration_duration_min=vibration_duration_min,
+        operating_state=operating_state,
+        interface_requirements=interface_requirements,
+        environment_requirements=environment_requirements,
+    )
+    _add_table(
+        doc,
+        [["Requirement", "Status", "Current value"], *completeness_rows],
+        widths_dxa=[2500, 1800, 5060],
+        header=True,
+        center_columns={1},
+    )
+    missing_count = sum(
+        1 for row in completeness_rows if row[1] == "TO BE CONFIRMED"
+    )
+    if missing_count:
+        doc.add_paragraph(
+            f"{missing_count} requirement field(s) remain to be confirmed. "
+            "The supplier should not treat blank or assumed values as approved "
+            "project requirements.",
+            style="Supplier Boundary",
+        )
+    else:
+        doc.add_paragraph(
+            "All listed enquiry fields have a supplied value. The supplier must "
+            "still confirm suitability and installation details.",
+            style="Supplier Note",
+        )
+
+    doc.add_heading("3. Equipment, shock and vibration requirements", level=1)
     _add_key_value_table(
         doc,
         [
             ("Total assessed mass", _unit(payload.get("mass_kg"), "kg")),
+            ("Equipment envelope", _box_text(layout_box_mm)),
+            ("Centre of gravity X / Y / Z", _triplet_text(cg_mm, "mm")),
             ("Bottom isolators", _display(payload.get("bottom_mounts"))),
-            ("Wall isolators", _display(payload.get("wall_mounts"))),
+            ("Wall stabilizer isolators", _display(payload.get("wall_mounts"))),
             ("Input shock", _unit(payload.get("input_shock_g"), "G")),
             ("Pulse duration", _unit(payload.get("pulse_duration_ms"), "ms")),
             ("Pulse profile", _display(payload.get("pulse_shape"))),
+            ("Velocity change", _unit(velocity_change_ms, "m/s", decimals=3)),
             (
                 "Maximum transmitted shock",
                 _unit(payload.get("transmitted_g_limit"), "G"),
             ),
+            (
+                "Random-vibration profile / category",
+                vibration_profile or "To be confirmed",
+            ),
+            (
+                "Required random-vibration duration",
+                _unit(vibration_duration_min, "min"),
+            ),
+            ("Equipment operating state", operating_state),
+            (
+                "Environmental requirement",
+                environment_requirements or "To be confirmed",
+            ),
         ],
     )
 
-    doc.add_heading("3. Proposed mounting arrangement", level=1)
+    doc.add_heading("4. Proposed mounting arrangement", level=1)
     _add_key_value_table(
         doc,
         [
@@ -118,8 +187,16 @@ def generate_supplier_enquiry_pack(
                 f"{payload.get('wall_mounts', 0)} wall isolators",
             ),
             ("Wall mounting face", wall_face),
+            (
+                "Wall stabilizer height",
+                _unit(wall_stabilizer_height_mm, "mm"),
+            ),
             ("Equipment envelope", _box_text(layout_box_mm)),
             ("Available clearance X / Y / Z", _clearance_text(clearances_mm)),
+            (
+                "Interface / bracket requirement",
+                interface_requirements or "To be confirmed",
+            ),
         ],
     )
     _add_layout_coordinates(
@@ -136,7 +213,7 @@ def generate_supplier_enquiry_pack(
         style="Supplier Note",
     )
 
-    doc.add_heading("4. Preliminary selection", level=1)
+    doc.add_heading("5. Preliminary deterministic selection", level=1)
     _add_key_value_table(
         doc,
         [
@@ -173,14 +250,14 @@ def generate_supplier_enquiry_pack(
         ],
     )
 
-    doc.add_heading("5. Four-case calculation results", level=1)
+    doc.add_heading("6. Four-case calculation results", level=1)
     _add_load_case_table(doc, payload.get("load_cases") or ())
 
-    doc.add_heading("6. Catalogue alternatives", level=1)
+    doc.add_heading("7. Catalogue alternatives", level=1)
     _add_alternative_table(doc, payload.get("alternatives") or ())
 
     doc.add_page_break()
-    doc.add_heading("7. Warnings, assumptions and limitations", level=1)
+    doc.add_heading("8. Warnings, assumptions and limitations", level=1)
     warnings = [str(item) for item in payload.get("warnings") or ()]
     if warnings:
         doc.add_paragraph("Analysis warnings:", style="Supplier Label")
@@ -196,39 +273,108 @@ def generate_supplier_enquiry_pack(
         "The four load cases follow the validated project calculation workflow.",
         "Installation clearance is a design input, not a measured manufacturing tolerance.",
         "The preliminary calculation does not replace nonlinear vendor analysis or testing.",
+        "Shock acceptance and random-vibration duration compliance are separate decisions.",
+        "A supplier effective configuration value is not a physical mount count unless its derivation is confirmed.",
     ]
     for assumption in assumptions:
         _add_list_item(doc, assumption, numbered=False)
 
-    doc.add_heading("8. Information requested from supplier", level=1)
+    doc.add_heading("9. Evidence status and traceability", level=1)
+    _add_table(
+        doc,
+        [
+            ["Evidence level", "Current status", "Permitted claim"],
+            [
+                "Project deterministic screening",
+                "Included",
+                "Preliminary calculation and candidate selection only",
+            ],
+            [
+                "Supplier nonlinear simulation",
+                "Pending",
+                "Supplier prediction for the confirmed configuration",
+            ],
+            [
+                "Random-vibration assessment",
+                "Pending",
+                "Separate resonance, RMS, PSD and duration decision",
+            ],
+            [
+                "Physical laboratory test",
+                "Not supplied",
+                "Qualification only when supported by an applicable test report",
+            ],
+            [
+                "Functional road trial",
+                road_trial_status,
+                "Installed-system functional evidence for the stated route and duty",
+            ],
+        ],
+        widths_dxa=[2350, 1800, 5210],
+        header=True,
+    )
+    doc.add_paragraph(
+        "Historical catalogue or simulation results for another rack are "
+        "reference evidence only and are not transferable approval for this "
+        "equipment.",
+        style="Supplier Note",
+    )
+
+    doc.add_heading("10. Information requested from supplier", level=1)
     supplier_questions = [
         f"Confirm whether {selected_part} is the recommended isolator for the stated requirements.",
-        "Confirm static capacity in each installed orientation.",
-        "Provide the latest directional load-deflection and stiffness data.",
-        "Confirm the proposed bottom and wall-mount arrangement and orientation.",
-        "Confirm available shock travel and minimum installation clearance.",
-        "Identify required brackets, fasteners, preload and installation controls.",
-        "Provide applicable qualification, test or similarity evidence.",
-        "Identify any frequency, temperature, corrosion or service-life limitations.",
+        "Confirm the complete part number, loop count, material, finish and both retainer-bar interfaces.",
+        "Confirm the physical mount count, location and orientation, and define any effective configuration factor used in the supplier model.",
+        "Provide nonlinear static and dynamic load-deflection curves for every relevant compression, shear and roll axis.",
+        "Confirm static capacity, predicted static deflection and modal frequencies in X, Y and Z.",
+        "Provide minimum and maximum shock displacement and acceleration in X, Y and Z.",
+        "Provide random-vibration resonance, RMS acceleration, maximum PSD and an explicit duration-compliance statement.",
+        "Confirm available shock travel, two-sided installation clearance and any snubbing requirement.",
+        "Identify required brackets, fasteners, torque, thread engagement, preload and installation controls.",
+        "Confirm environmental, corrosion, temperature, fatigue and service-life limitations.",
+        "Classify each supporting item as catalogue data, simulation, similarity evidence or physical test evidence.",
     ]
     for question in supplier_questions:
         _add_list_item(doc, question, numbered=True)
 
-    doc.add_heading("9. Supplier response record", level=1)
+    doc.add_heading("11. Supplier response record", level=1)
     _add_key_value_table(
         doc,
         [
             ("Supplier recommendation", "Pending"),
             ("Confirmed part number", "Pending"),
             ("Confirmed arrangement", "Pending"),
+            ("Defined effective configuration factor", "Pending / not applicable"),
+            ("Shock response and travel", "Pending"),
+            ("Random-vibration duration compliance", "Pending"),
+            ("Confirmed interfaces / installation controls", "Pending"),
             ("Supporting report / drawing", "Pending"),
             ("Differences from preliminary result", "Pending"),
             ("Supplier representative / date", "Pending"),
         ],
     )
 
+    doc.add_heading("12. Road-trial and physical-evidence record", level=1)
+    _add_key_value_table(
+        doc,
+        [
+            ("Road-trial status", road_trial_status),
+            ("Equipment operating state", operating_state),
+            ("Route / surface / duration", "Pending"),
+            ("Pre-trial functional check", "Pending"),
+            ("Post-trial functional check", "Pending"),
+            ("Fastener loosening", "Pending"),
+            ("Cable / connector movement", "Pending"),
+            ("Rack or equipment collision", "Pending"),
+            ("Visible isolator permanent deformation", "Pending"),
+            ("Input-side accelerometer / record", "Pending / not instrumented"),
+            ("Rack-side accelerometer / record", "Pending / not instrumented"),
+            ("Reviewer / date / disposition", "Pending"),
+        ],
+    )
+
     doc.add_page_break()
-    doc.add_heading("10. Approval boundary", level=1)
+    doc.add_heading("13. Approval boundary", level=1)
     boundary = doc.add_paragraph()
     boundary.style = doc.styles["Supplier Boundary"]
     boundary.add_run(
@@ -545,7 +691,7 @@ def _add_layout_coordinates(
         wall_face=wall_face,
     )
 
-    doc.add_heading("3.1 Conceptual bottom-mount coordinates", level=2)
+    doc.add_heading("4.1 Conceptual bottom-mount coordinates", level=2)
     bottom_rows = [["Mount", "X (mm)", "Y (mm)", "Interface"]]
     for index, (x, y) in enumerate(layout["bottom_positions_xy"], 1):
         bottom_rows.append([index, _number(x), _number(y), "Bottom face, Z = 0"])
@@ -557,7 +703,7 @@ def _add_layout_coordinates(
         center_columns={0, 1, 2},
     )
 
-    doc.add_heading("3.2 Conceptual wall-mount coordinates", level=2)
+    doc.add_heading("4.2 Conceptual wall-mount coordinates", level=2)
     wall_rows = [["Mount", "X (mm)", "Y (mm)", "Z (mm)", "Face"]]
     for index, (x, y, z) in enumerate(layout["wall_positions_xyz"], 1):
         wall_rows.append(
@@ -571,7 +717,7 @@ def _add_layout_coordinates(
         center_columns={0, 1, 2, 3},
     )
 
-    doc.add_heading("3.3 Calculated movement and clearance", level=2)
+    doc.add_heading("4.3 Calculated movement and clearance", level=2)
     movement_rows = [["Axis", "Peak movement (mm)", "Clearance (mm)", "Status"]]
     for axis in "XYZ":
         item = layout["clearance"][axis]
@@ -621,6 +767,111 @@ def _axis_deflections(load_cases: Sequence[Mapping]) -> tuple[float, float, floa
         max(comp_wall, roll_bottom),
         max(comp_bottom, roll_wall),
     )
+
+
+def _requirement_completeness_rows(
+    payload: Mapping[str, Any],
+    *,
+    layout_box_mm: Optional[Sequence[float]],
+    clearances_mm: Sequence[Optional[float]],
+    cg_mm: Sequence[Optional[float]],
+    wall_stabilizer_height_mm: Optional[float],
+    vibration_profile: str,
+    vibration_duration_min: Optional[float],
+    operating_state: str,
+    interface_requirements: str,
+    environment_requirements: str,
+) -> list[list[str]]:
+    """Return visible input status rows without silently treating blanks as data."""
+    wall_mounts = int(payload.get("wall_mounts") or 0)
+    envelope_known = bool(
+        layout_box_mm
+        and len(layout_box_mm) == 3
+        and all(float(value) > 0 for value in layout_box_mm)
+    )
+    clearances_known = (
+        len(clearances_mm) == 3
+        and all(value is not None and float(value) > 0 for value in clearances_mm)
+    )
+    cg_known = len(cg_mm) == 3 and all(value is not None for value in cg_mm)
+    vibration_known = bool(
+        vibration_profile
+        and vibration_duration_min is not None
+        and float(vibration_duration_min) > 0
+    )
+    operating_state_known = operating_state.lower() != "to be confirmed"
+
+    if wall_mounts <= 0:
+        stabilizer_status = "NOT APPLICABLE"
+        stabilizer_value = "No wall stabilizers in the current analysis"
+    elif wall_stabilizer_height_mm is None:
+        stabilizer_status = "ASSUMED"
+        stabilizer_value = "Conceptual layout only"
+    else:
+        stabilizer_status = "PROVIDED"
+        stabilizer_value = _unit(wall_stabilizer_height_mm, "mm")
+
+    return [
+        [
+            "Total sprung mass",
+            "ANALYSIS INPUT",
+            _unit(payload.get("mass_kg"), "kg"),
+        ],
+        [
+            "Equipment envelope",
+            "PROVIDED" if envelope_known else "TO BE CONFIRMED",
+            _box_text(layout_box_mm),
+        ],
+        [
+            "Centre of gravity X / Y / Z",
+            "PROVIDED" if cg_known else "TO BE CONFIRMED",
+            _triplet_text(cg_mm, "mm"),
+        ],
+        [
+            "Physical mount arrangement",
+            "ANALYSIS INPUT",
+            f"{payload.get('bottom_mounts', 0)} bottom + "
+            f"{payload.get('wall_mounts', 0)} wall stabilizers",
+        ],
+        [
+            "Wall stabilizer height",
+            stabilizer_status,
+            stabilizer_value,
+        ],
+        [
+            "Shock pulse and transmitted limit",
+            "ANALYSIS INPUT",
+            f"{_unit(payload.get('input_shock_g'), 'G')}, "
+            f"{_unit(payload.get('pulse_duration_ms'), 'ms')}, "
+            f"{_display(payload.get('pulse_shape'))}; "
+            f"limit {_unit(payload.get('transmitted_g_limit'), 'G')}",
+        ],
+        [
+            "Clearance X / Y / Z",
+            "PROVIDED" if clearances_known else "TO BE CONFIRMED",
+            _clearance_text(clearances_mm),
+        ],
+        [
+            "Random-vibration profile and duration",
+            "PROVIDED" if vibration_known else "TO BE CONFIRMED",
+            _vibration_text(vibration_profile, vibration_duration_min),
+        ],
+        [
+            "Equipment operating state",
+            "PROVIDED" if operating_state_known else "TO BE CONFIRMED",
+            operating_state,
+        ],
+        [
+            "Mount interface / bracket requirement",
+            "PROVIDED" if interface_requirements else "TO BE CONFIRMED",
+            interface_requirements or "To be confirmed",
+        ],
+        [
+            "Environment / corrosion requirement",
+            "PROVIDED" if environment_requirements else "TO BE CONFIRMED",
+            environment_requirements or "To be confirmed",
+        ],
+    ]
 
 
 def _add_key_value_table(doc: Document, rows: Sequence[tuple[str, str]]):
@@ -874,6 +1125,53 @@ def _static_text(load_daN: Any, rating_daN: Any) -> str:
     if rating_daN is None:
         return f"{_number(load_daN)} daN / vendor confirmation required"
     return f"{_number(load_daN)} / {_number(rating_daN)} daN"
+
+
+def _optional_triplet(
+    values: Sequence[Optional[float]],
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    normalized = list(values[:3])
+    normalized.extend([None] * (3 - len(normalized)))
+    return tuple(
+        None if value is None else float(value)
+        for value in normalized
+    )
+
+
+def _triplet_text(values: Sequence[Optional[float]], unit: str) -> str:
+    normalized = _optional_triplet(values)
+    if not all(value is not None for value in normalized):
+        return "To be confirmed"
+    return f"{' / '.join(_number(value) for value in normalized)} {unit}"
+
+
+def _vibration_text(
+    profile: str,
+    duration_min: Optional[float],
+) -> str:
+    profile_text = profile or "profile to be confirmed"
+    duration_text = (
+        "duration to be confirmed"
+        if duration_min is None or float(duration_min) <= 0
+        else f"{_number(duration_min)} min"
+    )
+    return f"{profile_text}; {duration_text}"
+
+
+def _velocity_change_ms(payload: Mapping[str, Any]) -> Optional[float]:
+    input_shock_g = payload.get("input_shock_g")
+    duration_ms = payload.get("pulse_duration_ms")
+    if input_shock_g is None or duration_ms is None:
+        return None
+    pulse_shape = str(payload.get("pulse_shape") or "sawtooth").lower()
+    coefficient = 2.0 / math.pi if pulse_shape == "half_sine" else 0.5
+    return (
+        coefficient
+        * 9.81
+        * float(input_shock_g)
+        * float(duration_ms)
+        / 1000.0
+    )
 
 
 def _box_text(layout_box_mm: Optional[Sequence[float]]) -> str:

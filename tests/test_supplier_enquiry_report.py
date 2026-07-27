@@ -62,11 +62,61 @@ def test_supplier_pack_contains_authoritative_result_and_review_boundary():
     assert "20 G" in text
     assert "11 ms" in text
     assert "Four-case calculation results" in text
+    assert "Requirement completeness" in text
+    assert "Evidence status and traceability" in text
+    assert "Supplier nonlinear simulation" in text
+    assert "Physical laboratory test" in text
+    assert "Road-trial and physical-evidence record" in text
     assert "Supplier confirmation" in text
     assert "Pending" in text
     assert "does not replace supplier confirmation" in text
     for load_case in snapshot.load_cases:
         assert load_case.name in text
+
+
+def test_supplier_pack_records_extended_requirements_and_evidence_status():
+    doc = generate_supplier_enquiry_pack(
+        _selection_snapshot(),
+        layout_box_mm=(2240.0, 800.0, 1685.0),
+        clearances_mm=(30.0, 35.0, 40.0),
+        wall_face="back",
+        cg_mm=(1120.0, 400.0, 950.0),
+        wall_stabilizer_height_mm=1450.0,
+        vibration_profile="MIL-STD-810H 514.8C-VII Category 4",
+        vibration_duration_min=40.0,
+        operating_state="Powered and operating during transport",
+        interface_requirements="M8 inserts; supplier to confirm torque",
+        environment_requirements="Marine corrosion environment",
+        road_trial_status="Required, not started",
+    )
+    text = _document_text(doc)
+
+    assert "1120 / 400 / 950 mm" in text
+    assert "1.079 m/s" in text
+    assert "MIL-STD-810H 514.8C-VII Category 4" in text
+    assert "40 min" in text
+    assert "Powered and operating during transport" in text
+    assert "M8 inserts; supplier to confirm torque" in text
+    assert "Marine corrosion environment" in text
+    assert "Required, not started" in text
+    assert "TO BE CONFIRMED" not in "\n".join(
+        row.cells[1].text
+        for table in doc.tables
+        if table.rows[0].cells[0].text == "Requirement"
+        for row in table.rows[1:]
+    )
+
+
+def test_supplier_pack_exposes_missing_inputs_and_model_boundaries():
+    doc = generate_supplier_enquiry_pack(_selection_snapshot())
+    text = _document_text(doc)
+
+    assert "TO BE CONFIRMED" in text
+    assert "ASSUMED" in text
+    assert "effective configuration value is not a physical mount count" in text
+    assert "Shock acceptance and random-vibration duration compliance" in text
+    assert "not transferable approval" in text
+    assert "Qualification only when supported by an applicable test report" in text
 
 
 def test_supplier_pack_includes_requested_mount_counts_and_coordinates():

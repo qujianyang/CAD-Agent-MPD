@@ -3,7 +3,8 @@
 **Chunk:** `shock_mount/road_vibration_check`
 **Source:** `vibration_engine.py` and `catalog.py` (`k_vib_comp_lbin` /
 `k_vib_shear_lbin`); Vibration Average K column from the Aeroflex/VMC
-datasheets; method validated against the company's SPF_Vibration workbook.
+datasheets; method validated against the company's SPF_Vibration workbook;
+vendor case evidence in SRC-SIM-05 and SRC-SIM-06.
 **Grounding:** validated-in-repo
 
 ---
@@ -53,3 +54,10 @@ This is a screening check inside the selection workflow
 (`selection_workflow.md`), not the full MIL-STD-810 Method 514.8
 random-vibration fatigue analysis — that remains out of scope
 (`model_limitations.md`, `standard_scope.md`).
+
+The supplied vendor evidence demonstrates why this boundary matters. The
+850 kg and 1050 kg CB1400-15 simulations both predicted shock accelerations
+below the requested 10 g limit, but both explicitly stated that the
+configuration did not meet the required 40-minute random-vibration duration.
+See `shock_vibration_separation.md` for the reported resonance, RMS, and PSD
+values.
