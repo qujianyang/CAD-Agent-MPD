@@ -30,6 +30,72 @@ OLLAMA_QUERY_PREFIXES = {
 }
 
 
+class OpenAIEmbedder:
+    """Embed documents and queries with one OpenAI embedding model."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "text-embedding-3-small",
+        dimensions: int | None = None,
+    ):
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is required for OpenAI embeddings.")
+        self.api_key = api_key
+        self.model = model
+        self.dimensions = dimensions
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from openai import OpenAI
+
+            self._client = OpenAI(api_key=self.api_key)
+        return self._client
+
+    def _embed_inputs(self, inputs: str | list[str]) -> list[list[float]]:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "input": inputs,
+            "encoding_format": "float",
+        }
+        if self.dimensions is not None:
+            kwargs["dimensions"] = self.dimensions
+        response = self._get_client().embeddings.create(**kwargs)
+        return [
+            item.embedding
+            for item in sorted(response.data, key=lambda item: item.index)
+        ]
+
+    def embed_text(self, text: str) -> List[float]:
+        if not text or not text.strip():
+            return []
+        embeddings = self._embed_inputs(text.replace("\n", " "))
+        if len(embeddings) != 1:
+            raise RuntimeError(
+                f"Expected one OpenAI query embedding, received {len(embeddings)}."
+            )
+        return embeddings[0]
+
+    def embed_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        total = len(chunks)
+        print(f"\nEmbedding {total} chunks via OpenAI ({self.model})...\n")
+        for start in range(0, total, 64):
+            batch = chunks[start:start + 64]
+            embeddings = self._embed_inputs(
+                [chunk["content"].replace("\n", " ") for chunk in batch]
+            )
+            if len(embeddings) != len(batch):
+                raise RuntimeError(
+                    f"OpenAI returned {len(embeddings)} embeddings for "
+                    f"{len(batch)} passages."
+                )
+            for chunk, embedding in zip(batch, embeddings):
+                chunk["embedding"] = embedding
+            print(f"[OK] Embedded {min(start + len(batch), total)}/{total} chunks")
+        return chunks
+
+
 def ollama_query_prefix(model: str) -> str:
     """Return the documented/project retrieval instruction for an Ollama model."""
     return OLLAMA_QUERY_PREFIXES.get(model, "")

@@ -10,3 +10,4 @@ evaluation/results/*_formal.json binary
 evaluation/results/*_report.md binary
 evaluation/artifacts/*.json binary
 artifacts/embedding_candidates/*.json binary
+artifacts/knowledge_embeddings_openai.json binary

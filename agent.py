@@ -99,7 +99,12 @@ def _get_knowledge_search():
     global _knowledge_embedder, _knowledge_store
     if _knowledge_store is None:
         from pathlib import Path
-        from nvidia_embedder import NVIDIAEmbedder, OllamaEmbedder, JSONVectorStore
+        from nvidia_embedder import (
+            JSONVectorStore,
+            NVIDIAEmbedder,
+            OllamaEmbedder,
+            OpenAIEmbedder,
+        )
         if not Path(KNOWLEDGE_STORE_PATH).exists():
             return None, None
         if EMBEDDING_PROVIDER == "ollama":
@@ -107,11 +112,20 @@ def _get_knowledge_search():
                 model=os.environ.get("OLLAMA_EMBEDDING_MODEL", "bge-m3"),
                 base_url=os.environ.get("OLLAMA_EMBEDDING_BASE_URL", "http://127.0.0.1:11434"),
             )
+        elif EMBEDDING_PROVIDER == "openai":
+            openai_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+            _knowledge_embedder = OpenAIEmbedder(
+                api_key=openai_key,
+                model=os.environ.get(
+                    "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
+                ),
+            )
         elif EMBEDDING_PROVIDER == "nvidia":
             _knowledge_embedder = NVIDIAEmbedder(_api_key) if _api_key else None
         else:
             raise ValueError(
-                f"Unsupported EMBEDDING_PROVIDER={EMBEDDING_PROVIDER!r}; use 'nvidia' or 'ollama'."
+                f"Unsupported EMBEDDING_PROVIDER={EMBEDDING_PROVIDER!r}; "
+                "use 'nvidia', 'openai', or 'ollama'."
             )
         _knowledge_store    = JSONVectorStore(KNOWLEDGE_STORE_PATH)
     return _knowledge_embedder, _knowledge_store

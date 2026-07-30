@@ -21,6 +21,7 @@ node_modules/
 venv/
 env/
 .env
+.streamlit/secrets.toml
 *.bak
 *.log
 

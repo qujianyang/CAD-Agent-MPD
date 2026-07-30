@@ -24,7 +24,12 @@ from dotenv import load_dotenv
 
 # Project imports (run from repo root so these resolve)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from nvidia_embedder import NVIDIAEmbedder, OllamaEmbedder, JSONVectorStore
+from nvidia_embedder import (
+    JSONVectorStore,
+    NVIDIAEmbedder,
+    OllamaEmbedder,
+    OpenAIEmbedder,
+)
 
 # ---------- config ----------
 DEFAULT_QRELS_PATH = Path(__file__).parent / "retrieval_qrels_shock_v1.jsonl"
@@ -54,7 +59,10 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--qrels", type=Path, default=DEFAULT_QRELS_PATH)
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE_PATH)
     parser.add_argument("--out", type=Path, default=None)
-    parser.add_argument("--provider", choices=["auto", "nvidia", "ollama"], default="auto",
+    parser.add_argument(
+        "--provider",
+        choices=["auto", "nvidia", "openai", "ollama"],
+        default="auto",
                         help="Query embedding provider (default: infer from index metadata)")
     parser.add_argument("--model", default=None,
                         help="Override the embedding model recorded in the index")
@@ -85,6 +93,14 @@ def main(argv: list[str] | None = None):
             model=model,
             base_url=args.base_url or metadata.get("embedding_base_url") or "http://127.0.0.1:11434",
             query_prefix=metadata.get("query_prefix", ""),
+        )
+    elif provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            sys.exit("ERROR: OPENAI_API_KEY not set in .env")
+        embedder = OpenAIEmbedder(
+            api_key=api_key,
+            model=model or "text-embedding-3-small",
         )
     else:
         api_key = os.environ.get("NVIDIA_API_KEY", "").strip()

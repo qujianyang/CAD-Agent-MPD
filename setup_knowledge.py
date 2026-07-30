@@ -24,6 +24,7 @@ Usage:
   python setup_knowledge.py                # build the normal mixed development index
   python setup_knowledge.py --local        # use local SentenceTransformer fallback
   python setup_knowledge.py --provider ollama --model bge-m3
+  python setup_knowledge.py --provider openai --model text-embedding-3-small
   python setup_knowledge.py --topic shock_mount --output artifacts/shock_mount_embeddings.json
                                             # build a shock-only index
 """
@@ -34,7 +35,12 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-from nvidia_embedder import NVIDIAEmbedder, OllamaEmbedder, JSONVectorStore
+from nvidia_embedder import (
+    JSONVectorStore,
+    NVIDIAEmbedder,
+    OllamaEmbedder,
+    OpenAIEmbedder,
+)
 
 
 # Where the source markdown lives, and where the vector store goes
@@ -96,13 +102,17 @@ def main(
     query_prefix: str | None = None,
 ):
     load_dotenv()
-    api_key = os.environ.get("NVIDIA_API_KEY", "")
+    nvidia_api_key = os.environ.get("NVIDIA_API_KEY", "")
+    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
     if use_local:
         provider = "sentence_transformers"
-    if provider == "nvidia" and not api_key:
+    if provider == "nvidia" and not nvidia_api_key:
         print("ERROR: NVIDIA_API_KEY not set. Run with --local or add it to .env.")
         sys.exit(1)
-    if provider not in {"nvidia", "ollama", "sentence_transformers"}:
+    if provider == "openai" and not openai_api_key:
+        print("ERROR: OPENAI_API_KEY not set. Add it to .env.")
+        sys.exit(1)
+    if provider not in {"nvidia", "openai", "ollama", "sentence_transformers"}:
         print(f"ERROR: unsupported embedding provider {provider!r}.")
         sys.exit(1)
 
@@ -138,9 +148,19 @@ def main(
             sys.exit(1)
         embedder = OllamaEmbedder(model=model, base_url=base_url, query_prefix=query_prefix)
         embedding_model = model
+    elif provider == "openai":
+        embedding_model = model or "text-embedding-3-small"
+        embedder = OpenAIEmbedder(
+            api_key=openai_api_key,
+            model=embedding_model,
+        )
     else:
         use_local = provider == "sentence_transformers"
-        embedder = NVIDIAEmbedder(api_key, model=model or "nvidia/llama-nemotron-embed-1b-v2", use_local=use_local)
+        embedder = NVIDIAEmbedder(
+            nvidia_api_key,
+            model=model or "nvidia/llama-nemotron-embed-1b-v2",
+            use_local=use_local,
+        )
         embedding_model = "local" if use_local else embedder.model
     if provider == "nvidia":
         if not embedder.test_api_key():
@@ -181,7 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--local", action="store_true",
                         help="Use local SentenceTransformer fallback instead of NVIDIA API")
     parser.add_argument("--provider", default="nvidia",
-                        choices=["nvidia", "ollama", "sentence_transformers"],
+                        choices=["nvidia", "openai", "ollama", "sentence_transformers"],
                         help="Embedding provider (default: nvidia)")
     parser.add_argument("--model", default=None,
                         help="Embedding model; required for --provider ollama")
