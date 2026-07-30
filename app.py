@@ -37,6 +37,7 @@ from shock_analysis_context import (
     build_custom_snapshot,
     build_runtime_context,
     build_selection_snapshot,
+    should_link_selector_result,
 )
 from response_assurance import (
     STATUS_INSUFFICIENT_INFORMATION,
@@ -182,6 +183,7 @@ def _init_state():
         "q_custom_result": None,
         "q_custom_key": None,
         "shock_concept_images": {},
+        "shock_assistant_use_current_result": True,
         # Mobility scenario workspace
         "mb_vehicle": None,    # derived mobility Vehicle (single source of truth)
         "mb_prov": None,       # {"method": ..., "source": ...} provenance
@@ -1045,7 +1047,8 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                             context_state: str = "none",
                             context_label: str | None = None,
                             allow_context_answer: bool = False,
-                            context_snapshot=None):
+                            context_snapshot=None,
+                            history_scope: str | None = None):
     """
     Collapsible, domain-scoped chat assistant embedded in a tab.
     Each instance carries only its own domain's tools, so routing is far more
@@ -1056,17 +1059,18 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
     visible even when the assistant is disabled. Optional `examples` renders static
     prompt suggestions just above the chat input.
     """
-    hist_key = f"asst_{domain}_history"
+    scope = history_scope or domain
+    hist_key = f"asst_{scope}_history"
     pending_key = f"asst_{domain}_pending"
     if hist_key not in st.session_state:
         st.session_state[hist_key] = []
 
-    has_pending_question = bool(st.session_state.get(pending_key))
-    expander_title = (
-        f"{title} (linked result)"
-        if expanded and has_pending_question
-        else title
-    )
+    if context_state == "current":
+        expander_title = f"{title} (linked result)"
+    elif context_state == "general":
+        expander_title = f"{title} (general)"
+    else:
+        expander_title = title
     with st.expander(expander_title, expanded=expanded):
         if capabilities:
             with st.popover("ℹ️ What can this assistant do?", width="content"):
@@ -1088,6 +1092,11 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
             st.warning(
                 "Inputs changed after the stored analysis. Rerun the analysis "
                 "before asking the assistant to explain that result."
+            )
+        elif context_state == "general" and domain == "shock_mount":
+            st.caption(
+                "General mode. The current selector result is not sent to the "
+                "assistant."
             )
         elif domain == "shock_mount":
             st.caption(
@@ -1138,7 +1147,7 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
 
         if examples:
             st.caption("Try:  •  " + "  •  ".join(examples))
-        typed_question = st.chat_input(placeholder, key=f"asst_{domain}_input")
+        typed_question = st.chat_input(placeholder, key=f"asst_{scope}_input")
         pending_question = st.session_state.pop(pending_key, None)
         q = typed_question or pending_question
         linked_action = bool(
@@ -1216,13 +1225,13 @@ def render_domain_assistant(domain: str, title: str, placeholder: str,
                 EXPORT_MARKDOWN_LABEL,
                 data=history_to_markdown(st.session_state[hist_key], title=_doc_title),
                 file_name=f"{domain}_chat_{_ts}.md", mime="text/markdown",
-                key=f"asst_{domain}_dl_md", width="stretch")
+                key=f"asst_{scope}_dl_md", width="stretch")
             ex2.download_button(
                 EXPORT_HTML_LABEL,
                 data=history_to_html(st.session_state[hist_key], title=_doc_title),
                 file_name=f"{domain}_chat_{_ts}.html", mime="text/html",
-                key=f"asst_{domain}_dl_html", width="stretch")
-            if ex3.button(CLEAR_CHAT_LABEL, key=f"asst_{domain}_clear",
+                key=f"asst_{scope}_dl_html", width="stretch")
+            if ex3.button(CLEAR_CHAT_LABEL, key=f"asst_{scope}_clear",
                           width="stretch"):
                 st.session_state[hist_key] = []
                 st.rerun()
@@ -1248,6 +1257,7 @@ def _render_shock_context_actions(snapshot, context_state: str) -> None:
             width="stretch",
             disabled=disabled,
         ):
+            st.session_state["shock_assistant_use_current_result"] = True
             st.session_state["asst_shock_mount_pending"] = prompt
 
     if context_state == "stale":
@@ -2076,6 +2086,42 @@ with tab_quick:
 
     # ---- Shock-isolation assistant (collapsible, consistent with other tabs) ----
     from agent import SHOCK_CAPABILITIES
+    current_result_available = (
+        shock_snapshot is not None and shock_context_state == "current"
+    )
+    if current_result_available:
+        use_current_result = st.toggle(
+            "Use current selector result",
+            key="shock_assistant_use_current_result",
+            help=(
+                "Turn off to ask general questions without sending the current "
+                "selector result to the assistant."
+            ),
+        )
+    else:
+        st.toggle(
+            "Use current selector result",
+            value=False,
+            disabled=True,
+            key=f"shock_assistant_result_unavailable_{shock_context_state}",
+        )
+        use_current_result = False
+
+    result_is_linked = should_link_selector_result(
+        shock_snapshot,
+        state=shock_context_state,
+        use_current_result=use_current_result,
+    )
+    if result_is_linked:
+        assistant_context_state = "current"
+        assistant_context_snapshot = shock_snapshot
+    elif shock_context_state == "stale":
+        assistant_context_state = "stale"
+        assistant_context_snapshot = shock_snapshot
+    else:
+        assistant_context_state = "general"
+        assistant_context_snapshot = None
+
     render_domain_assistant(
         "shock_mount",
         SHOCK_ASSISTANT_LABEL,
@@ -2084,13 +2130,22 @@ with tab_quick:
         capabilities=SHOCK_CAPABILITIES,
         examples=[c["example"] for c in SHOCK_CAPABILITIES[:5]],
         runtime_context=build_runtime_context(
-            shock_snapshot,
-            state=shock_context_state,
+            assistant_context_snapshot,
+            state=assistant_context_state,
         ),
-        context_state=shock_context_state,
-        context_label=shock_snapshot.label if shock_snapshot else None,
-        allow_context_answer=shock_context_state == "current",
-        context_snapshot=shock_snapshot,
+        context_state=assistant_context_state,
+        context_label=(
+            shock_snapshot.label
+            if result_is_linked and shock_snapshot is not None
+            else None
+        ),
+        allow_context_answer=result_is_linked,
+        context_snapshot=assistant_context_snapshot,
+        history_scope=(
+            "shock_mount"
+            if result_is_linked
+            else "shock_mount_general"
+        ),
     )
 
     render_floating_assistant(

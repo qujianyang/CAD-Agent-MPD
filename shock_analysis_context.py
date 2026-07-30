@@ -266,6 +266,20 @@ def build_runtime_context(
     )
 
 
+def should_link_selector_result(
+    snapshot: Optional[ShockAnalysisSnapshot],
+    *,
+    state: str,
+    use_current_result: bool,
+) -> bool:
+    """Return whether the assistant may receive the current selector snapshot."""
+    return bool(
+        use_current_result
+        and state == "current"
+        and snapshot is not None
+    )
+
+
 def _load_case(direction) -> LoadCaseSnapshot:
     return LoadCaseSnapshot(
         name=str(direction.label),

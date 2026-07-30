@@ -9,6 +9,7 @@ from shock_analysis_context import (
     build_custom_snapshot,
     build_runtime_context,
     build_selection_snapshot,
+    should_link_selector_result,
 )
 
 
@@ -75,6 +76,42 @@ def test_current_runtime_context_contains_json_but_stale_context_hides_results()
     assert snapshot.selected_part not in stale
     assert str(snapshot.worst_transmitted_g) not in stale
     assert "rerun" in stale.lower()
+
+
+def test_selector_result_links_only_when_current_and_enabled():
+    report, candidates = select_and_analyze(
+        850.0,
+        6,
+        4,
+        shock_env=ENV,
+        catalog=AUTO_SELECT_CATALOGS,
+    )
+    snapshot = build_selection_snapshot(
+        report,
+        candidates,
+        analysis_key=("auto", 850.0, 6, 4),
+    )
+
+    assert should_link_selector_result(
+        snapshot,
+        state="current",
+        use_current_result=True,
+    )
+    assert not should_link_selector_result(
+        snapshot,
+        state="current",
+        use_current_result=False,
+    )
+    assert not should_link_selector_result(
+        snapshot,
+        state="stale",
+        use_current_result=True,
+    )
+    assert not should_link_selector_result(
+        None,
+        state="current",
+        use_current_result=True,
+    )
 
 
 def test_custom_snapshot_keeps_validation_level_and_vendor_warnings():
