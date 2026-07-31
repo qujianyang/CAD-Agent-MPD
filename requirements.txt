@@ -1,6 +1,6 @@
 # CAD Agent - Shock Mount Selection
-# Linux-safe runtime requirements (Streamlit Community Cloud, Python 3.12).
-# Pins match the verified `mpd` venv; all have manylinux + cp312 wheels.
+# Linux-safe runtime requirements (Streamlit Community Cloud, Python 3.10).
+# Pins match the verified `mpd` venv; all have Python 3.10-compatible wheels.
 #
 # Run app:
 #   streamlit run app.py

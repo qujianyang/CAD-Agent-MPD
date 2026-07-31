@@ -16,7 +16,7 @@ This is why the FYP framing leans on the physics + AI/RAG sides for methodology,
 
 ## Tech stack
 
-- Python 3.11, Streamlit 1.57.0
+- Python 3.10.8, Streamlit 1.57.0
 - LangChain 1.3.1 + langchain-nvidia-ai-endpoints 1.3.0 (uses `create_agent`, not the removed `create_tool_calling_agent`)
 - NVIDIA Llama 3.1 70B (hosted endpoint, `parallel_tool_calls=False` required)
 - pywin32 311 for SolidWorks COM
