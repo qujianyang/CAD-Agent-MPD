@@ -47,6 +47,11 @@ Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
 Desktop.ini
+
+# SOLIDWORKS temporary lock files
+~$*.SLDPRT
+~$*.SLDASM
+~$*.SLDDRW
 # ==========================================
 # Language & Runtime Caches / Local Envs
 # ==========================================

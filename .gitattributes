@@ -1,2 +1,30 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Native SOLIDWORKS and eDrawings binaries
+*.[sS][lL][dD][pP][rR][tT] filter=lfs diff=lfs merge=lfs -text
+*.[sS][lL][dD][aA][sS][mM] filter=lfs diff=lfs merge=lfs -text
+*.[sS][lL][dD][dD][rR][wW] filter=lfs diff=lfs merge=lfs -text
+*.[sS][lL][dD][dD][rR][tT] filter=lfs diff=lfs merge=lfs -text
+*.[eE][pP][rR][tT] filter=lfs diff=lfs merge=lfs -text
+*.[eE][aA][sS][mM] filter=lfs diff=lfs merge=lfs -text
+*.[eE][dD][rR][wW] filter=lfs diff=lfs merge=lfs -text
+
+# Neutral and exchange CAD binaries
+*.[sS][tT][eE][pP] filter=lfs diff=lfs merge=lfs -text
+*.[sS][tT][pP] filter=lfs diff=lfs merge=lfs -text
+*.[iI][gG][eE][sS] filter=lfs diff=lfs merge=lfs -text
+*.[iI][gG][sS] filter=lfs diff=lfs merge=lfs -text
+*.[xX]_[tT] filter=lfs diff=lfs merge=lfs -text
+*.[xX]_[bB] filter=lfs diff=lfs merge=lfs -text
+*.[sS][aA][tT] filter=lfs diff=lfs merge=lfs -text
+*.[sS][aA][bB] filter=lfs diff=lfs merge=lfs -text
+*.[sS][tT][lL] filter=lfs diff=lfs merge=lfs -text
+*.[dD][wW][gG] filter=lfs diff=lfs merge=lfs -text
+*.[dD][xX][fF] filter=lfs diff=lfs merge=lfs -text
+*.3[dD][xX][mM][lL] filter=lfs diff=lfs merge=lfs -text
+
+# Preserve compressed CAD packages without exceeding Git's normal file limit
+*.[zZ][iI][pP] filter=lfs diff=lfs merge=lfs -text
+*.[rR][aA][rR] filter=lfs diff=lfs merge=lfs -text
+*.7[zZ] filter=lfs diff=lfs merge=lfs -text
