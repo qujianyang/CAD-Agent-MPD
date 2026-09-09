@@ -39,7 +39,7 @@ The cloud application uses a separate OpenAI index:
 - Repository: `qujianyang/CAD-Agent-MPD`
 - Branch: `PDF-Ingestion`
 - Entrypoint: `app.py`
-- Python: `3.12`
+- Python: `3.10`
 
 ## Deploy
 
@@ -49,7 +49,7 @@ The cloud application uses a separate OpenAI index:
    authorized.
 3. Select **Create app**, then **Yup, I have an app**.
 4. Enter the repository, branch and entrypoint listed above.
-5. Open **Advanced settings** and select Python 3.12.
+5. Open **Advanced settings** and select Python 3.10.
 6. Paste the contents of `.streamlit/secrets.toml.example` into the Secrets
    field, replacing the placeholder with the approved project OpenAI key.
 7. Confirm the OpenAI corpus, prompt and retrieved-excerpt data flow is approved.
