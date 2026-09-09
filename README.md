@@ -6,6 +6,17 @@ SolidWorks property extraction, deterministic engineering calculations,
 vendor-aware shock-isolator screening, and an AI assistant that explains
 results without replacing the underlying physics.
 
+## Live App and Video Demo
+
+**[Open the deployed application](https://qujianyang-cad-agent-mpd-app-pdf-ingestion-cvrhvk.streamlit.app/)**
+| **[Watch the demonstration on YouTube](https://youtu.be/dh6ZWvVJQnI)**
+
+[![Watch the CAD-Aware Mechanical Engineering Assistant demonstration on YouTube](https://img.youtube.com/vi/dh6ZWvVJQnI/hqdefault.jpg)](https://youtu.be/dh6ZWvVJQnI)
+
+Select the thumbnail to watch the video on YouTube.
+
+## Engineering Workflow
+
 The project was developed around a practical vehicle-integration workflow:
 
 1. establish the equipment mass, centre of gravity, mounting arrangement, and
